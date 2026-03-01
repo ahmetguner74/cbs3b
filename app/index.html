@@ -22,14 +22,24 @@
 	<meta property="og:image" content="cbs-logo.png">
 	<meta property="og:type" content="website">
 
-	<!-- Cesium: CDN (online) veya lokal (file://) -->
+	<!-- Cesium & App Script Loader -->
 	<script>
 		(function () {
-			var src = (window.location.protocol === 'file:') ? 'Cesium/Cesium.js' : 'https://cesium.com/downloads/cesiumjs/releases/1.105/Build/Cesium/Cesium.js';
-			var script = document.createElement('script');
-			script.src = src;
-			script.async = false; // Cesium must load synchronously for main.js to work immediately
-			document.head.appendChild(script);
+			var isLocal = (window.location.protocol === 'file:');
+			var cesiumSrc = isLocal ? 'Cesium/Cesium.js' : 'https://cesium.com/downloads/cesiumjs/releases/1.105/Build/Cesium/Cesium.js';
+
+			function loadScript(src, callback) {
+				var script = document.createElement('script');
+				script.src = src;
+				script.async = false;
+				if (callback) script.onload = callback;
+				document.head.appendChild(script);
+			}
+
+			// Load Cesium first, then main.js
+			loadScript(cesiumSrc, function () {
+				loadScript('main.js');
+			});
 		})();
 	</script>
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.15.0/proj4.js"></script>
@@ -1073,7 +1083,7 @@
 
 	</main>
 
-	<script src="main.js"></script>
+	<!-- main.js dynamic olarak yukardaki script ile yüklenir -->
 
 	<!-- JS overrides for list rendering to use Tailwind classes -->
 	<script>
