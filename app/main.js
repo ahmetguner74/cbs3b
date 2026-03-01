@@ -1694,6 +1694,9 @@ function highlightMeasurement(id) {
 			if (ent.point) ent.point.color = isActive ? Cesium.Color.CYAN : Cesium.Color.RED;
 		});
 	});
+	// Seçili ölçüm varsa Sil FAB göster
+	var delFab = document.getElementById('deleteSelFab');
+	if (delFab) delFab.style.display = activeHighlightId !== null ? 'flex' : 'none';
 	viewer.scene.requestRender();
 }
 
@@ -1705,6 +1708,8 @@ function deleteMeasurement(id) {
 	m.entities.forEach(function (item) { safeRemoveItem(item); });
 	measurements.splice(idx, 1);
 	if (activeHighlightId === id) activeHighlightId = null;
+	var delFab = document.getElementById('deleteSelFab');
+	if (delFab) delFab.style.display = 'none';
 	viewer.scene.requestRender();
 	renderList();
 }
