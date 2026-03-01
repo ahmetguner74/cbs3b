@@ -1085,7 +1085,8 @@ function createStablePolyline(positions, width, material, depthFailColor) {
 			})
 		}),
 		modelMatrix: enuMatrix, // CPU double-precision ile mutlak pozisyon
-		asynchronous: false
+		asynchronous: false,
+		allowPicking: false
 	}));
 	return primitive;
 }
@@ -1117,7 +1118,8 @@ function createStablePolygon(positions, material) {
 			faceForward: true
 		}),
 		modelMatrix: enuMatrix,
-		asynchronous: false
+		asynchronous: false,
+		allowPicking: false
 	}));
 	return primitive;
 }
@@ -1125,50 +1127,83 @@ function createStablePolygon(positions, material) {
 // Evrensel silme: Entity VEYA Primitive VEYA Collection Item
 function safeRemoveItem(item) {
 	if (!item) return;
+
 	// 1) Entity
 	if (item.entityCollection) {
 		try { drawLayer.entities.remove(item); } catch (e) { }
 		return;
 	}
-	// 2) PointPrimitive / Label / Billboard (Collection üzerinden silinmeli)
-	if (item.collection) {
-		// PointPrimitive'in içinde Label varsa onu da sil
-		if (item.label && item.label.collection) {
-			try { item.label.collection.remove(item.label); } catch (e) { }
-		}
-		try { item.collection.remove(item); } catch (e) { }
+
+	// 2) Eğer içeride "label" objesi (bağlı olduğu primitive) varsa onu sil
+	if (item.label) {
+		safeRemoveItem(item.label);
+	}
+
+	// 3) Collection'ın Kendisini Silme (Jitter Fix v3: Her noktanın kendi koleksiyonu var)
+	// getOwner ile koleksiyon çekebilirsek onu direkt silelim.
+	if (item.collection && item.collection._primitives) {
+		try { viewer.scene.primitives.remove(item.collection); } catch (e) { }
 		return;
 	}
-	// 3) Primitive (Geometry)
+
+	// 4) Primitive (Collection)
 	try { viewer.scene.primitives.remove(item); } catch (e) { }
 }
 
+// Global koleksiyonlar mobil jitter sorunu yaratıyor (koordinatlar ECEF kaldığı için)
+// Bu nedenle artık kullanılmıyor, yerine modelMatrix'li bireysel Primitive'ler eklendi
+// var globalPointCollection = viewer.scene.primitives.add(new Cesium.PointPrimitiveCollection());
+// var globalLabelCollection = viewer.scene.primitives.add(new Cesium.LabelCollection());
+
 function addPointLabel(position, number) {
-	return globalPointCollection.add({
-		position: liftPosition(position),
+	var pivot = liftPosition(position);
+	var enuMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(pivot);
+
+	// Nokta koleksiyonu - Lokal orijin
+	var pointCollection = new Cesium.PointPrimitiveCollection({ modelMatrix: enuMatrix });
+	var point = pointCollection.add({
+		position: Cesium.Cartesian3.ZERO,
 		pixelSize: 8,
 		color: Cesium.Color.WHITE,
 		outlineColor: Cesium.Color.BLACK,
 		outlineWidth: 1,
-		disableDepthTestDistance: Number.POSITIVE_INFINITY,
-		label: globalLabelCollection.add({
-			position: liftPosition(position),
-			text: String(number),
-			font: 'bold 13px sans-serif',
-			fillColor: Cesium.Color.WHITE,
-			outlineColor: Cesium.Color.BLACK,
-			outlineWidth: 2,
-			style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-			verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-			pixelOffset: new Cesium.Cartesian2(0, -12),
-			disableDepthTestDistance: Number.POSITIVE_INFINITY
-		})
+		disableDepthTestDistance: Number.POSITIVE_INFINITY
 	});
+	var pointPrimitive = viewer.scene.primitives.add(pointCollection);
+	pointPrimitive.id = pointPrimitive;
+	point.id = pointPrimitive;
+
+	// Etiket koleksiyonu - Lokal orijin
+	var labelCollection = new Cesium.LabelCollection({ modelMatrix: enuMatrix });
+	var label = labelCollection.add({
+		position: Cesium.Cartesian3.ZERO,
+		text: String(number),
+		font: 'bold 13px sans-serif',
+		fillColor: Cesium.Color.WHITE,
+		outlineColor: Cesium.Color.BLACK,
+		outlineWidth: 2,
+		style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+		verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+		pixelOffset: new Cesium.Cartesian2(0, -12),
+		disableDepthTestDistance: Number.POSITIVE_INFINITY
+	});
+	var labelPrimitive = viewer.scene.primitives.add(labelCollection);
+	labelPrimitive.id = labelPrimitive;
+
+	labelPrimitive.owner = pointPrimitive;
+	pointPrimitive.label = labelPrimitive;
+
+	viewer.scene.requestRender();
+	return pointPrimitive;
 }
 
 function addLabel(position, text, color) {
-	return globalLabelCollection.add({
-		position: liftPosition(position),
+	var pivot = liftPosition(position);
+	var enuMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(pivot);
+
+	var labelCollection = new Cesium.LabelCollection({ modelMatrix: enuMatrix });
+	var label = labelCollection.add({
+		position: Cesium.Cartesian3.ZERO,
 		text: text,
 		font: 'bold 13px sans-serif',
 		fillColor: color || Cesium.Color.WHITE,
@@ -1179,6 +1214,12 @@ function addLabel(position, text, color) {
 		pixelOffset: new Cesium.Cartesian2(0, -8),
 		disableDepthTestDistance: Number.POSITIVE_INFINITY
 	});
+
+	var labelPrimitive = viewer.scene.primitives.add(labelCollection);
+	labelPrimitive.id = labelPrimitive;
+
+	viewer.scene.requestRender();
+	return labelPrimitive;
 }
 
 function midpoint(a, b) {
@@ -2330,9 +2371,13 @@ handler.setInputAction(function (movement) {
 			snapIndicator.pixelSize = 12;
 		}
 		snapIndicator.show = true;
+		viewer.scene.requestRender();
 	} else {
 		snappedCartesian = null;
-		if (snapIndicator) snapIndicator.show = false;
+		if (snapIndicator && snapIndicator.show) {
+			snapIndicator.show = false;
+			viewer.scene.requestRender();
+		}
 	}
 }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
 
@@ -2343,6 +2388,8 @@ handler.setInputAction(function (click) {
 		var pickedObject = viewer.scene.pick(click.position);
 		if (Cesium.defined(pickedObject) && pickedObject.id) {
 			var entity = pickedObject.id;
+			if (entity.owner) entity = entity.owner; // Label tıklanırsa Point'e yönlendir
+
 			// Ölçümlere ait bir entity ise IDsini bul
 			var foundMeasurement = measurements.find(function (m) {
 				return m.entities.includes(entity);
