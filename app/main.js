@@ -1130,7 +1130,9 @@ function safeRemoveItem(item) {
 
 	// 1) Entity
 	if (item.entityCollection) {
-		try { drawLayer.entities.remove(item); } catch (e) { }
+		if (drawLayer.entities.contains(item)) {
+			drawLayer.entities.remove(item);
+		}
 		return;
 	}
 
@@ -1142,12 +1144,16 @@ function safeRemoveItem(item) {
 	// 3) Collection'ın Kendisini Silme (Jitter Fix v3: Her noktanın kendi koleksiyonu var)
 	// getOwner ile koleksiyon çekebilirsek onu direkt silelim.
 	if (item.collection && item.collection._primitives) {
-		try { viewer.scene.primitives.remove(item.collection); } catch (e) { }
+		if (viewer.scene.primitives.contains(item.collection)) {
+			viewer.scene.primitives.remove(item.collection);
+		}
 		return;
 	}
 
 	// 4) Primitive (Collection)
-	try { viewer.scene.primitives.remove(item); } catch (e) { }
+	if (viewer.scene.primitives.contains(item)) {
+		viewer.scene.primitives.remove(item);
+	}
 }
 
 // Global koleksiyonlar mobil jitter sorunu yaratıyor (koordinatlar ECEF kaldığı için)
@@ -1270,7 +1276,9 @@ function restoreLine(m) {
 		}
 	}
 	// Toplam mesafe etiketi — çizgi üzerindeki orta noktaya
-	m.entities.push(addLabel(midpointAlongLine(m.points), m.resultText, lineColor));
+	if (!_isMob) {
+		m.entities.push(addLabel(midpointAlongLine(m.points), m.resultText, lineColor));
+	}
 }
 
 function restorePolygon(m) {
@@ -1491,7 +1499,6 @@ function renderList() {
 		renderGroupItem(container, group);
 	});
 
-	debouncedSave();
 	updateActiveGroupLabel();
 }
 
@@ -1738,6 +1745,7 @@ function deleteGroup(id) {
 	// Eğer aktif grup silindiyse "Genel"e geç
 	if (activeGroupId === id) activeGroupId = 0;
 	renderList();
+	debouncedSave();
 }
 
 document.getElementById('btnNewFolder').onclick = function () {
@@ -1748,6 +1756,7 @@ document.getElementById('btnNewFolder').onclick = function () {
 		groups.push(newGroup);
 		activeGroupId = newGroup.id;
 		renderList();
+		debouncedSave();
 	}
 };
 
@@ -1791,6 +1800,7 @@ function deleteMeasurement(id) {
 	if (delFab) delFab.style.display = 'none';
 	viewer.scene.requestRender();
 	renderList();
+	debouncedSave();
 }
 
 function deleteGroup(id) {
@@ -1817,6 +1827,7 @@ function deleteGroup(id) {
 
 	viewer.scene.requestRender();
 	renderList();
+	debouncedSave();
 }
 
 // Seçili objeyi Delete tuşuyla silme
@@ -1836,7 +1847,8 @@ document.getElementById('btnDeleteAll').onclick = function () {
 	measurements = [];
 	activeHighlightId = null;
 	viewer.scene.requestRender();
-	renderList(); // Render içinde storage güncelleniyor
+	renderList();
+	debouncedSave();
 };
 
 // localStorage Temizle (Sıfırla) Butonu
@@ -1859,6 +1871,7 @@ document.getElementById('selectAllToggle').addEventListener('click', function ()
 	});
 	viewer.scene.requestRender();
 	renderList();
+	debouncedSave();
 });
 
 // ─── 6. ÇİZİM ARAÇLARI ───────────────────────────────────────
@@ -2138,8 +2151,10 @@ function redrawFromClickPoints() {
 			var segDist = Cesium.Cartesian3.distance(a, b);
 			var seg = createStablePolyline([a, b], 3, Cesium.Color.YELLOW);
 			if (seg) tempEntities.push(seg);
-			var segLabel = addLabel(midpoint(a, b), segDist.toFixed(2) + ' m', Cesium.Color.YELLOW);
-			tempEntities.push(segLabel);
+			if (!_isMob) {
+				var segLabel = addLabel(midpoint(a, b), segDist.toFixed(2) + ' m', Cesium.Color.YELLOW);
+				tempEntities.push(segLabel);
+			}
 		}
 		else if (activeTool === 'btnArea' && clickPoints.length > 1) {
 			var a2 = clickPoints[clickPoints.length - 2];
@@ -2283,7 +2298,10 @@ document.getElementById('btnClearScreen').onclick = function () {
 var _lastSnapTime = 0;
 handler.setInputAction(function (movement) {
 	if (!activeTool) {
-		if (snapIndicator && snapIndicator.show) snapIndicator.show = false;
+		if (snapIndicator && snapIndicator.show) {
+			snapIndicator.show = false;
+			viewer.scene.requestRender();
+		}
 		snappedCartesian = null;
 		return;
 	}
@@ -2298,12 +2316,31 @@ handler.setInputAction(function (movement) {
 	var bestCartesian = null;
 	var isEdgeSnap = false;
 
+	// Ekrana tıklanan Ray'in yerdeki tahmini Cartesian karşılığı (Yaklaşık)
+	// movement.endPosition (2D) üzerinden basit bir depth tahmini yerine,
+	// En yüksek performans için kameradan o piksele bir ray atıyoruz.
+	var ray = viewer.camera.getPickRay(movement.endPosition);
+	var mouseCartesian = viewer.scene.globe.pick(ray, viewer.scene);
+	if (!mouseCartesian) mouseCartesian = viewer.scene.pickPosition(movement.endPosition); // Globe bulamazsa depth buffer dene
+
 	// Önceden kaydedilmiş ölçüm noktalarını ve çizgilerini dolaş
 	measurements.forEach(function (m) {
 		if (!m.checked) return;
 		// Referans grubu snap kontrolü: snapEnabled değilse atla
 		var mGroup = groups.find(function (g) { return g.id === m.groupId; });
 		if (mGroup && mGroup.name.indexOf('📌') === 0 && !mGroup.snapEnabled) return;
+
+		// 3D Bounding/Mesafe Ön Filtresi (Performans için çok kritik: Sadece farenin x metre yakınındakileri 2D'ye çevir)
+		// Ekrandaki 15px ortalama 50 metreye denk gelebilir (zoom'a bağlı ama genelde kurtarır)
+		var isNear = true; // Eger fare dünyada bir yere dokunmuyorsa (gökyüzü) hepsini tara
+		if (mouseCartesian && m.points.length > 0) {
+			// En az bir noktası 100 metreden yakın değilse bu ölçümü komple atla (Çok ciddi performans kazancı)
+			isNear = m.points.some(function (p) {
+				return Cesium.Cartesian3.distance(p, mouseCartesian) < 150.0; // 150m yarıçap 
+			});
+		}
+		if (!isNear) return;
+
 		// Noktalara snap (Vertex Snap)
 		m.points.forEach(function (p) {
 			var winPos = Cesium.SceneTransforms.wgs84ToWindowCoordinates(viewer.scene, p);
@@ -2440,8 +2477,10 @@ handler.setInputAction(function (click) {
 		var seg = createStablePolyline([a, b], 3, _gc);
 		if (seg) tempEntities.push(seg);
 
-		var segLabel = addLabel(midpoint(a, b), segDist.toFixed(2) + ' m', _gc);
-		tempEntities.push(segLabel);
+		if (!_isMob) {
+			var segLabel = addLabel(midpoint(a, b), segDist.toFixed(2) + ' m', _gc);
+			tempEntities.push(segLabel);
+		}
 
 		// Mesafe aracı polyline olduğu için sol tıklada kaydetmiyoruz, sadece önizleme güncelliyoruz.
 		// Kayıt işlemi sağ tıklada (RIGHT_CLICK) handler içerisinde yapılacak.
@@ -2500,6 +2539,7 @@ handler.setInputAction(function (click) {
 		});
 		tempEntities = []; clickPoints = []; pointCounter = 0;
 		renderList(); setActiveTool(null);
+		debouncedSave();
 	}
 
 	// ── KOORDİNAT ──
@@ -2530,6 +2570,7 @@ handler.setInputAction(function (click) {
 		clickPoints = [];
 		// pointCounter SIFIRLANMIYOR Kİ 1, 2, 3 DİYE ARDIL ARTSIN
 		renderList();
+		debouncedSave();
 		// setActiveTool(null); <-- ARTIK KALDIRILDI Kİ ARDIŞIK NOKTA ATILSIN
 	}
 
@@ -2572,8 +2613,10 @@ handler.setInputAction(function () {
 		tempEntities = cleanedEntities;
 
 		// Toplam mesafe etiketi ekle — çizgi üzerindeki orta noktaya
-		var totalLabel = addLabel(midpointAlongLine(clickPoints), resultText, _gc);
-		tempEntities.push(totalLabel);
+		if (!_isMob) {
+			var totalLabel = addLabel(midpointAlongLine(clickPoints), resultText, _gc);
+			tempEntities.push(totalLabel);
+		}
 
 		measureCount++;
 		measurements.push({
@@ -2588,6 +2631,7 @@ handler.setInputAction(function () {
 		});
 		tempEntities = []; clickPoints = []; pointCounter = 0;
 		renderList(); setActiveTool(null);
+		debouncedSave();
 	}
 
 	// ALAN BİTİR
@@ -2654,6 +2698,7 @@ handler.setInputAction(function () {
 		});
 		tempEntities = []; clickPoints = []; pointCounter = 0;
 		renderList(); setActiveTool(null);
+		debouncedSave();
 	}
 
 	// KOORDİNAT (Nokta) BİTİR
