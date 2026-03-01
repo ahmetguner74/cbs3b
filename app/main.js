@@ -18,8 +18,8 @@ var viewer = new Cesium.Viewer('cesiumContainer', {
 	terrainProvider: new Cesium.EllipsoidTerrainProvider()  // Başlangıçta düz elipsoid
 });
 
-// Mobil tespiti (Düzeltme: isMobileBrowser yerine isMobile)
-var _isMob = Cesium.FeatureDetection.isMobile();
+// Mobil tespiti (tarayıcı tabanlı — Cesium API'ye bağımlı değil)
+var _isMob = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1);
 
 
 // HTTP modunda Ion World Terrain'i asenkron yükle
