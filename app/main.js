@@ -790,11 +790,17 @@ viewModeBtns.forEach(function (btn) {
 // ─── 1.7. KAMERA GÖRÜNÜMLERİ VE PROJEKSİYON (VIEW ANGLES & PROJECTION) ───
 // Açılar
 var cameraAngleBtns = document.querySelectorAll('.camera-angle-btn');
+var currentCameraIcon = document.getElementById('currentCameraIcon');
 cameraAngleBtns.forEach(function (btn) {
 	btn.addEventListener('click', function () {
 		var heading = Cesium.Math.toRadians(parseFloat(this.getAttribute('data-heading')));
 		var pitch = Cesium.Math.toRadians(parseFloat(this.getAttribute('data-pitch')));
 		var range = 500.0; // Kuşbakışı yaklaşım mesafesi. Modele göre ayarlanabilir.
+		var newIcon = this.getAttribute('data-icon');
+
+		if (currentCameraIcon && newIcon) {
+			currentCameraIcon.textContent = newIcon;
+		}
 
 		if (!tileset) return;
 		viewer.camera.flyToBoundingSphere(tileset.boundingSphere, {

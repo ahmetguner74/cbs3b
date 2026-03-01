@@ -36,9 +36,15 @@
 				document.head.appendChild(script);
 			}
 
-			// Load Cesium first, then main.js
+			// Load Cesium first, then wait for DOM to execute main.js
 			loadScript(cesiumSrc, function () {
-				loadScript('main.js');
+				if (document.readyState === 'loading') {
+					document.addEventListener('DOMContentLoaded', function () {
+						loadScript('main.js');
+					});
+				} else {
+					loadScript('main.js');
+				}
 			});
 		})();
 	</script>
@@ -747,7 +753,7 @@
 			<div class="relative group mr-1">
 				<button id="btnCameraMode"
 					class="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-md text-xs font-medium text-slate-300 transition-colors focus:outline-none z-50">
-					<span class="material-symbols-outlined text-[16px]">videocam</span>
+					<span id="currentCameraIcon" class="material-symbols-outlined text-[16px]">videocam</span>
 					<span class="hidden sm:inline">Kamera</span>
 					<span class="material-symbols-outlined text-[16px] text-slate-500">expand_more</span>
 				</button>
@@ -761,31 +767,36 @@
 						AÇILAR</div>
 					<button
 						class="camera-angle-btn w-full flex items-center justify-between px-4 py-2 text-xs text-slate-300 hover:bg-primary/20 hover:text-white transition-colors text-left"
-						data-heading="0" data-pitch="-90">
+						data-heading="0" data-pitch="-90" data-icon="stat_3"
+						onclick="this.closest('.group').blur(); document.activeElement.blur();">
 						<div class="flex items-center gap-2"><span
 								class="material-symbols-outlined text-[16px]">stat_3</span> Üstten</div>
 					</button>
 					<button
 						class="camera-angle-btn w-full flex items-center justify-between px-4 py-2 text-xs text-slate-300 hover:bg-primary/20 hover:text-white transition-colors text-left"
-						data-heading="0" data-pitch="-30">
+						data-heading="0" data-pitch="-30" data-icon="south"
+						onclick="document.activeElement.blur(); this.closest('div.absolute').classList.add('hidden'); setTimeout(()=>this.closest('div.absolute').classList.remove('hidden'), 50);">
 						<div class="flex items-center gap-2"><span
 								class="material-symbols-outlined text-[16px]">south</span> Güneyden</div>
 					</button>
 					<button
 						class="camera-angle-btn w-full flex items-center justify-between px-4 py-2 text-xs text-slate-300 hover:bg-primary/20 hover:text-white transition-colors text-left"
-						data-heading="-90" data-pitch="-30">
+						data-heading="-90" data-pitch="-30" data-icon="east"
+						onclick="document.activeElement.blur(); this.closest('div.absolute').classList.add('hidden'); setTimeout(()=>this.closest('div.absolute').classList.remove('hidden'), 50);">
 						<div class="flex items-center gap-2"><span
 								class="material-symbols-outlined text-[16px]">east</span> Doğudan</div>
 					</button>
 					<button
 						class="camera-angle-btn w-full flex items-center justify-between px-4 py-2 text-xs text-slate-300 hover:bg-primary/20 hover:text-white transition-colors text-left"
-						data-heading="90" data-pitch="-30">
+						data-heading="90" data-pitch="-30" data-icon="west"
+						onclick="document.activeElement.blur(); this.closest('div.absolute').classList.add('hidden'); setTimeout(()=>this.closest('div.absolute').classList.remove('hidden'), 50);">
 						<div class="flex items-center gap-2"><span
 								class="material-symbols-outlined text-[16px]">west</span> Batıdan</div>
 					</button>
 					<button
 						class="camera-angle-btn w-full flex items-center justify-between px-4 py-2 text-xs text-slate-300 hover:bg-primary/20 hover:text-white transition-colors text-left"
-						data-heading="180" data-pitch="-30">
+						data-heading="180" data-pitch="-30" data-icon="north"
+						onclick="document.activeElement.blur(); this.closest('div.absolute').classList.add('hidden'); setTimeout(()=>this.closest('div.absolute').classList.remove('hidden'), 50);">
 						<div class="flex items-center gap-2"><span
 								class="material-symbols-outlined text-[16px]">north</span> Kuzeyden</div>
 					</button>
@@ -824,12 +835,14 @@
 					class="absolute right-0 top-full mt-1 w-48 bg-slate-800 border border-slate-700 rounded-md shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 overflow-hidden transform origin-top-right">
 					<button
 						class="view-mode-option w-full flex items-center gap-3 px-4 py-2.5 text-xs text-slate-300 hover:bg-primary/20 hover:text-white transition-colors text-left"
-						data-mode="rgb">
+						data-mode="rgb"
+						onclick="document.activeElement.blur(); this.closest('div.absolute').classList.add('hidden'); setTimeout(()=>this.closest('div.absolute').classList.remove('hidden'), 50);">
 						<span class="text-base">📸</span> Gerçekçi (RGB)
 					</button>
 					<button
 						class="view-mode-option w-full flex items-center gap-3 px-4 py-2.5 text-xs text-slate-300 hover:bg-primary/20 hover:text-white transition-colors text-left"
-						data-mode="solid">
+						data-mode="solid"
+						onclick="document.activeElement.blur(); this.closest('div.absolute').classList.add('hidden'); setTimeout(()=>this.closest('div.absolute').classList.remove('hidden'), 50);">
 						<span class="text-base">🧊</span> Katı Gövde (Solid)
 					</button>
 
