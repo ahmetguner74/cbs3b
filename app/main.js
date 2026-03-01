@@ -2001,6 +2001,21 @@ function setActiveTool(toolId) {
 		if (isMobile && typeof closeToolPanel === 'function') closeToolPanel();
 	}
 
+	// Toggle butonunda aktif araç ikonunu göster
+	var toolIcons = { 'btnDistance': 'straighten', 'btnArea': 'pentagon', 'btnHeight': 'height', 'btnCoord': 'location_on' };
+	var toggleIcon = document.getElementById('toolToggleIcon');
+	if (toggleIcon) {
+		if (activeTool && toolIcons[activeTool]) {
+			toggleIcon.textContent = toolIcons[activeTool];
+			toggleIcon.style.color = '#14B8A6';
+			toggleIcon.style.fontSize = '20px';
+		} else {
+			toggleIcon.textContent = 'chevron_right';
+			toggleIcon.style.color = '';
+			toggleIcon.style.fontSize = '16px';
+		}
+	}
+
 	var msg = {
 		'btnDistance': 'Mesafe: İlk noktayı tıklayın. <i>(Sağ tık = bitir)</i>',
 		'btnArea': 'Alan: Köşe noktalarını tıklayın. <i>(Sağ tık = kapat)</i>',
