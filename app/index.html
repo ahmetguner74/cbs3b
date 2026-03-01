@@ -215,8 +215,8 @@
 			position: absolute;
 			top: 70px;
 			/* Panellerle hizalı */
-			right: 300px;
-			/* Sağ panelle çakışmaması için boşluk bırakıldı */
+			right: 360px;
+			/* Sağ panelle çakışmaması için boşluk bırakıldı (Biraz daha sola alındı) */
 			z-index: 1000;
 		}
 
@@ -226,8 +226,8 @@
 			box-shadow: 0 4px 12px var(--shadow) !important;
 			backdrop-filter: blur(8px) !important;
 			border-radius: 8px !important;
-			width: 36px !important;
-			height: 36px !important;
+			width: 32px !important;
+			height: 32px !important;
 			fill: var(--text-secondary) !important;
 			transition: background 0.2s, border-color 0.2s, fill 0.2s, transform 0.2s !important;
 		}
@@ -675,6 +675,11 @@
 
 			#toolPanel .flex.flex-col.pl-4 {
 				height: calc(100dvh - 120px) !important;
+			}
+
+			.cesium-viewer-toolbar {
+				right: 60px !important;
+				/* Mobilde çok solda kalmaması için sağa yaklaştırıldı */
 			}
 		}
 	</style>
