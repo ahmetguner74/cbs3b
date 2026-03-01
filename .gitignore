@@ -1,0 +1,23 @@
+# 3D Tileset verileri (çok büyük)
+Scene/
+
+# CesiumJS kütüphanesi (CDN veya npm ile yüklenir)
+app/Cesium/
+
+# Sistem dosyaları
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Skills (geliştirme araçları)
+skills/
+
+# Gemini/AI ayarları
+.gemini/
+.agents/

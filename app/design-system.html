@@ -1,0 +1,1169 @@
+<!DOCTYPE html>
+<html lang="tr" class="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CBS — Design System</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"
+        rel="stylesheet">
+    <style>
+        :root {
+            /* ── PRIMARY — Blue ── */
+            --primary-50: #eff6ff;
+            --primary-100: #dbeafe;
+            --primary-200: #bfdbfe;
+            --primary-300: #93c5fd;
+            --primary-400: #60a5fa;
+            --primary-500: #3B82F6;
+            --primary-600: #2563eb;
+            --primary-700: #1d4ed8;
+            --primary-800: #1e40af;
+            --primary-900: #1e3a8a;
+            /* ── ACCENT — Green ── */
+            --accent-300: #86efac;
+            --accent-400: #4ADE80;
+            --accent-500: #22c55e;
+            --accent-600: #16a34a;
+            /* ── SEMANTIC ── */
+            --success: #34d399;
+            --warning: #fbbf24;
+            --error: #f87171;
+            --info: #60a5fa;
+        }
+
+        html.dark {
+            --bg-app: #0b0f19;
+            --bg-surface: #111827;
+            --bg-elevated: #1e293b;
+            --bg-hover: #334155;
+            --border: #334155;
+            --border-subtle: #1e293b;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --shadow-color: rgba(0, 0, 0, .5);
+        }
+
+        html.light {
+            --bg-app: #f8fafc;
+            --bg-surface: #ffffff;
+            --bg-elevated: #f1f5f9;
+            --bg-hover: #e2e8f0;
+            --border: #cbd5e1;
+            --border-subtle: #e2e8f0;
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --text-muted: #94a3b8;
+            --shadow-color: rgba(0, 0, 0, .08);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: var(--bg-app);
+            color: var(--text-primary);
+            line-height: 1.6;
+            transition: background .3s, color .3s;
+        }
+
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        a {
+            color: var(--primary-400);
+            text-decoration: none;
+        }
+
+        /* ── LAYOUT ── */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+        }
+
+        .grid-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 1rem;
+        }
+
+        .grid-4 {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1rem;
+        }
+
+        .flex {
+            display: flex;
+            align-items: center;
+            gap: .5rem;
+        }
+
+        .flex-wrap {
+            flex-wrap: wrap;
+        }
+
+        .gap-1 {
+            gap: 1rem;
+        }
+
+        /* ── SECTION ── */
+        .section {
+            margin-bottom: 3rem;
+        }
+
+        .section-title {
+            font-size: 1.5rem;
+            font-weight: 800;
+            letter-spacing: -.02em;
+            margin-bottom: .25rem;
+            background: linear-gradient(135deg, var(--primary-400), var(--accent-400));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .section-desc {
+            font-size: .875rem;
+            color: var(--text-muted);
+            margin-bottom: 1.5rem;
+        }
+
+        hr {
+            border: none;
+            border-top: 1px solid var(--border-subtle);
+            margin: 3rem 0;
+        }
+
+        /* ── CARD ── */
+        .card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            padding: 1.5rem;
+            transition: all .2s;
+        }
+
+        .card:hover {
+            border-color: var(--border);
+            box-shadow: 0 8px 32px var(--shadow-color);
+        }
+
+        .card-title {
+            font-size: .75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .08em;
+            color: var(--text-muted);
+            margin-bottom: 1rem;
+        }
+
+        /* ── SWATCH ── */
+        .swatch-row {
+            display: flex;
+            gap: .5rem;
+            margin-bottom: .75rem;
+        }
+
+        .swatch {
+            width: 48px;
+            height: 48px;
+            border-radius: 10px;
+            position: relative;
+            cursor: pointer;
+            transition: transform .15s;
+            border: 2px solid transparent;
+        }
+
+        .swatch:hover {
+            transform: scale(1.15);
+            border-color: var(--text-primary);
+        }
+
+        .swatch span {
+            position: absolute;
+            bottom: -18px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 9px;
+            color: var(--text-muted);
+            white-space: nowrap;
+        }
+
+        .swatch-lg {
+            width: 64px;
+            height: 64px;
+            border-radius: 12px;
+        }
+
+        /* ── BUTTONS ── */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: .5rem;
+            padding: .625rem 1.25rem;
+            border-radius: 8px;
+            font-size: .8125rem;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            transition: all .2s;
+            font-family: inherit;
+        }
+
+        .btn-sm {
+            padding: .375rem .75rem;
+            font-size: .75rem;
+            border-radius: 6px;
+        }
+
+        .btn-lg {
+            padding: .75rem 1.75rem;
+            font-size: .9375rem;
+            border-radius: 10px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary-500), var(--primary-600));
+            color: #fff;
+            box-shadow: 0 2px 12px rgba(59, 130, 246, .3);
+        }
+
+        .btn-primary:hover {
+            box-shadow: 0 4px 20px rgba(59, 130, 246, .5);
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            background: var(--bg-elevated);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            background: var(--bg-hover);
+        }
+
+        .btn-ghost {
+            background: transparent;
+            color: var(--text-secondary);
+        }
+
+        .btn-ghost:hover {
+            background: var(--bg-elevated);
+            color: var(--text-primary);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: #fff;
+            box-shadow: 0 2px 12px rgba(239, 68, 68, .3);
+        }
+
+        .btn-accent {
+            background: linear-gradient(135deg, var(--accent-500), var(--accent-600));
+            color: #fff;
+            box-shadow: 0 2px 12px rgba(74, 222, 128, .3);
+        }
+
+        .btn-icon {
+            width: 36px;
+            height: 36px;
+            padding: 0;
+            border-radius: 8px;
+        }
+
+        .btn-icon.sm {
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+        }
+
+        .btn-pill {
+            border-radius: 999px;
+        }
+
+        /* ── INPUTS ── */
+        .input {
+            width: 100%;
+            padding: .625rem .875rem;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: .8125rem;
+            font-family: inherit;
+            transition: all .2s;
+            outline: none;
+        }
+
+        .input:focus {
+            border-color: var(--primary-500);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, .15);
+        }
+
+        .input::placeholder {
+            color: var(--text-muted);
+        }
+
+        .input-group {
+            position: relative;
+        }
+
+        .input-group .icon {
+            position: absolute;
+            left: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+            font-size: 18px;
+        }
+
+        .input-group .input {
+            padding-left: 36px;
+        }
+
+        .label {
+            display: block;
+            font-size: .75rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: .375rem;
+        }
+
+        select.input {
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            padding-right: 32px;
+        }
+
+        /* ── TOGGLE ── */
+        .toggle {
+            width: 40px;
+            height: 22px;
+            background: var(--bg-hover);
+            border-radius: 11px;
+            position: relative;
+            cursor: pointer;
+            transition: background .2s;
+            border: none;
+        }
+
+        .toggle::after {
+            content: '';
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #fff;
+            top: 3px;
+            left: 3px;
+            transition: transform .2s;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, .2);
+        }
+
+        .toggle.on {
+            background: var(--primary-500);
+        }
+
+        .toggle.on::after {
+            transform: translateX(18px);
+        }
+
+        /* ── BADGE ── */
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: .25rem;
+            padding: .125rem .5rem;
+            border-radius: 6px;
+            font-size: .6875rem;
+            font-weight: 600;
+        }
+
+        .badge-primary {
+            background: rgba(59, 130, 246, .15);
+            color: var(--primary-400);
+        }
+
+        .badge-success {
+            background: rgba(52, 211, 153, .15);
+            color: var(--success);
+        }
+
+        .badge-warning {
+            background: rgba(251, 191, 36, .15);
+            color: var(--warning);
+        }
+
+        .badge-error {
+            background: rgba(248, 113, 113, .15);
+            color: var(--error);
+        }
+
+        /* ── MODAL ── */
+        .modal-demo {
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            max-width: 420px;
+            box-shadow: 0 24px 64px var(--shadow-color);
+        }
+
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+        }
+
+        .modal-title {
+            font-size: 1rem;
+            font-weight: 700;
+        }
+
+        /* ── TOOLBAR ── */
+        .toolbar-demo {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            padding: 8px;
+            width: 56px;
+        }
+
+        .tool-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            border: none;
+            background: transparent;
+            color: var(--text-muted);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all .15s;
+            font-size: 20px;
+        }
+
+        .tool-btn:hover {
+            background: var(--bg-elevated);
+            color: var(--text-primary);
+        }
+
+        .tool-btn.active {
+            background: rgba(59, 130, 246, .15);
+            color: var(--primary-400);
+        }
+
+        /* ── MEASUREMENT LIST ── */
+        .mlist-item {
+            display: flex;
+            align-items: center;
+            gap: .5rem;
+            padding: .5rem .625rem;
+            border-radius: 8px;
+            border: 1px solid var(--border-subtle);
+            background: var(--bg-surface);
+            font-size: .75rem;
+            margin-bottom: 4px;
+            transition: all .15s;
+            cursor: pointer;
+        }
+
+        .mlist-item:hover {
+            border-color: var(--primary-500);
+            background: rgba(59, 130, 246, .05);
+        }
+
+        .mlist-icon {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        /* ── HEADER ── */
+        .header-demo {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: .75rem 1rem;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+        }
+
+        .logo-text {
+            font-size: .875rem;
+            font-weight: 800;
+            letter-spacing: -.01em;
+        }
+
+        .tab {
+            padding: .375rem .75rem;
+            border-radius: 6px;
+            font-size: .75rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: all .15s;
+            border: none;
+            background: transparent;
+            font-family: inherit;
+        }
+
+        .tab:hover {
+            color: var(--text-primary);
+            background: var(--bg-elevated);
+        }
+
+        .tab.active {
+            color: var(--primary-400);
+            background: rgba(59, 130, 246, .1);
+        }
+
+        /* ── THEME TOGGLE (FLOATING) ── */
+        #themeToggle {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            z-index: 100;
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            background: var(--bg-surface);
+            color: var(--text-primary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            transition: all .2s;
+            box-shadow: 0 4px 16px var(--shadow-color);
+        }
+
+        #themeToggle:hover {
+            transform: scale(1.08);
+        }
+
+        /* ── TYPOGRAPHY ── */
+        .typo-row {
+            display: flex;
+            align-items: baseline;
+            gap: 1rem;
+            padding: .75rem 0;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .typo-label {
+            width: 120px;
+            flex-shrink: 0;
+            font-size: .6875rem;
+            color: var(--text-muted);
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: .06em;
+        }
+
+        /* ── TOAST ── */
+        .toast-demo {
+            display: flex;
+            align-items: center;
+            gap: .625rem;
+            padding: .625rem 1rem;
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            box-shadow: 0 8px 32px var(--shadow-color);
+            font-size: .8125rem;
+        }
+
+        /* ── GLASSMORPHISM ── */
+        .glass {
+            background: rgba(17, 24, 39, .6);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, .08);
+        }
+
+        html.light .glass {
+            background: rgba(255, 255, 255, .7);
+            border-color: rgba(0, 0, 0, .08);
+        }
+
+        /* ── ANIMATIONS ── */
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(8px)
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0)
+            }
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1
+            }
+
+            50% {
+                opacity: .5
+            }
+        }
+
+        @keyframes shimmer {
+            0% {
+                background-position: -200% 0
+            }
+
+            100% {
+                background-position: 200% 0
+            }
+        }
+
+        .animate-fade {
+            animation: fadeIn .4s ease-out;
+        }
+
+        @media(max-width:768px) {
+
+            .grid-2,
+            .grid-3,
+            .grid-4 {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <button id="themeToggle" onclick="toggleTheme()">
+        <span class="material-symbols-outlined" id="themeIcon">dark_mode</span>
+    </button>
+
+    <div class="container">
+
+        <!-- HERO -->
+        <div style="text-align:center;padding:3rem 0 2rem">
+            <div
+                style="font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.15em;color:var(--primary-500);margin-bottom:.5rem">
+                DESIGN SYSTEM v1.0</div>
+            <h1
+                style="font-size:2.5rem;font-weight:900;letter-spacing:-.03em;background:linear-gradient(135deg,var(--accent-400),var(--primary-400));-webkit-background-clip:text;-webkit-text-fill-color:transparent">
+                CBS 3D</h1>
+            <p style="font-size:1rem;color:var(--text-muted);max-width:500px;margin:.75rem auto 0">Bursa Büyükşehir
+                Belediyesi — 3D Şehir Modeli Uygulaması<br>Premium UI Tasarım Yol Haritası</p>
+        </div>
+
+        <hr>
+
+        <!-- 1. COLORS -->
+        <div class="section">
+            <div class="section-title">🎨 Renk Paleti</div>
+            <div class="section-desc">Tüm bileşenlerde kullanılan ana renk sistemi. Her renk açık/koyu tema ile
+                uyumludur.</div>
+            <div class="grid-2">
+                <div class="card">
+                    <div class="card-title">Primary — Blue</div>
+                    <div class="swatch-row">
+                        <div class="swatch" style="background:#eff6ff"><span>50</span></div>
+                        <div class="swatch" style="background:#dbeafe"><span>100</span></div>
+                        <div class="swatch" style="background:#bfdbfe"><span>200</span></div>
+                        <div class="swatch" style="background:#93c5fd"><span>300</span></div>
+                        <div class="swatch" style="background:#60a5fa"><span>400</span></div>
+                        <div class="swatch" style="background:#3B82F6"><span>500</span></div>
+                        <div class="swatch" style="background:#2563eb"><span>600</span></div>
+                        <div class="swatch" style="background:#1d4ed8"><span>700</span></div>
+                        <div class="swatch" style="background:#1e40af"><span>800</span></div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Accent — Green</div>
+                    <div class="swatch-row">
+                        <div class="swatch" style="background:#f0fdf4"><span>50</span></div>
+                        <div class="swatch" style="background:#dcfce7"><span>100</span></div>
+                        <div class="swatch" style="background:#bbf7d0"><span>200</span></div>
+                        <div class="swatch" style="background:#86efac"><span>300</span></div>
+                        <div class="swatch" style="background:#4ADE80"><span>400</span></div>
+                        <div class="swatch" style="background:#22c55e"><span>500</span></div>
+                        <div class="swatch" style="background:#16a34a"><span>600</span></div>
+                        <div class="swatch" style="background:#15803d"><span>700</span></div>
+                        <div class="swatch" style="background:#166534"><span>800</span></div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Semantic</div>
+                    <div class="flex gap-1" style="gap:1rem">
+                        <div style="text-align:center">
+                            <div class="swatch swatch-lg" style="background:var(--success)"></div><br><span
+                                style="font-size:10px;color:var(--text-muted)">Success</span>
+                        </div>
+                        <div style="text-align:center">
+                            <div class="swatch swatch-lg" style="background:var(--warning)"></div><br><span
+                                style="font-size:10px;color:var(--text-muted)">Warning</span>
+                        </div>
+                        <div style="text-align:center">
+                            <div class="swatch swatch-lg" style="background:var(--error)"></div><br><span
+                                style="font-size:10px;color:var(--text-muted)">Error</span>
+                        </div>
+                        <div style="text-align:center">
+                            <div class="swatch swatch-lg" style="background:var(--info)"></div><br><span
+                                style="font-size:10px;color:var(--text-muted)">Info</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Surfaces (Tema Bağımlı)</div>
+                    <div class="flex gap-1" style="gap:1rem">
+                        <div style="text-align:center">
+                            <div class="swatch swatch-lg"
+                                style="background:var(--bg-app);border:1px solid var(--border)"></div><br><span
+                                style="font-size:10px;color:var(--text-muted)">App</span>
+                        </div>
+                        <div style="text-align:center">
+                            <div class="swatch swatch-lg"
+                                style="background:var(--bg-surface);border:1px solid var(--border)"></div><br><span
+                                style="font-size:10px;color:var(--text-muted)">Surface</span>
+                        </div>
+                        <div style="text-align:center">
+                            <div class="swatch swatch-lg"
+                                style="background:var(--bg-elevated);border:1px solid var(--border)"></div><br><span
+                                style="font-size:10px;color:var(--text-muted)">Elevated</span>
+                        </div>
+                        <div style="text-align:center">
+                            <div class="swatch swatch-lg"
+                                style="background:var(--bg-hover);border:1px solid var(--border)"></div><br><span
+                                style="font-size:10px;color:var(--text-muted)">Hover</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <hr>
+
+        <!-- 2. TYPOGRAPHY -->
+        <div class="section">
+            <div class="section-title">Aa Tipografi</div>
+            <div class="section-desc">Inter — UI metinleri · JetBrains Mono — Koordinat ve değerler</div>
+            <div class="card">
+                <div class="typo-row"><span class="typo-label">Display</span><span
+                        style="font-size:2rem;font-weight:900;letter-spacing:-.03em">Bursa 3D Şehir</span></div>
+                <div class="typo-row"><span class="typo-label">Heading 1</span><span
+                        style="font-size:1.5rem;font-weight:800;letter-spacing:-.02em">Ölçüm & Analiz</span></div>
+                <div class="typo-row"><span class="typo-label">Heading 2</span><span
+                        style="font-size:1.125rem;font-weight:700">Grup Başlığı</span></div>
+                <div class="typo-row"><span class="typo-label">Body</span><span
+                        style="font-size:.875rem;font-weight:400">Harita üzerinde mesafe, alan ve yükseklik ölçümlerini
+                        gerçekleştirin.</span></div>
+                <div class="typo-row"><span class="typo-label">Small</span><span
+                        style="font-size:.75rem;font-weight:500;color:var(--text-secondary)">Son güncelleme:
+                        01.03.2026</span></div>
+                <div class="typo-row"><span class="typo-label">Caption</span><span
+                        style="font-size:.6875rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted)">REFERANS
+                        GRUBU</span></div>
+                <div class="typo-row"><span class="typo-label">Mono</span><span class="mono"
+                        style="font-size:.8125rem;color:var(--primary-400)">40.1933° N, 29.0612° E — Z: 98.45m</span>
+                </div>
+            </div>
+        </div>
+
+        <hr>
+
+        <!-- 3. BUTTONS -->
+        <div class="section">
+            <div class="section-title">🔘 Butonlar</div>
+            <div class="section-desc">Tüm buton varyasyonları ve boyutları</div>
+            <div class="grid-2">
+                <div class="card">
+                    <div class="card-title">Variants</div>
+                    <div class="flex flex-wrap gap-1" style="gap:.75rem">
+                        <button class="btn btn-primary">Primary</button>
+                        <button class="btn btn-accent">Accent</button>
+                        <button class="btn btn-secondary">Secondary</button>
+                        <button class="btn btn-ghost">Ghost</button>
+                        <button class="btn btn-danger">Danger</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Sizes</div>
+                    <div class="flex flex-wrap" style="gap:.75rem;align-items:center">
+                        <button class="btn btn-primary btn-sm">Small</button>
+                        <button class="btn btn-primary">Default</button>
+                        <button class="btn btn-primary btn-lg">Large</button>
+                        <button class="btn btn-primary btn-pill">Pill Shape</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Icon Buttons</div>
+                    <div class="flex" style="gap:.5rem">
+                        <button class="btn btn-icon btn-primary"><span class="material-symbols-outlined"
+                                style="font-size:18px">add</span></button>
+                        <button class="btn btn-icon btn-secondary"><span class="material-symbols-outlined"
+                                style="font-size:18px">edit</span></button>
+                        <button class="btn btn-icon btn-ghost"><span class="material-symbols-outlined"
+                                style="font-size:18px">delete</span></button>
+                        <button class="btn btn-icon btn-danger"><span class="material-symbols-outlined"
+                                style="font-size:18px">close</span></button>
+                        <button class="btn btn-icon sm btn-secondary"><span class="material-symbols-outlined"
+                                style="font-size:14px">visibility</span></button>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-title">With Icons</div>
+                    <div class="flex flex-wrap" style="gap:.75rem">
+                        <button class="btn btn-primary"><span class="material-symbols-outlined"
+                                style="font-size:16px">download</span> Dışa Aktar</button>
+                        <button class="btn btn-secondary"><span class="material-symbols-outlined"
+                                style="font-size:16px">upload</span> İçe Aktar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <hr>
+
+        <!-- 4. INPUTS -->
+        <div class="section">
+            <div class="section-title">📝 Form Elemanları</div>
+            <div class="grid-2">
+                <div class="card">
+                    <div class="card-title">Text Inputs</div>
+                    <div style="display:flex;flex-direction:column;gap:.75rem">
+                        <div><label class="label">Ölçüm Adı</label><input class="input" placeholder="Mesafe-1"></div>
+                        <div class="input-group"><span class="material-symbols-outlined icon">search</span><input
+                                class="input" placeholder="Ara..."></div>
+                        <div><label class="label">Koordinat Sistemi</label><select class="input">
+                                <option>EPSG:5254 — TM30</option>
+                                <option>WGS84</option>
+                            </select></div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Controls</div>
+                    <div style="display:flex;flex-direction:column;gap:1rem">
+                        <div class="flex" style="justify-content:space-between"><span style="font-size:.8125rem">Snap
+                                Modu</span><button class="toggle on" onclick="this.classList.toggle('on')"></button>
+                        </div>
+                        <div class="flex" style="justify-content:space-between"><span style="font-size:.8125rem">Arazi
+                                Göster</span><button class="toggle" onclick="this.classList.toggle('on')"></button>
+                        </div>
+                        <div><label class="label">Z Yükseklik Ofseti</label><input type="range"
+                                style="width:100%;accent-color:var(--primary-500)">
+                            <div class="flex" style="justify-content:space-between;margin-top:4px"><span
+                                    style="font-size:.6875rem;color:var(--text-muted)">-50m</span><span class="mono"
+                                    style="font-size:.75rem;color:var(--primary-400)">0m</span><span
+                                    style="font-size:.6875rem;color:var(--text-muted)">+50m</span></div>
+                        </div>
+                        <div><label class="label">Badges</label>
+                            <div class="flex flex-wrap" style="gap:.5rem"><span
+                                    class="badge badge-primary">Nokta</span><span
+                                    class="badge badge-success">Mesafe</span><span
+                                    class="badge badge-warning">Alan</span><span
+                                    class="badge badge-error">Yükseklik</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <hr>
+
+        <!-- 5. MODAL -->
+        <div class="section">
+            <div class="section-title">💬 Modal & Dialog</div>
+            <div class="grid-2">
+                <div class="card"
+                    style="display:flex;align-items:center;justify-content:center;min-height:280px;background:var(--bg-app)">
+                    <div class="modal-demo animate-fade">
+                        <div class="modal-header">
+                            <span class="modal-title">📐 Z-Offset Ayarla</span>
+                            <button class="btn btn-icon sm btn-ghost"><span class="material-symbols-outlined"
+                                    style="font-size:18px">close</span></button>
+                        </div>
+                        <p style="font-size:.8125rem;color:var(--text-secondary);margin-bottom:1rem">Model ort.
+                            yükseklik: <span class="mono" style="color:var(--primary-400)">98.45m</span></p>
+                        <div style="margin-bottom:1rem"><label class="label">Z Ofseti (metre)</label><input
+                                class="input" type="number" value="0"
+                                style="text-align:center;font-size:1.25rem;font-weight:700"></div>
+                        <div class="flex" style="justify-content:flex-end;gap:.5rem">
+                            <button class="btn btn-secondary btn-sm">Olduğu Gibi</button>
+                            <button class="btn btn-primary btn-sm">Uygula</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card"
+                    style="display:flex;align-items:center;justify-content:center;min-height:280px;background:var(--bg-app)">
+                    <div class="modal-demo animate-fade" style="max-width:360px">
+                        <div class="modal-header">
+                            <span class="modal-title">⚠️ Silme Onayı</span>
+                            <button class="btn btn-icon sm btn-ghost"><span class="material-symbols-outlined"
+                                    style="font-size:18px">close</span></button>
+                        </div>
+                        <p style="font-size:.8125rem;color:var(--text-secondary);margin-bottom:1.25rem">
+                            "<strong>REFERANS</strong>" grubunu ve içindeki <strong>12 ölçümü</strong> silmek
+                            istediğinize emin misiniz?</p>
+                        <div class="flex" style="justify-content:flex-end;gap:.5rem">
+                            <button class="btn btn-secondary btn-sm">İptal</button>
+                            <button class="btn btn-danger btn-sm"><span class="material-symbols-outlined"
+                                    style="font-size:14px">delete</span> Sil</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <hr>
+
+        <!-- 6. GIS COMPONENTS -->
+        <div class="section">
+            <div class="section-title">🗺️ GIS Bileşenleri</div>
+            <div class="section-desc">Uygulamaya özel araç çubuğu, ölçüm listesi ve header</div>
+            <div class="grid-3">
+                <div class="card" style="display:flex;justify-content:center">
+                    <div>
+                        <div class="card-title" style="text-align:center">Araç Çubuğu</div>
+                        <div class="toolbar-demo">
+                            <button class="tool-btn"><span class="material-symbols-outlined">navigation</span></button>
+                            <button class="tool-btn active"><span
+                                    class="material-symbols-outlined">pin_drop</span></button>
+                            <button class="tool-btn"><span class="material-symbols-outlined">straighten</span></button>
+                            <button class="tool-btn"><span class="material-symbols-outlined">square_foot</span></button>
+                            <button class="tool-btn"><span class="material-symbols-outlined">height</span></button>
+                            <div style="border-top:1px solid var(--border-subtle);margin:2px 0"></div>
+                            <button class="tool-btn"><span class="material-symbols-outlined">undo</span></button>
+                            <button class="tool-btn"><span class="material-symbols-outlined">delete</span></button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Ölçüm Listesi</div>
+                    <div
+                        style="font-size:.6875rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem;display:flex;align-items:center;gap:.375rem">
+                        <span class="material-symbols-outlined"
+                            style="font-size:14px;color:var(--primary-400)">folder_open</span> REFERANS
+                    </div>
+                    <div class="mlist-item">
+                        <div class="mlist-icon" style="background:var(--primary-400)"></div><span
+                            style="flex:1;font-weight:500">Nokta-1</span><span class="mono"
+                            style="font-size:.625rem;color:var(--text-muted)">40.19°</span>
+                    </div>
+                    <div class="mlist-item">
+                        <div class="mlist-icon" style="background:#fbbf24"></div><span
+                            style="flex:1;font-weight:500">Mesafe-3</span><span class="mono"
+                            style="font-size:.625rem;color:var(--text-muted)">24.8m</span>
+                    </div>
+                    <div class="mlist-item" style="border-color:var(--primary-500);background:rgba(59,130,246,.05)">
+                        <div class="mlist-icon" style="background:var(--success)"></div><span
+                            style="flex:1;font-weight:500;color:var(--primary-400)">Alan-1</span><span class="mono"
+                            style="font-size:.625rem;color:var(--primary-400)">156m²</span>
+                    </div>
+                    <div class="mlist-item">
+                        <div class="mlist-icon" style="background:#4ADE80"></div><span
+                            style="flex:1;font-weight:500">Yükseklik-2</span><span class="mono"
+                            style="font-size:.625rem;color:var(--text-muted)">12.3m</span>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Toast Bildirimleri</div>
+                    <div style="display:flex;flex-direction:column;gap:.75rem">
+                        <div class="toast-demo"><span style="font-size:1rem">✅</span><span>3 öğe başarıyla
+                                aktarıldı</span></div>
+                        <div class="toast-demo" style="border-color:var(--error)"><span
+                                style="font-size:1rem">❌</span><span style="color:var(--error)">Dosya okunamadı</span>
+                        </div>
+                        <div class="toast-demo" style="border-color:var(--warning)"><span
+                                style="font-size:1rem">⚠️</span><span>Z ofseti: +15m uygulandı</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <hr>
+
+        <!-- 7. HEADER -->
+        <div class="section">
+            <div class="section-title">📌 Header Bar</div>
+            <div class="card">
+                <div class="header-demo">
+                    <div class="flex" style="gap:.625rem">
+                        <div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center">
+                            <img src="cbs-logo.png" alt="CBS" width="24" height="24" style="object-fit:contain">
+                        </div>
+                        <span class="logo-text">CBS</span>
+                    </div>
+                    <div class="flex" style="gap:2px;margin-left:1.5rem">
+                        <button class="tab active">Harita</button>
+                        <button class="tab">Ölçümler</button>
+                        <button class="tab">Raporlar</button>
+                        <button class="tab">Ayarlar</button>
+                    </div>
+                    <div style="flex:1"></div>
+                    <div class="flex" style="gap:.5rem">
+                        <button class="btn btn-ghost btn-sm btn-pill"
+                            style="font-size:.625rem;text-transform:uppercase;letter-spacing:.08em">🌍 Dünya</button>
+                        <button class="btn btn-icon sm btn-ghost"><span class="material-symbols-outlined"
+                                style="font-size:16px">home</span></button>
+                        <button class="btn btn-icon sm btn-ghost"><span class="material-symbols-outlined"
+                                style="font-size:16px">fullscreen</span></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <hr>
+
+        <!-- 8. GLASSMORPHISM -->
+        <div class="section">
+            <div class="section-title">✨ Glassmorphism & Efektler</div>
+            <div class="card"
+                style="background:linear-gradient(135deg,var(--primary-800),var(--accent-600));min-height:200px;display:flex;align-items:center;justify-content:center;gap:2rem;flex-wrap:wrap">
+                <div class="glass" style="padding:1.25rem;border-radius:12px;width:220px;color:#f1f5f9">
+                    <div
+                        style="font-size:.6875rem;text-transform:uppercase;letter-spacing:.08em;opacity:.7;margin-bottom:.5rem">
+                        Koordinat</div>
+                    <div class="mono" style="font-size:1rem;font-weight:600">40.1933° N</div>
+                    <div class="mono" style="font-size:1rem;font-weight:600">29.0612° E</div>
+                    <div style="font-size:.75rem;opacity:.6;margin-top:.375rem">Z: 98.45m</div>
+                </div>
+                <div class="glass" style="padding:1.25rem;border-radius:12px;width:220px;color:#f1f5f9">
+                    <div
+                        style="font-size:.6875rem;text-transform:uppercase;letter-spacing:.08em;opacity:.7;margin-bottom:.5rem">
+                        Performans</div>
+                    <div style="font-size:2rem;font-weight:900">60 <span
+                            style="font-size:.875rem;font-weight:500;opacity:.7">FPS</span></div>
+                    <div class="flex" style="gap:.375rem;margin-top:.375rem">
+                        <div style="width:8px;height:8px;border-radius:50%;background:var(--success)"></div><span
+                            style="font-size:.75rem;opacity:.8">Yüksek Kalite</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <hr>
+
+        <!-- 9. SPACING & RADIUS -->
+        <div class="section">
+            <div class="section-title">📐 Spacing & Radius</div>
+            <div class="grid-2">
+                <div class="card">
+                    <div class="card-title">Border Radius</div>
+                    <div class="flex flex-wrap" style="gap:1rem">
+                        <div style="text-align:center">
+                            <div style="width:48px;height:48px;background:var(--primary-500);border-radius:4px"></div>
+                            <span style="font-size:10px;color:var(--text-muted);display:block;margin-top:4px">4px</span>
+                        </div>
+                        <div style="text-align:center">
+                            <div style="width:48px;height:48px;background:var(--primary-500);border-radius:6px"></div>
+                            <span style="font-size:10px;color:var(--text-muted);display:block;margin-top:4px">6px</span>
+                        </div>
+                        <div style="text-align:center">
+                            <div style="width:48px;height:48px;background:var(--primary-500);border-radius:8px"></div>
+                            <span style="font-size:10px;color:var(--text-muted);display:block;margin-top:4px">8px</span>
+                        </div>
+                        <div style="text-align:center">
+                            <div style="width:48px;height:48px;background:var(--primary-500);border-radius:12px"></div>
+                            <span
+                                style="font-size:10px;color:var(--text-muted);display:block;margin-top:4px">12px</span>
+                        </div>
+                        <div style="text-align:center">
+                            <div style="width:48px;height:48px;background:var(--primary-500);border-radius:16px"></div>
+                            <span
+                                style="font-size:10px;color:var(--text-muted);display:block;margin-top:4px">16px</span>
+                        </div>
+                        <div style="text-align:center">
+                            <div style="width:48px;height:48px;background:var(--primary-500);border-radius:999px"></div>
+                            <span
+                                style="font-size:10px;color:var(--text-muted);display:block;margin-top:4px">Full</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Spacing Scale</div>
+                    <div style="display:flex;flex-direction:column;gap:.5rem">
+                        <div class="flex"><span style="width:40px;font-size:.6875rem;color:var(--text-muted)">4px</span>
+                            <div style="height:12px;width:16px;background:var(--primary-500);border-radius:2px"></div>
+                        </div>
+                        <div class="flex"><span style="width:40px;font-size:.6875rem;color:var(--text-muted)">8px</span>
+                            <div style="height:12px;width:32px;background:var(--primary-500);border-radius:2px"></div>
+                        </div>
+                        <div class="flex"><span
+                                style="width:40px;font-size:.6875rem;color:var(--text-muted)">12px</span>
+                            <div style="height:12px;width:48px;background:var(--primary-500);border-radius:2px"></div>
+                        </div>
+                        <div class="flex"><span
+                                style="width:40px;font-size:.6875rem;color:var(--text-muted)">16px</span>
+                            <div style="height:12px;width:64px;background:var(--primary-500);border-radius:2px"></div>
+                        </div>
+                        <div class="flex"><span
+                                style="width:40px;font-size:.6875rem;color:var(--text-muted)">24px</span>
+                            <div style="height:12px;width:96px;background:var(--primary-500);border-radius:2px"></div>
+                        </div>
+                        <div class="flex"><span
+                                style="width:40px;font-size:.6875rem;color:var(--text-muted)">32px</span>
+                            <div style="height:12px;width:128px;background:var(--primary-500);border-radius:2px"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <hr>
+
+        <!-- FOOTER -->
+        <div style="text-align:center;padding:2rem 0;color:var(--text-muted);font-size:.75rem">
+            <div style="margin-bottom:.375rem">CBS Design System v1.0 — Bursa Büyükşehir Belediyesi</div>
+            <div>2026 · Açık & Koyu Tema Uyumlu</div>
+        </div>
+
+    </div>
+
+    <script>
+        function toggleTheme() {
+            var html = document.documentElement;
+            var icon = document.getElementById('themeIcon');
+            if (html.classList.contains('dark')) {
+                html.classList.remove('dark');
+                html.classList.add('light');
+                icon.textContent = 'light_mode';
+            } else {
+                html.classList.remove('light');
+                html.classList.add('dark');
+                icon.textContent = 'dark_mode';
+            }
+        }
+    </script>
+</body>
+
+</html>

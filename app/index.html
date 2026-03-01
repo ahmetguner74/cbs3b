@@ -1,0 +1,1112 @@
+<!DOCTYPE html>
+<html lang="tr" class="dark">
+
+<head>
+	<meta charset="utf-8">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+	<title>CBS — 3D Şehir Modeli</title>
+
+	<script src="Cesium/Cesium.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.15.0/proj4.js"></script>
+	<style>
+		@import url(Cesium/Widgets/widgets.css);
+	</style>
+
+	<!-- Tailwind CSS -->
+	<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+		rel="stylesheet" />
+	<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap"
+		rel="stylesheet" />
+	<link
+		href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap"
+		rel="stylesheet" />
+
+	<script id="tailwind-config">
+		tailwind.config = {
+			darkMode: "class",
+			theme: {
+				extend: {
+					colors: {
+						"primary": "#3B82F6",
+						"primary-hover": "#60A5FA",
+						"accent": "#4ADE80",
+						"accent-hover": "#86EFAC",
+						"background-light": "#f8fafc",
+						"background-dark": "#0b0f19",
+						"panel-bg": "#111827",
+						"panel-elevated": "#1e293b",
+						"border-dark": "#334155",
+						"border-subtle": "#1e293b"
+					},
+					keyframes: {
+						shake: {
+							'0%, 100%': { transform: 'translateX(0)' },
+							'25%': { transform: 'translateX(-4px)' },
+							'50%': { transform: 'translateX(4px)' },
+							'75%': { transform: 'translateX(-4px)' },
+						},
+						fadeIn: {
+							'from': { opacity: '0', transform: 'translateY(8px)' },
+							'to': { opacity: '1', transform: 'translateY(0)' },
+						}
+					},
+					animation: {
+						shake: 'shake 0.3s ease-in-out',
+						fadeIn: 'fadeIn 0.3s ease-out',
+					},
+					fontFamily: {
+						"display": ["Inter", "system-ui", "sans-serif"],
+						"mono": ["JetBrains Mono", "monospace"]
+					},
+					borderRadius: { "DEFAULT": "0.375rem", "lg": "0.625rem", "xl": "0.875rem", "2xl": "1rem", "full": "9999px" },
+				},
+			},
+		}
+	</script>
+
+	<style>
+		/* ── THEME CSS VARIABLES ── */
+		html.dark {
+			--bg-app: #0b0f19;
+			--bg-surface: #111827;
+			--bg-elevated: #1e293b;
+			--bg-hover: #334155;
+			--border: #334155;
+			--border-subtle: #1e293b;
+			--text-primary: #f1f5f9;
+			--text-secondary: #94a3b8;
+			--text-muted: #64748b;
+			--glass-bg: rgba(17, 24, 39, 0.75);
+			--glass-border: rgba(255, 255, 255, 0.06);
+			--shadow: rgba(0, 0, 0, 0.5);
+		}
+
+		html.light {
+			--bg-app: #f8fafc;
+			--bg-surface: #ffffff;
+			--bg-elevated: #f1f5f9;
+			--bg-hover: #e2e8f0;
+			--border: #cbd5e1;
+			--border-subtle: #e2e8f0;
+			--text-primary: #0f172a;
+			--text-secondary: #475569;
+			--text-muted: #94a3b8;
+			--glass-bg: rgba(255, 255, 255, 0.8);
+			--glass-border: rgba(0, 0, 0, 0.06);
+			--shadow: rgba(0, 0, 0, 0.08);
+		}
+
+		.tabular-nums {
+			font-variant-numeric: tabular-nums;
+		}
+
+		.hide-scrollbar::-webkit-scrollbar {
+			display: none;
+		}
+
+		.hide-scrollbar {
+			-ms-overflow-style: none;
+			scrollbar-width: none;
+		}
+
+		body {
+			min-height: 100vh;
+		}
+
+		.font-mono {
+			font-family: 'JetBrains Mono', monospace !important;
+		}
+
+		/* ── GLASS EFFECT ── */
+		.glass-panel {
+			background: var(--glass-bg);
+			backdrop-filter: blur(12px);
+			-webkit-backdrop-filter: blur(12px);
+			border: 1px solid var(--glass-border);
+			box-shadow: 0 8px 32px var(--shadow);
+		}
+
+		/* ─── CESIUM WIDGETS (HOME BUTTON) ─── */
+		.cesium-viewer-toolbar {
+			position: absolute;
+			top: 70px;
+			/* Panellerle hizalı */
+			right: 300px;
+			/* Sağ panelle çakışmaması için boşluk bırakıldı */
+			z-index: 1000;
+		}
+
+		.cesium-button {
+			background: var(--glass-bg) !important;
+			border: 1px solid var(--glass-border) !important;
+			box-shadow: 0 4px 12px var(--shadow) !important;
+			backdrop-filter: blur(8px) !important;
+			border-radius: 8px !important;
+			width: 36px !important;
+			height: 36px !important;
+			fill: var(--text-secondary) !important;
+			transition: background 0.2s, border-color 0.2s, fill 0.2s, transform 0.2s !important;
+		}
+
+		.cesium-button:hover {
+			background: var(--bg-hover) !important;
+			border-color: var(--border) !important;
+			transform: translateY(-1px) !important;
+			box-shadow: 0 6px 16px var(--shadow) !important;
+			fill: #3B82F6 !important;
+		}
+
+		/* ─── CESIUM WIDGETS (FULLSCREEN BUTTON) ─── */
+		.cesium-viewer-fullscreenContainer {
+			position: relative !important;
+			width: 36px !important;
+			height: 36px !important;
+			z-index: 1000 !important;
+			display: flex !important;
+			align-items: center !important;
+			justify-content: center !important;
+		}
+
+		.cesium-viewer-fullscreenContainer .cesium-button {
+			background: transparent !important;
+			border: none !important;
+			box-shadow: none !important;
+			backdrop-filter: none !important;
+			border-radius: 0 !important;
+			width: 100% !important;
+			height: 100% !important;
+			fill: #94a3b8 !important;
+			/* text-slate-400 */
+			transition: all 0.2s ease !important;
+			display: flex !important;
+			align-items: center !important;
+			justify-content: center !important;
+		}
+
+		.cesium-viewer-fullscreenContainer .cesium-button:hover {
+			background: transparent !important;
+			border-color: transparent !important;
+			transform: none !important;
+			box-shadow: none !important;
+			fill: #ffffff !important;
+		}
+
+		.cesium-viewer-bottom,
+		.cesium-widget-credits,
+		.cesium-home-button {
+			display: none !important;
+		}
+
+		/* Tool active state overrides */
+		.tool-btn.active {
+			background-color: #3B82F6 !important;
+			color: #ffffff !important;
+			border-color: #3B82F6 !important;
+			box-shadow: 0 2px 8px rgba(59, 130, 246, 0.35) !important;
+		}
+
+		/* Map fixes */
+		#cesiumContainer {
+			width: 100%;
+			height: 100%;
+			overflow: hidden;
+			position: absolute;
+			top: 0;
+			left: 0;
+			z-index: 0;
+		}
+
+		.m-row.selected {
+			border-color: #3B82F6;
+			background: rgba(59, 130, 246, 0.1);
+		}
+
+		/* Folder Styles */
+		.folder-header {
+			display: flex;
+			align-items: center;
+			gap: 0.5rem;
+			padding: 0.5rem;
+			background-color: var(--bg-elevated);
+			border: 1px solid var(--border-subtle);
+			border-radius: 8px;
+			cursor: pointer;
+			transition: background-color 0.2s, border-color 0.2s;
+			margin-bottom: 0.25rem;
+		}
+
+		.folder-header:hover {
+			background-color: var(--bg-hover);
+		}
+
+		.folder-header.active {
+			border-color: #3B82F6;
+			box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.2);
+			background-color: rgba(59, 130, 246, 0.08);
+		}
+
+		.folder-content {
+			padding-left: 1rem;
+			border-left: 1px solid var(--border-subtle);
+			margin-left: 0.5rem;
+			margin-top: 0.25rem;
+			margin-bottom: 0.25rem;
+		}
+
+		.folder-collapsed .folder-content {
+			display: none;
+		}
+
+		.folder-collapsed .folder-arrow {
+			transform: rotate(-90deg);
+		}
+
+		.folder-arrow {
+			transition: transform 0.2s;
+			color: var(--text-muted);
+		}
+
+		/* ── LIGHT THEME OVERRIDES ── */
+		html.light body {
+			background: var(--bg-app);
+			color: var(--text-primary);
+		}
+
+		html.light header {
+			background: #ffffff !important;
+			border-bottom-color: var(--border-subtle) !important;
+			box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+		}
+
+		html.light .bg-slate-900 {
+			background: var(--bg-surface) !important;
+		}
+
+		html.light .bg-slate-900\/50 {
+			background: var(--bg-elevated) !important;
+		}
+
+		html.light header h1 {
+			color: #0f172a !important;
+		}
+
+		html.light header p {
+			color: #3B82F6 !important;
+		}
+
+		html.light header button {
+			color: #475569 !important;
+		}
+
+		html.light .text-slate-100 {
+			color: #0f172a !important;
+		}
+
+		html.light header button:hover {
+			color: #0f172a !important;
+		}
+
+		html.light header .text-slate-100 {
+			color: #0f172a !important;
+		}
+
+		html.light header .text-slate-300 {
+			color: #475569 !important;
+		}
+
+		html.light header .text-slate-400 {
+			color: #64748b !important;
+		}
+
+		html.light header .text-slate-500 {
+			color: #94a3b8 !important;
+		}
+
+		html.light .glass-panel {
+			background: var(--glass-bg);
+			border-color: var(--glass-border);
+			box-shadow: 0 4px 24px var(--shadow);
+		}
+
+		html.light #cesiumContainer {
+			filter: brightness(1.05);
+		}
+
+		html.light .cesium-button {
+			fill: var(--text-secondary) !important;
+		}
+
+		html.light .cesium-button:hover {
+			fill: #3B82F6 !important;
+		}
+
+		/* Light: Tool Panel */
+		html.light .tool-btn {
+			color: #475569 !important;
+		}
+
+		html.light .tool-btn:hover {
+			background: var(--bg-elevated) !important;
+			color: #0f172a !important;
+		}
+
+		html.light .tool-btn.active {
+			color: #ffffff !important;
+			background: #3B82F6 !important;
+			border-color: #3B82F6 !important;
+			box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3) !important;
+		}
+
+		html.light .text-slate-400 {
+			color: var(--text-secondary);
+		}
+
+		html.light .text-slate-500 {
+			color: var(--text-muted);
+		}
+
+		/* Light: Right Panel */
+		html.light .text-slate-300 {
+			color: var(--text-secondary);
+		}
+
+		html.light #measureList .m-row {
+			border-color: var(--border-subtle);
+		}
+
+		html.light .border-border-subtle {
+			border-color: var(--border-subtle) !important;
+		}
+
+		/* Light: Dropdowns */
+		html.light .bg-slate-800 {
+			background: var(--bg-surface) !important;
+		}
+
+		html.light .border-slate-700 {
+			border-color: var(--border) !important;
+		}
+
+		html.light .bg-slate-900\/50 {
+			background: var(--bg-elevated) !important;
+		}
+
+		html.light .hover\:bg-slate-700:hover {
+			background: var(--bg-hover) !important;
+		}
+
+		/* Light: Dropdown menu items */
+		html.light .camera-angle-btn,
+		html.light .camera-proj-btn,
+		html.light .view-mode-option {
+			color: #334155 !important;
+		}
+
+		html.light .camera-angle-btn:hover,
+		html.light .camera-proj-btn:hover,
+		html.light .view-mode-option:hover {
+			background: rgba(59, 130, 246, 0.1) !important;
+			color: #1e293b !important;
+		}
+
+		html.light .border-slate-700\/50 {
+			border-color: #e2e8f0 !important;
+		}
+
+		html.light .border-slate-600 {
+			border-color: #cbd5e1 !important;
+		}
+
+		html.light .hover\:text-white:hover {
+			color: #0f172a !important;
+		}
+
+		/* Light: Import/Export Buttons */
+		html.light label[title*="İçe Aktar"],
+		html.light label[title*="Import"] {
+			background: var(--bg-elevated) !important;
+			border-color: var(--border) !important;
+			color: var(--text-secondary) !important;
+		}
+
+		html.light .bg-slate-800\/40 {
+			background: var(--bg-elevated) !important;
+		}
+
+		html.light .border-slate-700\/50 {
+			border-color: var(--border-subtle) !important;
+		}
+
+		/* Light: Select inputs */
+		html.light select {
+			background: var(--bg-elevated) !important;
+			border-color: var(--border) !important;
+			color: var(--text-primary) !important;
+		}
+
+		html.light .bg-black\/40 {
+			background: var(--bg-elevated) !important;
+		}
+
+		/* Light: Performance pills */
+		html.light #renderQualityPanel button {
+			color: var(--text-secondary);
+		}
+
+		html.light #renderQualityPanel .text-primary {
+			color: #3B82F6 !important;
+		}
+
+		html.light #renderQualityPanel .bg-primary\/20 {
+			background: rgba(59, 130, 246, 0.12) !important;
+		}
+
+		/* Light: Drawer Toggle */
+		html.light #btnDrawerToggle {
+			background: rgba(255, 255, 255, 0.9) !important;
+			border-color: var(--border) !important;
+			box-shadow: -2px 0 8px rgba(0, 0, 0, 0.08) !important;
+		}
+
+		html.light #btnDrawerToggle .material-symbols-outlined {
+			color: #475569 !important;
+		}
+
+		/* Light: Tool Panel Toggle */
+		html.light #btnToolToggle {
+			background: rgba(255, 255, 255, 0.9) !important;
+			border-color: var(--border) !important;
+			box-shadow: 2px 0 8px rgba(0, 0, 0, 0.08) !important;
+		}
+
+		html.light #btnToolToggle .material-symbols-outlined {
+			color: #475569 !important;
+		}
+
+		/* Light: Header input/checkbox */
+		html.light .bg-slate-800\/40 {
+			background: var(--bg-elevated) !important;
+		}
+
+		html.light input[type="number"] {
+			background: var(--bg-elevated) !important;
+			border-color: var(--border) !important;
+			color: var(--text-primary) !important;
+		}
+
+		html.light .text-slate-200 {
+			color: var(--text-primary);
+		}
+
+		/* ─── LIGHT: MEASUREMENT LIST COMPREHENSIVE FIX ─── */
+
+		/* Checkboxes — white bg, visible border, blue tick */
+		html.light #measureList input[type="checkbox"],
+		html.light #dataPanel input[type="checkbox"],
+		html.light .folder-header input[type="checkbox"] {
+			background-color: #ffffff !important;
+			border-color: #cbd5e1 !important;
+			accent-color: #3B82F6 !important;
+			-webkit-appearance: auto !important;
+			appearance: auto !important;
+		}
+
+
+		/* Measurement rows — light bg, subtle border */
+		html.light #measureList .border-slate-700\/50 {
+			border-color: #e2e8f0 !important;
+		}
+
+		html.light #measureList .bg-slate-800\/50 {
+			background-color: #f8fafc !important;
+		}
+
+		html.light #measureList .hover\:bg-slate-700\/50:hover {
+			background-color: #f1f5f9 !important;
+		}
+
+		/* Selected measurement row */
+		html.light #measureList .border-primary {
+			border-color: #3B82F6 !important;
+		}
+
+		html.light #measureList .bg-primary\/10 {
+			background-color: rgba(59, 130, 246, 0.08) !important;
+		}
+
+		/* Measurement name text */
+		html.light #measureList .text-slate-300 {
+			color: #334155 !important;
+		}
+
+		/* Folder name text */
+		html.light .folder-header .text-slate-300 {
+			color: #1e293b !important;
+		}
+
+		/* Folder header light bg */
+		html.light .folder-header {
+			background-color: #f1f5f9 !important;
+			border-color: #e2e8f0 !important;
+		}
+
+		html.light .folder-header.active {
+			background-color: rgba(59, 130, 246, 0.06) !important;
+			border-color: #3B82F6 !important;
+		}
+
+		/* Z control buttons */
+		html.light .bg-slate-700 {
+			background-color: #e2e8f0 !important;
+			color: #475569 !important;
+		}
+
+		/* Empty state text */
+		html.light #measureList .text-slate-600 {
+			color: #94a3b8 !important;
+		}
+
+		/* Delete icons */
+		html.light #measureList .text-slate-500 {
+			color: #94a3b8 !important;
+		}
+
+		/* Section headers in panel */
+		html.light .text-slate-500 {
+			color: #64748b !important;
+		}
+
+		/* Light: Result display */
+		html.light #resultDisplay .text-slate-300 {
+			color: var(--text-secondary) !important;
+		}
+
+		/* Light: Delete button */
+		html.light .text-red-400 {
+			color: #ef4444 !important;
+		}
+
+		html.light .bg-red-900\/10 {
+			background: rgba(239, 68, 68, 0.08) !important;
+		}
+
+		html.light .border-red-900\/30 {
+			border-color: rgba(239, 68, 68, 0.2) !important;
+		}
+	</style>
+</head>
+
+<body
+	class="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-slate-100 overflow-hidden h-screen flex flex-col">
+	<!-- Top Navigation Bar -->
+	<header
+		class="h-12 bg-slate-900 dark:bg-[#0b0f19] border-b border-border-dark/50 flex items-center px-4 shrink-0 z-50 transition-colors">
+		<div class="flex items-center gap-3">
+			<div class="size-8 flex items-center justify-center">
+				<img src="cbs-logo.png" alt="CBS Logo" width="28" height="28" style="object-fit:contain">
+			</div>
+			<div class="flex flex-col">
+				<div class="flex items-center gap-2">
+					<h1 class="text-xs font-extrabold text-slate-100 uppercase tracking-wider leading-none">CBS</h1>
+					<span
+						class="px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 leading-none">Demo</span>
+					<span class="text-[8px] font-mono text-slate-600 leading-none">v1.0.0</span>
+				</div>
+				<p class="text-[10px] text-primary font-medium tracking-tight mt-0.5">3D Şehir Modeli — Ölçüm ve
+					Dijitalleştirme</p>
+			</div>
+		</div>
+		<div class="ml-auto flex items-center gap-1">
+			<!-- Globe Dropdown (click-toggle, sabit kalır) -->
+			<div class="relative mr-1" id="globeDropdownContainer">
+				<button id="btnGlobeToggle"
+					class="flex items-center gap-1 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-md text-xs font-medium text-slate-300 transition-colors focus:outline-none z-50"
+					title="3D Dünya Haritası Aç/Kapat">
+					<span class="text-base">🌍</span>
+					<span class="hidden sm:inline">Dünya</span>
+					<span class="material-symbols-outlined text-[16px] text-slate-500">expand_more</span>
+				</button>
+				<!-- Dropdown Panel (JS ile açılır/kapanır, sabit kalır) -->
+				<div id="heightOffsetPanel"
+					class="hidden absolute right-0 top-full mt-1 w-72 bg-slate-800 border border-slate-700 rounded-md shadow-xl z-50 overflow-hidden transform origin-top-right p-3 space-y-3">
+
+					<!-- Katman Seçiciler -->
+					<div class="flex items-center gap-2">
+						<span class="text-[10px] font-bold text-slate-500 tracking-wider w-14">KATMAN</span>
+						<button id="btnLayerSatellite"
+							class="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded border border-primary text-primary bg-primary/10 transition-colors text-xs"
+							title="Uydu görüntüsü">
+							🛰️ Uydu
+						</button>
+						<button id="btnLayerStreet"
+							class="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded border border-slate-600 text-slate-400 hover:text-white transition-colors text-xs"
+							title="Sokak haritası">
+							🗺️ Sokak
+						</button>
+					</div>
+
+					<!-- Yükseklik Kontrolü -->
+					<div class="border-t border-slate-700/50 pt-2">
+						<div class="flex items-center gap-2">
+							<span class="text-[10px] font-bold text-slate-500 tracking-wider w-14">KOT</span>
+							<input id="heightSlider" type="range" min="-500" max="500" value="0" step="1"
+								class="w-16 h-1 accent-primary cursor-pointer" title="Yükseklik Ofseti (metre)">
+							<input id="heightInput" type="number" value="0" step="1"
+								class="w-16 px-1.5 py-1 bg-slate-900 border border-slate-600 rounded text-xs text-slate-200 text-center focus:outline-none focus:border-primary"
+								title="Metre cinsinden yükseklik ofseti">
+							<span class="text-slate-500 text-xs">m</span>
+							<button id="btnHeightReset" class="text-slate-500 hover:text-white transition-colors"
+								title="Sıfırla">
+								<span class="material-symbols-outlined text-[16px]">restart_alt</span>
+							</button>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Camera View & Projection Selector -->
+			<div class="relative group mr-1">
+				<button id="btnCameraMode"
+					class="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-md text-xs font-medium text-slate-300 transition-colors focus:outline-none z-50">
+					<span class="material-symbols-outlined text-[16px]">videocam</span>
+					<span class="hidden sm:inline">Kamera</span>
+					<span class="material-symbols-outlined text-[16px] text-slate-500">expand_more</span>
+				</button>
+				<!-- Camera Dropdown Menu -->
+				<div
+					class="absolute right-0 top-full mt-1 w-56 bg-slate-800 border border-slate-700 rounded-md shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 overflow-hidden transform origin-top-right flex flex-col">
+
+					<!-- AÇILAR (View Angles) -->
+					<div
+						class="px-3 py-2 border-b border-slate-700/50 bg-slate-900/50 text-[10px] font-bold text-slate-500 tracking-wider">
+						AÇILAR</div>
+					<button
+						class="camera-angle-btn w-full flex items-center justify-between px-4 py-2 text-xs text-slate-300 hover:bg-primary/20 hover:text-white transition-colors text-left"
+						data-heading="0" data-pitch="-90">
+						<div class="flex items-center gap-2"><span
+								class="material-symbols-outlined text-[16px]">stat_3</span> Üstten</div>
+					</button>
+					<button
+						class="camera-angle-btn w-full flex items-center justify-between px-4 py-2 text-xs text-slate-300 hover:bg-primary/20 hover:text-white transition-colors text-left"
+						data-heading="0" data-pitch="-30">
+						<div class="flex items-center gap-2"><span
+								class="material-symbols-outlined text-[16px]">south</span> Güneyden</div>
+					</button>
+					<button
+						class="camera-angle-btn w-full flex items-center justify-between px-4 py-2 text-xs text-slate-300 hover:bg-primary/20 hover:text-white transition-colors text-left"
+						data-heading="-90" data-pitch="-30">
+						<div class="flex items-center gap-2"><span
+								class="material-symbols-outlined text-[16px]">east</span> Doğudan</div>
+					</button>
+					<button
+						class="camera-angle-btn w-full flex items-center justify-between px-4 py-2 text-xs text-slate-300 hover:bg-primary/20 hover:text-white transition-colors text-left"
+						data-heading="90" data-pitch="-30">
+						<div class="flex items-center gap-2"><span
+								class="material-symbols-outlined text-[16px]">west</span> Batıdan</div>
+					</button>
+					<button
+						class="camera-angle-btn w-full flex items-center justify-between px-4 py-2 text-xs text-slate-300 hover:bg-primary/20 hover:text-white transition-colors text-left"
+						data-heading="180" data-pitch="-30">
+						<div class="flex items-center gap-2"><span
+								class="material-symbols-outlined text-[16px]">north</span> Kuzeyden</div>
+					</button>
+
+					<!-- PROJEKSİYON (Projection) -->
+					<div
+						class="px-3 py-2 border-y border-slate-700/50 bg-slate-900/50 text-[10px] font-bold text-slate-500 tracking-wider mt-1">
+						PROJEKSİYON</div>
+					<button
+						class="camera-proj-btn active-proj w-full flex items-center justify-between px-4 py-2 text-xs text-slate-300 hover:bg-primary/20 hover:text-white transition-colors text-left"
+						data-proj="perspective">
+						<div class="flex items-center gap-2"><span
+								class="material-symbols-outlined text-[16px]">view_in_ar</span> Perspektif</div>
+						<span class="material-symbols-outlined text-[14px] text-primary check-icon">check</span>
+					</button>
+					<button
+						class="camera-proj-btn w-full flex items-center justify-between px-4 py-2 text-xs text-slate-300 hover:bg-primary/20 hover:text-white transition-colors text-left"
+						data-proj="orthographic">
+						<div class="flex items-center gap-2"><span
+								class="material-symbols-outlined text-[16px]">layers</span> Ortografik</div>
+						<span class="material-symbols-outlined text-[14px] text-primary check-icon hidden">check</span>
+					</button>
+				</div>
+			</div>
+
+			<!-- View Mode Selector -->
+			<div class="relative group mr-2">
+				<button id="btnViewMode"
+					class="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-md text-xs font-medium text-slate-300 transition-colors focus:outline-none z-50">
+					<span id="currentViewModeIcon">📸</span>
+					<span id="currentViewModeText" class="hidden sm:inline">Gerçekçi</span>
+					<span class="material-symbols-outlined text-[16px] text-slate-500">expand_more</span>
+				</button>
+				<!-- Dropdown Menu -->
+				<div
+					class="absolute right-0 top-full mt-1 w-48 bg-slate-800 border border-slate-700 rounded-md shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 overflow-hidden transform origin-top-right">
+					<button
+						class="view-mode-option w-full flex items-center gap-3 px-4 py-2.5 text-xs text-slate-300 hover:bg-primary/20 hover:text-white transition-colors text-left"
+						data-mode="rgb">
+						<span class="text-base">📸</span> Gerçekçi (RGB)
+					</button>
+					<button
+						class="view-mode-option w-full flex items-center gap-3 px-4 py-2.5 text-xs text-slate-300 hover:bg-primary/20 hover:text-white transition-colors text-left"
+						data-mode="solid">
+						<span class="text-base">🧊</span> Katı Gövde (Solid)
+					</button>
+
+				</div>
+			</div>
+
+
+			<!-- Theme Toggle -->
+			<button id="btnThemeToggle"
+				class="w-[36px] h-[36px] text-slate-400 hover:text-white transition-colors cursor-pointer focus:outline-none z-50 flex items-center justify-center"
+				title="Tema Değiştir (Açık/Koyu)">
+				<span class="material-symbols-outlined text-[20px]" id="themeIcon">dark_mode</span>
+			</button>
+
+			<!-- Cesium Fullscreen Button will be positioned here automatically by JS -->
+			<button id="btnHomeView"
+				class="w-[36px] h-[36px] text-slate-400 hover:text-white transition-colors cursor-pointer focus:outline-none z-50 flex items-center justify-center"
+				title="Ana Görünüme Dön">
+				<span class="material-symbols-outlined text-[26px]">home</span>
+			</button>
+		</div>
+	</header>
+
+	<!-- Main Map View Container -->
+	<main class="relative flex-1 overflow-hidden" style="background:var(--bg-app)">
+
+		<!-- Cesium Map Container -->
+		<div id="cesiumContainer"></div>
+
+		<!-- Left Floating Panel: Tools + Attached Tab (collapsed by default) -->
+		<div id="toolPanel"
+			class="absolute top-4 left-0 z-40 pointer-events-auto transition-transform duration-300 ease-in-out"
+			style="transform:translateX(calc(-100% + 28px))">
+			<div class="flex items-start">
+				<!-- Icon panels -->
+				<div class="flex flex-col pl-4" style="height:calc(100vh - 80px)">
+					<div class="glass-panel rounded-xl rounded-r-none p-1.5 flex flex-col gap-1 justify-between h-full">
+						<!-- Top: Araçlar -->
+						<div class="flex flex-col gap-1">
+							<button id="btnCoord"
+								class="tool-btn w-10 h-10 flex items-center justify-center rounded bg-transparent hover:bg-slate-800 text-slate-400 border border-transparent transition-colors"
+								title="Nokta At">
+								<span class="material-symbols-outlined text-xl">pin_drop</span>
+							</button>
+							<button id="btnDistance"
+								class="tool-btn w-10 h-10 flex items-center justify-center rounded bg-transparent hover:bg-slate-800 text-slate-400 border border-transparent transition-colors"
+								title="Mesafe Ölçümü">
+								<span class="material-symbols-outlined text-xl">straighten</span>
+							</button>
+							<button id="btnArea"
+								class="tool-btn w-10 h-10 flex items-center justify-center rounded bg-transparent hover:bg-slate-800 text-slate-400 border border-transparent transition-colors"
+								title="Alan Ölçümü">
+								<span class="material-symbols-outlined text-xl">square_foot</span>
+							</button>
+							<button id="btnHeight"
+								class="tool-btn w-10 h-10 flex items-center justify-center rounded bg-transparent hover:bg-slate-800 text-slate-400 border border-transparent transition-colors"
+								title="Yükseklik Ölçümü">
+								<span class="material-symbols-outlined text-xl">height</span>
+							</button>
+							<div class="h-[1px] w-full bg-border-subtle"></div>
+							<button id="btnClearScreen"
+								class="tool-btn w-10 h-10 flex items-center justify-center rounded bg-transparent hover:bg-red-900/20 text-red-500/70 hover:text-red-500 border border-transparent transition-colors"
+								title="Ekranı Temizle">
+								<span class="material-symbols-outlined text-xl">delete_sweep</span>
+							</button>
+						</div>
+						<!-- Bottom: Performans / Kalite -->
+						<div class="flex flex-col gap-1">
+							<div class="h-[1px] w-full bg-border-subtle"></div>
+							<button id="btnPerformance"
+								class="w-10 h-10 flex items-center justify-center rounded text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+								title="Performans Modu">
+								<span class="material-symbols-outlined text-xl">speed</span>
+							</button>
+							<button id="btnQuality"
+								class="w-10 h-10 flex items-center justify-center rounded text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+								title="Kalite Modu">
+								<span class="material-symbols-outlined text-xl">hd</span>
+							</button>
+						</div>
+					</div>
+				</div>
+				<!-- Attached Tab (flush with panel edge) -->
+				<button id="btnToolToggle"
+					class="self-center w-7 h-16 flex items-center justify-center rounded-r-lg transition-all duration-300 group hover:w-9"
+					style="background:var(--glass-bg);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:1px solid var(--glass-border);border-left:none;box-shadow:2px 0 8px var(--shadow);"
+					title="Araçlar Paneli">
+					<span id="toolToggleIcon"
+						class="material-symbols-outlined text-[16px] text-slate-400 group-hover:text-primary transition-colors">chevron_right</span>
+				</button>
+			</div>
+		</div>
+
+		<!-- Bottom Center Floating Panel: Result Display -->
+		<div id="resultDisplay"
+			class="absolute bottom-6 left-1/2 -translate-x-1/2 z-40 glass-panel rounded-full px-6 py-3 flex items-center justify-center min-w-[300px] max-w-[600px] transition-opacity duration-300">
+			<div class="text-[11px] text-slate-300 text-center leading-relaxed">
+				Araç seçin ve haritaya tıklayın.
+			</div>
+		</div>
+
+		<!-- Right Drawer: Active Group Label (panel kapalıyken görünür) -->
+		<div id="activeGroupLabel" class="fixed z-50 pointer-events-auto cursor-pointer transition-all duration-300"
+			style="right:0; writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg);
+				background:var(--glass-bg); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+				border:1px solid var(--glass-border); border-right:none; border-radius:8px 0 0 8px;
+				padding:8px 5px; box-shadow:-2px 0 12px rgba(0,0,0,0.15);
+				font-size:11px; font-weight:700; letter-spacing:0.5px; color:var(--text-secondary);
+				max-height:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
+			title="Aktif Katman — Paneli açmak için tıkla">
+			<span style="color:#3B82F6; margin-bottom:4px;">●</span>
+			<span id="activeGroupLabelText">Genel</span>
+		</div>
+
+		<!-- Right Drawer Toggle Button -->
+		<button id="btnDrawerToggle"
+			class="fixed top-1/2 -translate-y-1/2 z-50 flex items-center justify-center w-7 h-20 rounded-l-lg transition-all duration-300 pointer-events-auto group hover:w-9"
+			style="right:0;background:var(--glass-bg);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:1px solid var(--glass-border);border-right:none;box-shadow:-2px 0 12px rgba(0,0,0,0.15);"
+			title="Ölçüm Paneli">
+			<div class="absolute left-0 top-2 bottom-2 w-[2px] rounded-full bg-primary opacity-60"></div>
+			<span id="drawerToggleIcon"
+				class="material-symbols-outlined text-[16px] text-slate-400 group-hover:text-primary transition-all duration-300">chevron_left</span>
+		</button>
+
+		<!-- Right Floating Panel: Data Management (Drawer) -->
+		<div id="dataPanel"
+			class="absolute top-4 right-4 bottom-4 w-72 z-40 flex flex-col gap-3 pointer-events-auto transition-transform duration-300 ease-in-out"
+			style="transform:translateX(calc(100% + 16px))">
+
+			<div class="glass-panel rounded-xl flex flex-col h-full overflow-hidden">
+				<div class="p-3 border-b border-border-subtle/50 shrink-0 flex flex-col gap-2">
+					<!-- Satır 1: Başlık -->
+					<h3 class="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Ölçümler</h3>
+					<!-- Satır 2: Aksiyon İkonları -->
+					<div class="flex items-center gap-1">
+						<button id="selectAllToggle"
+							class="w-7 h-7 flex items-center justify-center rounded-md text-slate-400 hover:text-cyan-400 hover:bg-cyan-400/10 transition-all"
+							title="Tümünü Göster / Gizle">
+							<span class="material-symbols-outlined text-[16px]">visibility</span>
+						</button>
+						<button id="btnNewFolder"
+							class="w-7 h-7 flex items-center justify-center rounded-md text-slate-400 hover:text-cyan-400 hover:bg-cyan-400/10 transition-all"
+							title="Yeni Klasör">
+							<span class="material-symbols-outlined text-[16px]">create_new_folder</span>
+						</button>
+						<div class="flex-1"></div>
+						<button id="btnDeleteAll"
+							class="w-7 h-7 flex items-center justify-center rounded-md text-slate-400 hover:text-red-400 hover:bg-red-400/10 transition-all"
+							title="Tümünü Sil">
+							<span class="material-symbols-outlined text-[16px]">delete_forever</span>
+						</button>
+						<button id="btnClearStorage"
+							class="w-7 h-7 flex items-center justify-center rounded-md text-slate-400 hover:text-orange-400 hover:bg-orange-400/10 transition-all"
+							title="Kayıtlı Veriyi Temizle (localStorage)">
+							<span class="material-symbols-outlined text-[16px]">cleaning_services</span>
+						</button>
+					</div>
+				</div>
+
+				<!-- Measure List Container -->
+				<div id="measureList" class="flex-1 overflow-y-auto p-2 space-y-1.5 hide-scrollbar tabular-nums">
+					<!-- Populated by JS -->
+				</div>
+
+				<!-- Data Transfer Controls -->
+				<div class="p-3 border-t border-border-subtle/50 shrink-0" style="background:var(--bg-elevated)">
+					<div
+						class="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-1">
+						<span class="material-symbols-outlined text-[14px]">swap_vert</span> Veri Aktarımı
+					</div>
+					<div class="flex flex-col gap-3">
+						<!-- Projection Selection -->
+						<div class="relative">
+							<select id="exportCrs"
+								class="w-full appearance-none bg-black/40 border border-border-dark text-slate-300 text-[11px] rounded-md py-[7px] px-3 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all pr-8">
+								<option value="" selected disabled hidden>Sistem Seçiniz (TM30/WGS84)</option>
+								<option value="5254">EPSG:5254 (TM30)</option>
+								<option value="4326">WGS84 (Coğrafi)</option>
+							</select>
+							<span
+								class="material-symbols-outlined text-slate-500 text-[18px] absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">arrow_drop_down</span>
+						</div>
+
+						<!-- Export Scope Selection -->
+						<div class="relative">
+							<select id="exportScope"
+								class="w-full appearance-none bg-black/40 border border-border-dark text-slate-300 text-[11px] rounded-md py-[7px] px-3 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all pr-8">
+								<option value="" selected disabled hidden>Aktarım Kapsamı Seçiniz</option>
+								<option value="all">Tüm Seçili Ölçümler</option>
+								<option value="active">Sadece Aktif Grup</option>
+							</select>
+							<span
+								class="material-symbols-outlined text-slate-500 text-[18px] absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">arrow_drop_down</span>
+						</div>
+
+						<!-- Import Group -->
+						<div class="flex flex-col gap-1.5">
+							<div class="text-[8px] font-bold text-slate-600 uppercase tracking-tighter ml-1">İçe Aktar
+								(Import)</div>
+							<div class="flex gap-2">
+								<label
+									class="flex-1 px-2 py-1.5 bg-slate-800/40 border border-slate-700/50 rounded-md text-[10px] font-bold text-slate-400 hover:bg-slate-700 hover:text-white cursor-pointer transition-all flex items-center justify-center gap-1"
+									title="CSV İçe Aktar">
+									<span class="material-symbols-outlined text-[14px]">grid_on</span>
+									<span>CSV</span>
+									<input type="file" id="btnImportCSV" accept=".csv" class="hidden">
+								</label>
+								<label
+									class="flex-1 px-2 py-1.5 bg-slate-800/40 border border-slate-700/50 rounded-md text-[10px] font-bold text-slate-400 hover:bg-slate-700 hover:text-white cursor-pointer transition-all flex items-center justify-center gap-1"
+									title="GeoJSON İçe Aktar">
+									<span class="material-symbols-outlined text-[14px]">public</span>
+									<span>JSON</span>
+									<input type="file" id="btnImportGeoJSON" accept=".geojson,.json" class="hidden">
+								</label>
+								<label
+									class="flex-1 px-2 py-1.5 bg-slate-800/40 border border-slate-700/50 rounded-md text-[10px] font-bold text-slate-400 hover:bg-slate-700 hover:text-white cursor-pointer transition-all flex items-center justify-center gap-1"
+									title="DXF İçe Aktar">
+									<span class="material-symbols-outlined text-[14px]">architecture</span>
+									<span>DXF</span>
+									<input type="file" id="btnImportDXF" accept=".dxf" class="hidden">
+								</label>
+							</div>
+						</div>
+
+						<!-- Export Group -->
+						<div class="flex flex-col gap-1.5">
+							<div class="text-[8px] font-bold text-slate-600 uppercase tracking-tighter ml-1">Dışa Aktar
+								(Export)</div>
+							<div class="flex gap-2">
+								<button id="btnExportCSV"
+									class="flex-1 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md text-[10px] font-bold text-slate-300 hover:bg-slate-700 hover:text-white transition-colors flex items-center justify-center gap-1">
+									<span class="material-symbols-outlined text-[14px]">grid_on</span>
+									<span>CSV</span>
+								</button>
+								<button id="btnExportGeoJSON"
+									class="flex-1 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md text-[10px] font-bold text-slate-300 hover:bg-slate-700 hover:text-white transition-colors flex items-center justify-center gap-1">
+									<span class="material-symbols-outlined text-[14px]">public</span>
+									<span>JSON</span>
+								</button>
+								<button id="btnExportDXF"
+									class="flex-1 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md text-[10px] font-bold text-slate-300 hover:bg-slate-700 hover:text-white transition-colors flex items-center justify-center gap-1">
+									<span class="material-symbols-outlined text-[14px]">architecture</span>
+									<span>DXF</span>
+								</button>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+
+	</main>
+
+	<script src="main.js"></script>
+
+	<!-- JS overrides for list rendering to use Tailwind classes -->
+	<script>
+		// Store original renderList function if needed, or override it here
+		// Actually, main.js has `measureList.innerHTML = ...`. I will edit main.js to use tailwind classes for the generated rows.
+	</script>
+	<!-- Import Z-Offset Diyaloğu -->
+	<div id="importZDialog" class="hidden fixed inset-0 z-[9999] flex items-center justify-center">
+		<!-- Backdrop -->
+		<div class="absolute inset-0 bg-black/60 backdrop-blur-sm" id="importZBackdrop"></div>
+		<!-- Dialog -->
+		<div class="relative rounded-2xl shadow-2xl w-80 p-5 space-y-4 animate-fadeIn"
+			style="background:var(--bg-surface);border:1px solid var(--border)">
+			<div class="flex items-center gap-2 text-sm font-semibold" style="color:var(--text-primary)">
+				<span class="text-lg">📐</span> Yükseklik (Z) Ayarı
+			</div>
+			<div class="text-xs leading-relaxed" style="color:var(--text-muted)">
+				İçe aktarılan verilerin Z değerlerini modele uydurmak için ofset ekleyebilirsiniz.
+			</div>
+			<div class="rounded-lg px-3 py-2 flex items-center justify-between" style="background:var(--bg-elevated)">
+				<span class="text-[10px] uppercase tracking-wider" style="color:var(--text-muted)">Model Ort. Z</span>
+				<span id="importZModelAvg" class="text-sm font-mono text-primary">--</span>
+			</div>
+			<div class="space-y-1">
+				<label class="text-[10px] uppercase tracking-wider" style="color:var(--text-muted)">Z Ofseti
+					(metre)</label>
+				<input id="importZOffsetInput" type="number" value="0" step="0.1"
+					class="w-full px-3 py-2 rounded-lg text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary font-mono"
+					style="background:var(--bg-elevated);border:1px solid var(--border);color:var(--text-primary)"
+					placeholder="Örn: 92.5">
+			</div>
+			<div class="flex gap-2 pt-1">
+				<button id="importZApply"
+					class="flex-1 px-3 py-2 text-white text-xs font-semibold rounded-lg transition-colors"
+					style="background:linear-gradient(135deg,#06b6d4,#0891b2)">
+					Ofseti Uygula
+				</button>
+				<button id="importZSkip" class="flex-1 px-3 py-2 text-xs font-semibold rounded-lg transition-colors"
+					style="background:var(--bg-elevated);color:var(--text-secondary)">
+					Olduğu Gibi
+				</button>
+			</div>
+		</div>
+	</div>
+
+	<!-- ═══ WATERMARK (Sahne üzeri) ═══ -->
+	<div id="watermark" class="fixed bottom-16 right-4 z-30 pointer-events-none select-none opacity-20">
+		<div class="text-right">
+			<div class="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">CBS Platform</div>
+			<div class="text-[9px] font-mono text-slate-500">DEMO — Ticari Kullanım İçin Lisans Gereklidir</div>
+			<div class="text-[8px] font-mono text-slate-600">© 2026 Tüm Hakları Saklıdır</div>
+		</div>
+	</div>
+
+	<!-- ═══ SPLASH SCREEN (Açılış) ═══ -->
+	<div id="splashScreen"
+		class="fixed inset-0 z-[9999] flex items-center justify-center transition-opacity duration-1000"
+		style="background:linear-gradient(135deg,#0b0f19 0%,#111827 50%,#0f172a 100%)">
+		<div class="text-center max-w-md px-6">
+			<!-- Logo -->
+			<div class="mb-8 flex justify-center">
+				<div class="w-24 h-24 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/20 flex items-center justify-center shadow-2xl shadow-primary/20"
+					style="animation: pulse 2s ease-in-out infinite">
+					<img src="cbs-logo.png" alt="CBS" width="64" height="64" style="object-fit:contain">
+				</div>
+			</div>
+			<!-- Başlık -->
+			<h1 class="text-3xl font-black text-white tracking-wider uppercase mb-4">CBS Platform</h1>
+			<!-- Slogan -->
+			<p class="text-lg text-white/80 italic font-medium mb-8 tracking-wide">Şehrimizi dijitalleştiriyoruz.</p>
+
+			<!-- Loading + Progress -->
+			<div class="mb-6">
+				<div class="flex items-center justify-center gap-2 mb-3">
+					<div class="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin"></div>
+					<span id="splashStatusText" class="text-[11px] text-slate-400 font-medium">3D model
+						yükleniyor...</span>
+				</div>
+				<!-- Gerçek progress bar -->
+				<div class="w-56 mx-auto h-[3px] bg-slate-800 rounded-full overflow-hidden">
+					<div id="splashProgressBar"
+						class="h-full bg-gradient-to-r from-primary to-blue-400 rounded-full transition-all duration-300 ease-out"
+						style="width:5%"></div>
+				</div>
+				<span id="splashPercent" class="text-[10px] font-mono text-slate-500 mt-1 inline-block">5%</span>
+			</div>
+
+			<!-- Kısayol İpuçları (Dönen) -->
+			<div id="splashTips" class="flex justify-center gap-5 mb-8 text-[9px] text-slate-500">
+				<!-- JS ile doldurulacak -->
+			</div>
+
+			<!-- Telif + Demo -->
+			<div class="flex items-center justify-center gap-3">
+				<span class="text-[9px] text-slate-600 font-mono">© 2026 CBS Platform</span>
+				<span class="text-slate-700">·</span>
+				<span class="text-[9px] font-bold uppercase tracking-wider text-amber-500/60">Demo v1.0.0</span>
+			</div>
+		</div>
+	</div>
+</body>
+
+</html>
