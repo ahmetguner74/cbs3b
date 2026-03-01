@@ -39,22 +39,33 @@
 		body {
 			-webkit-overflow-scrolling: touch;
 			overscroll-behavior: none;
-			/* Pull-to-refresh engelle */
 			-webkit-tap-highlight-color: transparent;
-			/* Dokunma highlight kaldır */
+			height: 100%;
+			height: 100dvh;
+			overflow: hidden;
 		}
 
-		/* Çift tıkla yakınlaşma engelle (tüm sayfa) */
+		/* Çift tıkla + iOS metin seçim engelle */
 		* {
 			touch-action: manipulation;
+			-webkit-touch-callout: none;
 		}
 
-		/* Cesium canvas hariç — 3D hareket için pan-zoom gerekli */
+		/* Input/textarea seçim geri aç */
+		input,
+		textarea,
+		[contenteditable] {
+			-webkit-touch-callout: default;
+			-webkit-user-select: text;
+			user-select: text;
+		}
+
+		/* Cesium canvas — 3D hareket */
 		#cesiumContainer canvas {
 			touch-action: none;
 		}
 
-		/* UI üzerinde metin seçimini engelle */
+		/* UI metin seçimi engelle */
 		button,
 		label,
 		.select-none,

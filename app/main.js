@@ -1031,7 +1031,7 @@ function loadFromStorage() {
 function addPointLabel(position, number) {
 	return drawLayer.entities.add({
 		position: position,
-		point: { pixelSize: 8, color: Cesium.Color.WHITE, outlineColor: Cesium.Color.BLACK, outlineWidth: 1 },
+		point: { pixelSize: 8, color: Cesium.Color.WHITE, outlineColor: Cesium.Color.BLACK, outlineWidth: 1, disableDepthTestDistance: Number.POSITIVE_INFINITY },
 		label: {
 			text: String(number),
 			font: 'bold 13px sans-serif',
@@ -1107,7 +1107,7 @@ function restoreLine(m) {
 		m.entities.push(addPointLabel(m.points[i], i + 1));
 		if (i < n - 1) {
 			var a = m.points[i]; var b = m.points[i + 1];
-			var line = drawLayer.entities.add({ polyline: { positions: [a, b], width: 3, material: lineColor, depthFailMaterial: lineColor.withAlpha(0.6) } });
+			var line = drawLayer.entities.add({ polyline: { positions: [a, b], width: 3, material: lineColor, depthFailMaterial: lineColor.withAlpha(0.6), clampToGround: true, classificationType: Cesium.ClassificationType.BOTH } });
 			m.entities.push(line);
 		}
 	}
@@ -1122,16 +1122,16 @@ function restorePolygon(m) {
 	for (var i = 0; i < n; i++) {
 		m.entities.push(addPointLabel(m.points[i], i + 1));
 		if (i < n - 1) {
-			var edge = drawLayer.entities.add({ polyline: { positions: [m.points[i], m.points[i + 1]], width: 2, material: polyColor, depthFailMaterial: polyColor.withAlpha(0.6) } });
+			var edge = drawLayer.entities.add({ polyline: { positions: [m.points[i], m.points[i + 1]], width: 2, material: polyColor, depthFailMaterial: polyColor.withAlpha(0.6), clampToGround: true, classificationType: Cesium.ClassificationType.BOTH } });
 			m.entities.push(edge);
 		}
 	}
 	// Kapanış çizgisi
-	var closeLine = drawLayer.entities.add({ polyline: { positions: [m.points[n - 1], m.points[0]], width: 2, material: polyColor, depthFailMaterial: polyColor.withAlpha(0.6) } });
+	var closeLine = drawLayer.entities.add({ polyline: { positions: [m.points[n - 1], m.points[0]], width: 2, material: polyColor, depthFailMaterial: polyColor.withAlpha(0.6), clampToGround: true, classificationType: Cesium.ClassificationType.BOTH } });
 	m.entities.push(closeLine);
 
 	// Poligon alanı
-	var poly = drawLayer.entities.add({ polygon: { hierarchy: new Cesium.PolygonHierarchy(m.points.slice()), material: polyColor.withAlpha(0.3), perPositionHeight: true } });
+	var poly = drawLayer.entities.add({ polygon: { hierarchy: new Cesium.PolygonHierarchy(m.points.slice()), material: polyColor.withAlpha(0.3), classificationType: Cesium.ClassificationType.BOTH } });
 	m.entities.push(poly);
 
 	// Etiket (haritada sadece 3D m²)
@@ -1146,7 +1146,7 @@ function restoreHeight(m) {
 	var hColor = Cesium.Color.fromCssColorString(grp && grp.color ? grp.color : '#22C55E');
 	m.entities.push(addPointLabel(m.points[0], 1));
 	m.entities.push(addPointLabel(m.points[1], 2));
-	var hLine = drawLayer.entities.add({ polyline: { positions: m.points.slice(), width: 2, material: hColor, depthFailMaterial: hColor.withAlpha(0.6) } });
+	var hLine = drawLayer.entities.add({ polyline: { positions: m.points.slice(), width: 2, material: hColor, depthFailMaterial: hColor.withAlpha(0.6), clampToGround: true, classificationType: Cesium.ClassificationType.BOTH } });
 	m.entities.push(hLine);
 	m.entities.push(addLabel(midpoint(m.points[0], m.points[1]), m.resultText, hColor));
 }
@@ -1967,7 +1967,9 @@ function redrawFromClickPoints() {
 				polyline: {
 					positions: [a, b], width: 3,
 					material: Cesium.Color.YELLOW,
-					depthFailMaterial: Cesium.Color.YELLOW.withAlpha(0.6)
+					depthFailMaterial: Cesium.Color.YELLOW.withAlpha(0.6),
+					clampToGround: true,
+					classificationType: Cesium.ClassificationType.BOTH
 				}
 			});
 			tempEntities.push(line);
@@ -1981,7 +1983,9 @@ function redrawFromClickPoints() {
 				polyline: {
 					positions: [a2, b2], width: 2,
 					material: Cesium.Color.AQUA,
-					depthFailMaterial: Cesium.Color.AQUA.withAlpha(0.6)
+					depthFailMaterial: Cesium.Color.AQUA.withAlpha(0.6),
+					clampToGround: true,
+					classificationType: Cesium.ClassificationType.BOTH
 				}
 			});
 			tempEntities.push(edgeLine);
@@ -1994,7 +1998,7 @@ function redrawFromClickPoints() {
 		for (var i = 0; i < clickPoints.length - 1; i++) {
 			totalDist += Cesium.Cartesian3.distance(clickPoints[i], clickPoints[i + 1]);
 		}
-		document.querySelector('#resultDisplay > div').innerHTML = '<b>Mesafe:</b> ' + totalDist.toFixed(2) + ' m (' + Math.max(0, clickPoints.length - 1) + ' segment). <i>(Geri: Ctrl+Z)</i>';
+		document.querySelector('#resultDisplay > div').innerHTML = '<b>Mesafe:</b> ' + totalDist.toFixed(2) + ' m (' + Math.max(0, clickPoints.length - 1) + ' segment). ' + (isMobile ? '<i>(↩ geri al)</i>' : '<i>(Geri: Ctrl+Z)</i>');
 	} else if (activeTool === 'btnArea') {
 		if (clickPoints.length >= 3) {
 			activeShape = drawLayer.entities.add({
@@ -2003,11 +2007,11 @@ function redrawFromClickPoints() {
 						return new Cesium.PolygonHierarchy(clickPoints);
 					}, false),
 					material: Cesium.Color.AQUA.withAlpha(0.2),
-					perPositionHeight: true
+					classificationType: Cesium.ClassificationType.BOTH
 				}
 			});
 		}
-		document.querySelector('#resultDisplay > div').innerHTML = '<b>Alan:</b> ' + clickPoints.length + ' nokta. <i>(Geri: Ctrl+Z) Sağ tık kapat.</i>';
+		document.querySelector('#resultDisplay > div').innerHTML = '<b>Alan:</b> ' + clickPoints.length + ' nokta. ' + (isMobile ? '<i>(↩ geri al, ✓ bitir)</i>' : '<i>(Geri: Ctrl+Z) Sağ tık kapat.</i>');
 	}
 }
 
@@ -2283,7 +2287,9 @@ handler.setInputAction(function (click) {
 			polyline: {
 				positions: [a, b], width: 3,
 				material: _gc,
-				depthFailMaterial: _gc.withAlpha(0.6) // Mesh altında kalınca da göster
+				depthFailMaterial: _gc.withAlpha(0.6),
+				clampToGround: true,
+				classificationType: Cesium.ClassificationType.BOTH
 			}
 		});
 		tempEntities.push(line);
@@ -2304,7 +2310,9 @@ handler.setInputAction(function (click) {
 				polyline: {
 					positions: [a2, b2], width: 2,
 					material: _gc,
-					depthFailMaterial: _gc.withAlpha(0.6) // Mesh altında kalınca da göster
+					depthFailMaterial: _gc.withAlpha(0.6),
+					clampToGround: true,
+					classificationType: Cesium.ClassificationType.BOTH
 				}
 			});
 			tempEntities.push(edgeLine);
@@ -2319,13 +2327,13 @@ handler.setInputAction(function (click) {
 						return new Cesium.PolygonHierarchy(clickPoints);
 					}, false),
 					material: _gc.withAlpha(0.2),
-					perPositionHeight: true // Mesh altında kalmasını engeller
+					classificationType: Cesium.ClassificationType.BOTH
 				}
 			});
 		}
 
 		// Önizleme için anlık 2D Alan hesabı eklenebilir ama şu an köşe sayısı gösterelim:
-		document.querySelector('#resultDisplay > div').innerHTML = '<b>Alan:</b> ' + clickPoints.length + ' nokta. <i>(Geri: Ctrl+Z) Sağ tık kapat.</i>';
+		document.querySelector('#resultDisplay > div').innerHTML = '<b>Alan:</b> ' + clickPoints.length + ' nokta. ' + (isMobile ? '<i>(↩ geri al, ✓ bitir)</i>' : '<i>(Geri: Ctrl+Z) Sağ tık kapat.</i>');
 	}
 
 	// ── YÜKSEKLİK ──
@@ -2338,7 +2346,9 @@ handler.setInputAction(function (click) {
 			polyline: {
 				positions: clickPoints.slice(), width: 2,
 				material: _gc,
-				depthFailMaterial: _gc.withAlpha(0.6)
+				depthFailMaterial: _gc.withAlpha(0.6),
+				clampToGround: true,
+				classificationType: Cesium.ClassificationType.BOTH
 			}
 		});
 		tempEntities.push(hLine);
