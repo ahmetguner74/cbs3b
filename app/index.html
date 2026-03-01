@@ -648,6 +648,17 @@
 		html.light .border-red-900\/30 {
 			border-color: rgba(239, 68, 68, 0.2) !important;
 		}
+
+		/* ─── MOBİL: Panel yüksekliğini küçült, dünya butonunu gizle ─── */
+		@media (max-width: 768px) {
+			#globeDropdownContainer {
+				display: none !important;
+			}
+
+			#toolPanel .flex.flex-col.pl-4 {
+				height: calc(100dvh - 120px) !important;
+			}
+		}
 	</style>
 </head>
 

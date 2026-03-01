@@ -1027,16 +1027,98 @@ function loadFromStorage() {
 }
 
 // ─── YARDIMCI ETİKET & GEOMETRİ FONKSİYONLARI ───────────────
-// Z-fighting çözümü: noktaları 0.3m yukarı kaldır (tileset yüzeyinin üstüne)
-var ENTITY_HEIGHT_OFFSET = 0.3; // metre
+// ─── ANTİ-JİTTER PİVOT PATTERN (GeoNexus Pattern 272) ───────
+// GPU float32 hassasiyet sorunu: ECEF koordinatları (~4M metre) GPU'da titrer
+// Çözüm: İlk noktayı pivot yapıp tüm vertex'leri lokal ofset olarak gönder
+// modelMatrix ile mutlak pozisyon CPU'da hesaplanır (double precision)
+var ENTITY_HEIGHT_OFFSET = 0.3; // metre — z-fighting ofseti
+
+// Entity API için basit lift (point/label entities —bunlar disableDepthTestDistance ile titremez)
 function liftPosition(cartesian) {
 	var carto = Cesium.Cartographic.fromCartesian(cartesian);
 	carto.height += ENTITY_HEIGHT_OFFSET;
 	return Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, carto.height);
 }
-function liftPositions(arr) {
-	return arr.map(function (p) { return liftPosition(p); });
+
+// ── Stable Polyline: Primitive API + modelMatrix (ANTİ-JİTTER) ──
+function createStablePolyline(positions, width, material, depthFailColor) {
+	if (!positions || positions.length < 2) return null;
+	var pivot = positions[0];
+	// ENU (East-North-Up) dönüşüm matrisi — pivot noktasına göre yerel çerçeve
+	var enuMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(pivot);
+	var invEnuMatrix = Cesium.Matrix4.inverse(enuMatrix, new Cesium.Matrix4());
+	// Pozisyonları lokal koordinatlara çevir (küçük sayılar: -10 ~ +10m)
+	var localPositions = positions.map(function (p) {
+		var local = Cesium.Matrix4.multiplyByPoint(invEnuMatrix, p, new Cesium.Cartesian3());
+		// Z-fighting ofseti yukarı
+		local.z += ENTITY_HEIGHT_OFFSET;
+		return local;
+	});
+	var geometryInstances = new Cesium.GeometryInstance({
+		geometry: new Cesium.PolylineGeometry({
+			positions: localPositions,
+			width: width || 3,
+			arcType: Cesium.ArcType.NONE, // Eğri hesaplaması kapalı — performans
+			vertexFormat: Cesium.PolylineMaterialAppearance.VERTEX_FORMAT
+		})
+	});
+	var primitive = viewer.scene.primitives.add(new Cesium.Primitive({
+		geometryInstances: geometryInstances,
+		appearance: new Cesium.PolylineMaterialAppearance({
+			material: Cesium.Material.fromType('Color', {
+				color: material || Cesium.Color.YELLOW
+			})
+		}),
+		modelMatrix: enuMatrix, // CPU double-precision ile mutlak pozisyon
+		asynchronous: false
+	}));
+	return primitive;
 }
+
+// Stable polygon: yerel koordinatlarla (Anti-Jitter Pivot)
+function createStablePolygon(positions, material) {
+	if (!positions || positions.length < 3) return null;
+	var pivot = positions[0];
+	var enuMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(pivot);
+	var invEnuMatrix = Cesium.Matrix4.inverse(enuMatrix, new Cesium.Matrix4());
+	var localPositions = positions.map(function (p) {
+		var local = Cesium.Matrix4.multiplyByPoint(invEnuMatrix, p, new Cesium.Cartesian3());
+		local.z += ENTITY_HEIGHT_OFFSET;
+		return local;
+	});
+	var geometryInstances = new Cesium.GeometryInstance({
+		geometry: new Cesium.PolygonGeometry({
+			polygonHierarchy: new Cesium.PolygonHierarchy(localPositions),
+			perPositionHeight: true,
+			vertexFormat: Cesium.MaterialAppearance.MaterialSupport.BASIC.vertexFormat
+		})
+	});
+	var primitive = viewer.scene.primitives.add(new Cesium.Primitive({
+		geometryInstances: geometryInstances,
+		appearance: new Cesium.MaterialAppearance({
+			material: Cesium.Material.fromType('Color', {
+				color: material || Cesium.Color.AQUA.withAlpha(0.3)
+			}),
+			faceForward: true
+		}),
+		modelMatrix: enuMatrix,
+		asynchronous: false
+	}));
+	return primitive;
+}
+
+// Evrensel silme: Entity VEYA Primitive — m.entities[] dizisine her iki tür de girer
+function safeRemoveItem(item) {
+	if (!item) return;
+	if (item.entityCollection) {
+		// Entity API
+		try { drawLayer.entities.remove(item); } catch (e) { }
+	} else {
+		// Primitive API
+		try { viewer.scene.primitives.remove(item); } catch (e) { }
+	}
+}
+
 function addPointLabel(position, number) {
 	return drawLayer.entities.add({
 		position: liftPosition(position),
@@ -1115,9 +1197,8 @@ function restoreLine(m) {
 	for (var i = 0; i < n; i++) {
 		m.entities.push(addPointLabel(m.points[i], i + 1));
 		if (i < n - 1) {
-			var a = m.points[i]; var b = m.points[i + 1];
-			var line = drawLayer.entities.add({ polyline: { positions: liftPositions([a, b]), width: 3, material: lineColor, depthFailMaterial: lineColor.withAlpha(0.6) } });
-			m.entities.push(line);
+			var seg = createStablePolyline([m.points[i], m.points[i + 1]], 3, lineColor);
+			if (seg) m.entities.push(seg);
 		}
 	}
 	// Toplam mesafe etiketi — çizgi üzerindeki orta noktaya
@@ -1131,17 +1212,17 @@ function restorePolygon(m) {
 	for (var i = 0; i < n; i++) {
 		m.entities.push(addPointLabel(m.points[i], i + 1));
 		if (i < n - 1) {
-			var edge = drawLayer.entities.add({ polyline: { positions: liftPositions([m.points[i], m.points[i + 1]]), width: 2, material: polyColor, depthFailMaterial: polyColor.withAlpha(0.6) } });
-			m.entities.push(edge);
+			var seg = createStablePolyline([m.points[i], m.points[i + 1]], 2, polyColor);
+			if (seg) m.entities.push(seg);
 		}
 	}
 	// Kapanış çizgisi
-	var closeLine = drawLayer.entities.add({ polyline: { positions: liftPositions([m.points[n - 1], m.points[0]]), width: 2, material: polyColor, depthFailMaterial: polyColor.withAlpha(0.6) } });
-	m.entities.push(closeLine);
+	var closeSeg = createStablePolyline([m.points[n - 1], m.points[0]], 2, polyColor);
+	if (closeSeg) m.entities.push(closeSeg);
 
-	// Poligon alanı
-	var poly = drawLayer.entities.add({ polygon: { hierarchy: new Cesium.PolygonHierarchy(liftPositions(m.points.slice())), material: polyColor.withAlpha(0.3), perPositionHeight: true } });
-	m.entities.push(poly);
+	// Poligon alanı — Primitive API (anti-jitter)
+	var polyPrim = createStablePolygon(m.points.slice(), polyColor.withAlpha(0.3));
+	if (polyPrim) m.entities.push(polyPrim);
 
 	// Etiket (haritada sadece 3D m²)
 	var labelText = m.resultText;
@@ -1155,8 +1236,8 @@ function restoreHeight(m) {
 	var hColor = Cesium.Color.fromCssColorString(grp && grp.color ? grp.color : '#22C55E');
 	m.entities.push(addPointLabel(m.points[0], 1));
 	m.entities.push(addPointLabel(m.points[1], 2));
-	var hLine = drawLayer.entities.add({ polyline: { positions: liftPositions(m.points.slice()), width: 2, material: hColor, depthFailMaterial: hColor.withAlpha(0.6) } });
-	m.entities.push(hLine);
+	var hSeg = createStablePolyline(m.points.slice(), 2, hColor);
+	if (hSeg) m.entities.push(hSeg);
 	m.entities.push(addLabel(midpoint(m.points[0], m.points[1]), m.resultText, hColor));
 }
 
@@ -1620,8 +1701,8 @@ function deleteMeasurement(id) {
 	var idx = measurements.findIndex(function (m) { return m.id === id; });
 	if (idx === -1) return;
 	var m = measurements[idx];
-	// Sahneneden entity'leri kaldır (zaten temizlendiyse hata vermez)
-	m.entities.forEach(function (ent) { drawLayer.entities.remove(ent); });
+	// Sahneneden entity/primitive'leri kaldır
+	m.entities.forEach(function (item) { safeRemoveItem(item); });
 	measurements.splice(idx, 1);
 	if (activeHighlightId === id) activeHighlightId = null;
 	viewer.scene.requestRender();
@@ -1717,8 +1798,8 @@ var snapIndicator = drawLayer.entities.add({
 
 function clearTempDrawing() {
 	// Henüz kaydedilmemiş geçici çizimleri temizle
-	tempEntities.forEach(function (ent) { drawLayer.entities.remove(ent); });
-	if (activeShape) { drawLayer.entities.remove(activeShape); activeShape = null; }
+	tempEntities.forEach(function (item) { safeRemoveItem(item); });
+	if (activeShape) { safeRemoveItem(activeShape); activeShape = null; }
 	clickPoints = [];
 	tempEntities = [];
 	pointCounter = 0;
@@ -1953,10 +2034,10 @@ viewer.scene.preRender.addEventListener(function () {
 
 // ─── REDRAW: clickPoints'ten TÜM GEÇİCİ ÇİZİMİ TEKRAR OLUŞTUR ───
 function redrawFromClickPoints() {
-	// Mevcut entity'leri temizle
-	tempEntities.forEach(function (ent) { drawLayer.entities.remove(ent); });
+	// Mevcut entity/primitive'leri temizle
+	tempEntities.forEach(function (item) { safeRemoveItem(item); });
 	tempEntities = [];
-	if (activeShape) { drawLayer.entities.remove(activeShape); activeShape = null; }
+	if (activeShape) { safeRemoveItem(activeShape); activeShape = null; }
 
 	var savedPoints = clickPoints.slice();
 	clickPoints = [];
@@ -1972,28 +2053,16 @@ function redrawFromClickPoints() {
 			var a = clickPoints[clickPoints.length - 2];
 			var b = clickPoints[clickPoints.length - 1];
 			var segDist = Cesium.Cartesian3.distance(a, b);
-			var line = drawLayer.entities.add({
-				polyline: {
-					positions: liftPositions([a, b]), width: 3,
-					material: Cesium.Color.YELLOW,
-					depthFailMaterial: Cesium.Color.YELLOW.withAlpha(0.6)
-				}
-			});
-			tempEntities.push(line);
+			var seg = createStablePolyline([a, b], 3, Cesium.Color.YELLOW);
+			if (seg) tempEntities.push(seg);
 			var segLabel = addLabel(midpoint(a, b), segDist.toFixed(2) + ' m', Cesium.Color.YELLOW);
 			tempEntities.push(segLabel);
 		}
 		else if (activeTool === 'btnArea' && clickPoints.length > 1) {
 			var a2 = clickPoints[clickPoints.length - 2];
 			var b2 = clickPoints[clickPoints.length - 1];
-			var edgeLine = drawLayer.entities.add({
-				polyline: {
-					positions: liftPositions([a2, b2]), width: 2,
-					material: Cesium.Color.AQUA,
-					depthFailMaterial: Cesium.Color.AQUA.withAlpha(0.6)
-				}
-			});
-			tempEntities.push(edgeLine);
+			var edgeSeg = createStablePolyline([a2, b2], 2, Cesium.Color.AQUA);
+			if (edgeSeg) tempEntities.push(edgeSeg);
 		}
 	});
 
@@ -2288,14 +2357,8 @@ handler.setInputAction(function (click) {
 		var b = clickPoints[clickPoints.length - 1];
 		var segDist = Cesium.Cartesian3.distance(a, b);
 
-		var line = drawLayer.entities.add({
-			polyline: {
-				positions: liftPositions([a, b]), width: 3,
-				material: _gc,
-				depthFailMaterial: _gc.withAlpha(0.6)
-			}
-		});
-		tempEntities.push(line);
+		var seg = createStablePolyline([a, b], 3, _gc);
+		if (seg) tempEntities.push(seg);
 
 		var segLabel = addLabel(midpoint(a, b), segDist.toFixed(2) + ' m', _gc);
 		tempEntities.push(segLabel);
@@ -2309,18 +2372,12 @@ handler.setInputAction(function (click) {
 		if (clickPoints.length > 1) {
 			var a2 = clickPoints[clickPoints.length - 2];
 			var b2 = clickPoints[clickPoints.length - 1];
-			var edgeLine = drawLayer.entities.add({
-				polyline: {
-					positions: liftPositions([a2, b2]), width: 2,
-					material: _gc,
-					depthFailMaterial: _gc.withAlpha(0.6)
-				}
-			});
-			tempEntities.push(edgeLine);
+			var edgeSeg = createStablePolyline([a2, b2], 2, _gc);
+			if (edgeSeg) tempEntities.push(edgeSeg);
 		}
 
 		// Dinamik poligon önizleme (3+ nokta olunca)
-		if (activeShape) { drawLayer.entities.remove(activeShape); activeShape = null; }
+		if (activeShape) { safeRemoveItem(activeShape); activeShape = null; }
 		if (clickPoints.length >= 3) {
 			activeShape = drawLayer.entities.add({
 				polygon: {
@@ -2343,14 +2400,8 @@ handler.setInputAction(function (click) {
 		var c2 = Cesium.Cartographic.fromCartesian(clickPoints[1]);
 		var diff = Math.abs(c1.height - c2.height);
 
-		var hLine = drawLayer.entities.add({
-			polyline: {
-				positions: liftPositions(clickPoints.slice()), width: 2,
-				material: _gc,
-				depthFailMaterial: _gc.withAlpha(0.6)
-			}
-		});
-		tempEntities.push(hLine);
+		var hSeg = createStablePolyline(clickPoints.slice(), 2, _gc);
+		if (hSeg) tempEntities.push(hSeg);
 
 		var hLabel = addLabel(midpoint(clickPoints[0], clickPoints[1]), '↕ ' + diff.toFixed(2) + ' m', _gc);
 		tempEntities.push(hLabel);
