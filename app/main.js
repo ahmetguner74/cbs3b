@@ -30,10 +30,12 @@ if (!isLocalFile) {
 // KALİTE MODU: Sistem kaliteli modda başlar (FXAA + fog sadece HTTP'de)
 viewer.scene.postProcessStages.fxaa.enabled = !isLocalFile;
 viewer.scene.fog.enabled = !isLocalFile;
-viewer.scene.logarithmicDepthBuffer = true; // Z-fighting/titreme önler
-viewer.scene.globe.depthTestAgainstTerrain = true; // Yükseklik ve koordinat okuma derinlik testi
-viewer.scene.camera.frustum.near = 0.1; // Near plane — derinlik hassasiyetini maksimize et
-viewer.scene.pickTranslucentDepth = true; // Yarı saydam entity'lerde tıklama hassasiyeti
+// Logarithmic depth buffer bazen mobilde titremeyi artırabiliyor (GPU hassasiyeti)
+viewer.scene.logarithmicDepthBuffer = !Cesium.FeatureDetection.isMobileBrowser();
+viewer.scene.globe.depthTestAgainstTerrain = true;
+// Near plane değerini mobilde 0.5 yaparak derinlik hassasiyetini dengeliyoruz
+viewer.scene.camera.frustum.near = Cesium.FeatureDetection.isMobileBrowser() ? 0.5 : 0.1;
+viewer.scene.pickTranslucentDepth = true;
 if (viewer.scene.skyAtmosphere) { viewer.scene.skyAtmosphere.show = false; }
 
 // file:// → skyBox da CORS hatası verir, kapat
@@ -111,6 +113,9 @@ try {
 
 var drawLayer = new Cesium.CustomDataSource('Olcumler');
 viewer.dataSources.add(drawLayer);
+
+// Z-fighting ofseti (metre) — eksik değişken tanımlandı
+var ENTITY_HEIGHT_OFFSET = 0.05;
 
 // requestRenderMode=true iken entity değişikliklerinde sahneyi otomatik yenile
 drawLayer.entities.collectionChanged.addEventListener(function () {
