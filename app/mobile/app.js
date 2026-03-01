@@ -1,6 +1,9 @@
-// ═══ CBS MOBİL — İNTERAKTİVİTE ═══
+// ═══ CBS MOBİL — TAM İNTERAKTİVİTE ═══
 (function () {
     'use strict';
+
+    // ─── UTILS ───
+    function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 
     // ─── SPLASH SCREEN ───
     var splash = document.getElementById('splash');
@@ -9,16 +12,14 @@
     var splashStatus = document.getElementById('splashStatus');
     var splashTips = document.getElementById('splashTips');
 
-    // Kısayol ipuçları (masaüstü uygulamadan)
     var tips = [
-        { key: 'Sol Tık', text: 'Nokta Koy' },
-        { key: 'Sağ Tık', text: 'Ölçümü Bitir' },
+        { key: 'Dokunma', text: 'Nokta Koy' },
+        { key: 'Uzun Bas', text: 'Ölçümü Bitir' },
         { key: 'Pinch', text: 'Yakınlaş / Uzaklaş' },
-        { key: 'Ctrl+Z', text: 'Geri Al' },
-        { key: 'L', text: 'Panel Aç/Kapat' },
-        { key: 'H', text: 'Ana Görünüm' }
+        { key: '2 Parmak', text: 'Haritayı Döndür' },
+        { key: 'Kaydır', text: 'Panel Aç/Kapat' },
+        { key: 'Çift Tık', text: 'Ana Görünüm' }
     ];
-    // Rastgele 3 ipucu göster
     tips.sort(function () { return Math.random() - 0.5; });
     for (var i = 0; i < 3; i++) {
         var tip = document.createElement('div');
@@ -27,7 +28,6 @@
         splashTips.appendChild(tip);
     }
 
-    // Simüle yükleme
     var progress = 0;
     var loadInterval = setInterval(function () {
         progress += Math.random() * 15 + 5;
@@ -47,7 +47,7 @@
         }
     }, 300);
 
-    // ─── TOOL PANEL ───
+    // ─── DOM ELEMENTS ───
     var toolPanel = document.getElementById('toolPanel');
     var btnToolToggle = document.getElementById('btnToolToggle');
     var toolToggleIcon = document.getElementById('toolToggleIcon');
@@ -55,89 +55,137 @@
     var measOverlay = document.getElementById('measOverlay');
     var resultBar = document.getElementById('resultBar');
     var activeGroupLabel = document.getElementById('activeGroupLabel');
-
-    btnToolToggle.addEventListener('click', function () {
-        toolPanel.classList.toggle('open');
-        var isOpen = toolPanel.classList.contains('open');
-        toolToggleIcon.textContent = isOpen ? 'chevron_left' : 'chevron_right';
-    });
-
-    toolBtns.forEach(function (btn) {
-        btn.addEventListener('click', function () {
-            var wasActive = this.classList.contains('active');
-            toolBtns.forEach(function (b) { b.classList.remove('active'); });
-            if (!wasActive) {
-                this.classList.add('active');
-                measOverlay.style.display = 'block';
-                var toolNames = { coord: '📍 Nokta modu aktif', distance: '📏 Mesafe ölçümü aktif', area: '📐 Alan ölçümü aktif', height: '📊 Yükseklik ölçümü aktif' };
-                resultBar.textContent = toolNames[this.dataset.tool] || 'Araç seçildi';
-            } else {
-                measOverlay.style.display = 'none';
-                resultBar.textContent = 'Araç seçin ve haritaya tıklayın.';
-            }
-        });
-    });
-
-    // ─── RIGHT DRAWER ───
     var drawer = document.getElementById('drawer');
     var drawerBackdrop = document.getElementById('drawerBackdrop');
     var btnDrawerToggle = document.getElementById('btnDrawerToggle');
     var btnCloseDrawer = document.getElementById('btnCloseDrawer');
     var drawerToggleIcon = document.getElementById('drawerToggleIcon');
+    var settingsScreen = document.getElementById('settingsScreen');
+    var btnSettingsBack = document.getElementById('btnSettingsBack');
+    var navItems = document.querySelectorAll('.nav-item');
+    var mainArea = document.querySelector('.main-area');
 
+    // ─── STATE ───
+    var state = {
+        toolPanelOpen: false,
+        drawerOpen: false,
+        settingsOpen: false,
+        activeTool: null,
+        activeNav: 'map'
+    };
+
+    // Haptic feedback (Android Chrome)
+    function haptic(ms) {
+        if (navigator.vibrate) navigator.vibrate(ms || 10);
+    }
+
+    // ─── TOOL PANEL ───
+    function openToolPanel() {
+        state.toolPanelOpen = true;
+        toolPanel.classList.add('open');
+        toolToggleIcon.textContent = 'chevron_left';
+        setActiveNav('tools');
+        haptic(8);
+    }
+    function closeToolPanel(animated) {
+        state.toolPanelOpen = false;
+        toolPanel.style.transition = animated === false ? 'none' : '';
+        toolPanel.classList.remove('open');
+        toolPanel.style.transform = '';
+        toolToggleIcon.textContent = 'chevron_right';
+        requestAnimationFrame(function () { toolPanel.style.transition = ''; });
+    }
+
+    btnToolToggle.addEventListener('click', function () {
+        if (state.toolPanelOpen) closeToolPanel(); else openToolPanel();
+    });
+
+    toolBtns.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            haptic(12);
+            var wasActive = this.classList.contains('active');
+            toolBtns.forEach(function (b) { b.classList.remove('active'); });
+            if (!wasActive) {
+                this.classList.add('active');
+                state.activeTool = this.dataset.tool;
+                measOverlay.style.display = 'block';
+                var toolNames = { coord: '📍 Nokta modu aktif — haritaya dokunun', distance: '📏 Mesafe ölçümü — noktaları işaretleyin', area: '📐 Alan ölçümü — köşeleri belirleyin', height: '📊 Yükseklik ölçümü — başlangıç noktası seçin' };
+                resultBar.textContent = toolNames[this.dataset.tool] || 'Araç seçildi';
+                resultBar.style.borderColor = 'rgba(59,130,246,0.3)';
+            } else {
+                state.activeTool = null;
+                measOverlay.style.display = 'none';
+                resultBar.textContent = 'Araç seçin ve haritaya tıklayın.';
+                resultBar.style.borderColor = '';
+            }
+        });
+    });
+
+    // ─── DRAWER ───
     function openDrawer() {
+        state.drawerOpen = true;
         drawer.classList.add('open');
         drawerBackdrop.classList.add('show');
-        drawerToggleIcon.textContent = 'chevron_right';
         btnDrawerToggle.style.display = 'none';
         activeGroupLabel.style.display = 'none';
+        setActiveNav('measurements');
+        haptic(8);
     }
-    function closeDrawer() {
+    function closeDrawer(animated) {
+        state.drawerOpen = false;
+        drawer.style.transition = animated === false ? 'none' : '';
         drawer.classList.remove('open');
+        drawer.style.transform = '';
         drawerBackdrop.classList.remove('show');
-        drawerToggleIcon.textContent = 'chevron_left';
         btnDrawerToggle.style.display = '';
         activeGroupLabel.style.display = '';
+        requestAnimationFrame(function () { drawer.style.transition = ''; });
     }
 
     btnDrawerToggle.addEventListener('click', openDrawer);
     activeGroupLabel.addEventListener('click', openDrawer);
-    drawerBackdrop.addEventListener('click', closeDrawer);
-    btnCloseDrawer.addEventListener('click', closeDrawer);
+    drawerBackdrop.addEventListener('click', function () { closeDrawer(); haptic(5); });
+    btnCloseDrawer.addEventListener('click', function () { closeDrawer(); haptic(5); });
 
     // Folder toggle
     document.querySelectorAll('.folder-head').forEach(function (head) {
         head.addEventListener('click', function (e) {
             if (e.target.tagName === 'INPUT') return;
             this.classList.toggle('collapsed');
+            haptic(5);
         });
     });
 
-    // ─── SETTINGS SCREEN ───
-    var settingsScreen = document.getElementById('settingsScreen');
-    var btnSettingsBack = document.getElementById('btnSettingsBack');
-
+    // ─── SETTINGS ───
     function openSettings() {
+        state.settingsOpen = true;
         settingsScreen.classList.add('open');
+        setActiveNav('settings');
+        haptic(8);
     }
-    function closeSettings() {
+    function closeSettings(animated) {
+        state.settingsOpen = false;
+        settingsScreen.style.transition = animated === false ? 'none' : '';
         settingsScreen.classList.remove('open');
+        settingsScreen.style.transform = '';
+        requestAnimationFrame(function () { settingsScreen.style.transition = ''; });
     }
 
-    btnSettingsBack.addEventListener('click', closeSettings);
+    btnSettingsBack.addEventListener('click', function () { closeSettings(); haptic(5); });
 
-    // Globe toggle → show/hide layer card
+    // Globe toggle
     var toggleGlobe = document.getElementById('toggleGlobe');
     var layerCard = document.getElementById('layerCard');
     toggleGlobe.addEventListener('click', function () {
         this.classList.toggle('on');
         layerCard.style.display = this.classList.contains('on') ? 'block' : 'none';
+        haptic(10);
     });
 
-    // Generic toggle handler
+    // Generic toggles
     document.querySelectorAll('.toggle').forEach(function (t) {
         if (t.id === 'toggleGlobe') return;
-        t.addEventListener('click', function () { this.classList.toggle('on'); });
+        t.addEventListener('click', function () { this.classList.toggle('on'); haptic(10); });
     });
 
     // Pill selectors
@@ -146,83 +194,279 @@
             pill.addEventListener('click', function () {
                 group.querySelectorAll('.pill').forEach(function (p) { p.classList.remove('active'); });
                 this.classList.add('active');
+                haptic(8);
             });
         });
     });
 
+    // Performance mode toggle in tool panel
+    document.querySelectorAll('.tool-btn[data-mode]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            document.querySelectorAll('.tool-btn[data-mode]').forEach(function (b) { b.classList.remove('active'); });
+            this.classList.add('active');
+            haptic(10);
+        });
+    });
+
     // ─── BOTTOM NAV ───
-    var navItems = document.querySelectorAll('.nav-item');
+    function setActiveNav(nav) {
+        state.activeNav = nav;
+        navItems.forEach(function (n) {
+            n.classList.toggle('active', n.dataset.nav === nav);
+        });
+    }
+
     navItems.forEach(function (item) {
         item.addEventListener('click', function () {
-            navItems.forEach(function (n) { n.classList.remove('active'); });
-            this.classList.add('active');
+            haptic(12);
             var nav = this.dataset.nav;
-            // Close all overlays first
+            closeToolPanel();
             closeDrawer();
             closeSettings();
-            if (!toolPanel.classList.contains('open')) {
-                // keep closed
-            } else {
-                toolPanel.classList.remove('open');
-                toolToggleIcon.textContent = 'chevron_right';
-            }
-
             switch (nav) {
-                case 'tools':
-                    toolPanel.classList.add('open');
-                    toolToggleIcon.textContent = 'chevron_left';
-                    break;
-                case 'measurements':
-                    openDrawer();
-                    break;
-                case 'settings':
-                    openSettings();
-                    break;
-                case 'map':
-                    // just close everything, show map
-                    break;
+                case 'tools': openToolPanel(); break;
+                case 'measurements': openDrawer(); break;
+                case 'settings': openSettings(); break;
+                case 'map': setActiveNav('map'); break;
             }
         });
     });
 
-    // ─── SWIPE GESTURES ───
-    var touchStartX = 0;
-    var touchStartY = 0;
-    var mainArea = document.querySelector('.main-area');
+    // ═══════════════════════════════════════
+    //  PARMAK (TOUCH) GESTÜRLERİ — TAM SET
+    // ═══════════════════════════════════════
+
+    var SWIPE_THRESHOLD = 50;   // Minimum px for swipe recognition
+    var EDGE_ZONE = 36;         // Edge zone width for edge-swipe
+    var VELOCITY_THRESHOLD = 0.3; // px/ms for flick detection
+
+    // --- Touch state ---
+    var touch = {
+        startX: 0, startY: 0,
+        currentX: 0, currentY: 0,
+        startTime: 0,
+        target: null,  // 'tool-panel' | 'drawer' | 'settings' | null
+        dragging: false,
+        moved: false
+    };
+
+    // Determine which panel the touch should control
+    function identifyTouchTarget(x, y) {
+        // Settings screen is on top
+        if (state.settingsOpen) return 'settings';
+        // Drawer is open → drag to close
+        if (state.drawerOpen) return 'drawer';
+        // Tool panel is open → drag to close
+        if (state.toolPanelOpen) return 'tool-panel';
+        // Edge swipe detection
+        if (x < EDGE_ZONE) return 'tool-panel-open';
+        if (x > window.innerWidth - EDGE_ZONE) return 'drawer-open';
+        return null;
+    }
 
     mainArea.addEventListener('touchstart', function (e) {
-        touchStartX = e.touches[0].clientX;
-        touchStartY = e.touches[0].clientY;
+        var t = e.touches[0];
+        touch.startX = touch.currentX = t.clientX;
+        touch.startY = touch.currentY = t.clientY;
+        touch.startTime = Date.now();
+        touch.moved = false;
+        touch.dragging = false;
+
+        // Don't intercept touches on interactive elements
+        var el = e.target;
+        while (el && el !== mainArea) {
+            if (el.tagName === 'BUTTON' || el.tagName === 'INPUT' || el.tagName === 'SELECT' ||
+                el.classList.contains('nav-item') || el.classList.contains('tool-btn') ||
+                el.classList.contains('drawer-toolbar-btn') || el.classList.contains('transfer-btn') ||
+                el.classList.contains('pill') || el.classList.contains('angle-btn') ||
+                el.classList.contains('toggle') || el.classList.contains('m-row') ||
+                el.classList.contains('folder-head') || el.classList.contains('settings-back') ||
+                el.classList.contains('slider-reset') || el.classList.contains('m-row-delete') ||
+                el.classList.contains('header-btn') || el.classList.contains('drawer-list') ||
+                el.classList.contains('settings-body')) {
+                touch.target = null;
+                return;
+            }
+            el = el.parentElement;
+        }
+
+        touch.target = identifyTouchTarget(t.clientX, t.clientY);
     }, { passive: true });
 
-    mainArea.addEventListener('touchend', function (e) {
-        var dx = e.changedTouches[0].clientX - touchStartX;
-        var dy = e.changedTouches[0].clientY - touchStartY;
-        if (Math.abs(dx) < 60 || Math.abs(dy) > Math.abs(dx)) return;
-        if (dx > 0 && touchStartX < 40) {
-            // Swipe right from left edge → open tool panel
-            toolPanel.classList.add('open');
-            toolToggleIcon.textContent = 'chevron_left';
-        } else if (dx < 0 && touchStartX > window.innerWidth - 40) {
-            // Swipe left from right edge → open drawer
-            openDrawer();
+    mainArea.addEventListener('touchmove', function (e) {
+        if (!touch.target) return;
+
+        var t = e.touches[0];
+        touch.currentX = t.clientX;
+        touch.currentY = t.clientY;
+        var dx = touch.currentX - touch.startX;
+        var dy = touch.currentY - touch.startY;
+
+        // Only start dragging after minimum movement and mostly horizontal
+        if (!touch.dragging) {
+            if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+                touch.dragging = true;
+                touch.moved = true;
+            } else if (touch.target === 'settings' && dy > 10 && Math.abs(dy) > Math.abs(dx) * 1.2) {
+                touch.dragging = true;
+                touch.moved = true;
+            } else {
+                return;
+            }
         }
+
+        // Prevent scroll while dragging panel
+        e.preventDefault();
+
+        // ── TOOL PANEL: drag to close (swipe left) ──
+        if (touch.target === 'tool-panel') {
+            var panelW = toolPanel.querySelector('.tool-panel-glass').offsetWidth + 32;
+            var offset = clamp(dx, -panelW, 0);
+            toolPanel.style.transition = 'none';
+            toolPanel.style.transform = 'translateX(' + offset + 'px)';
+        }
+        // ── TOOL PANEL: edge-swipe open (swipe right from left edge) ──
+        else if (touch.target === 'tool-panel-open') {
+            var panelW2 = 88; // approx panel width
+            var offset2 = clamp(dx, 0, panelW2);
+            var pct = offset2 / panelW2;
+            toolPanel.style.transition = 'none';
+            // Start from closed position (-100% + 32px) and move toward open (0)
+            var closedOffset = -panelW2 + 32;
+            toolPanel.style.transform = 'translateX(' + (closedOffset + offset2) + 'px)';
+        }
+        // ── DRAWER: drag to close (swipe right) ──
+        else if (touch.target === 'drawer') {
+            var offset3 = clamp(dx, 0, window.innerWidth);
+            drawer.style.transition = 'none';
+            drawer.style.transform = 'translateX(' + offset3 + 'px)';
+            // Fade backdrop
+            var pct3 = 1 - (offset3 / 200);
+            drawerBackdrop.style.opacity = clamp(pct3, 0, 1);
+        }
+        // ── DRAWER: edge-swipe open (swipe left from right edge) ──
+        else if (touch.target === 'drawer-open') {
+            var drawerW = Math.min(window.innerWidth - 48, 320);
+            var offset4 = clamp(-dx, 0, drawerW);
+            drawer.style.transition = 'none';
+            drawer.style.transform = 'translateX(' + (drawerW - offset4) + 'px)';
+            drawer.classList.add('open');
+            drawerBackdrop.classList.add('show');
+            drawerBackdrop.style.opacity = clamp(offset4 / drawerW, 0, 1);
+            btnDrawerToggle.style.display = 'none';
+            activeGroupLabel.style.display = 'none';
+        }
+        // ── SETTINGS: swipe down to close ──
+        else if (touch.target === 'settings') {
+            var offsetY = clamp(dy, 0, window.innerHeight);
+            settingsScreen.style.transition = 'none';
+            settingsScreen.style.transform = 'translateY(' + offsetY + 'px)';
+        }
+    }, { passive: false });
+
+    mainArea.addEventListener('touchend', function (e) {
+        if (!touch.target || !touch.dragging) {
+            touch.target = null;
+            return;
+        }
+
+        var dx = touch.currentX - touch.startX;
+        var dy = touch.currentY - touch.startY;
+        var dt = Date.now() - touch.startTime;
+        var velocityX = Math.abs(dx) / dt;
+        var velocityY = Math.abs(dy) / dt;
+        var isFlick = velocityX > VELOCITY_THRESHOLD || velocityY > VELOCITY_THRESHOLD;
+
+        // ── TOOL PANEL: close if swiped left enough ──
+        if (touch.target === 'tool-panel') {
+            toolPanel.style.transition = '';
+            if (dx < -SWIPE_THRESHOLD || (isFlick && dx < -20)) {
+                closeToolPanel();
+                haptic(10);
+            } else {
+                toolPanel.style.transform = '';
+            }
+        }
+        // ── TOOL PANEL: open if swiped right enough ──
+        else if (touch.target === 'tool-panel-open') {
+            toolPanel.style.transition = '';
+            if (dx > SWIPE_THRESHOLD || (isFlick && dx > 20)) {
+                openToolPanel();
+            } else {
+                toolPanel.style.transform = '';
+            }
+        }
+        // ── DRAWER: close if swiped right enough ──
+        else if (touch.target === 'drawer') {
+            drawer.style.transition = '';
+            drawerBackdrop.style.opacity = '';
+            if (dx > SWIPE_THRESHOLD || (isFlick && dx > 20)) {
+                closeDrawer();
+                haptic(10);
+            } else {
+                drawer.style.transform = '';
+            }
+        }
+        // ── DRAWER: open if swiped left enough ──
+        else if (touch.target === 'drawer-open') {
+            drawer.style.transition = '';
+            drawerBackdrop.style.opacity = '';
+            if (-dx > SWIPE_THRESHOLD || (isFlick && dx < -20)) {
+                openDrawer();
+            } else {
+                closeDrawer();
+            }
+        }
+        // ── SETTINGS: close if swiped down enough ──
+        else if (touch.target === 'settings') {
+            settingsScreen.style.transition = '';
+            if (dy > 80 || (isFlick && dy > 30)) {
+                closeSettings();
+                setActiveNav('map');
+                haptic(10);
+            } else {
+                settingsScreen.style.transform = '';
+            }
+        }
+
+        touch.target = null;
+        touch.dragging = false;
     }, { passive: true });
+
+    // ═══ SCROLL IN DRAWER & SETTINGS ═══
+    // Allow vertical scrolling inside drawer-list and settings-body
+    // by not intercepting those touches
+    var scrollAreas = document.querySelectorAll('.drawer-list, .settings-body, .angle-scroll');
+    scrollAreas.forEach(function (area) {
+        area.addEventListener('touchstart', function (e) {
+            touch.target = null; // Don't intercept
+        }, { passive: true });
+    });
 
     // ─── THEME TOGGLE ───
     var btnTheme = document.getElementById('btnTheme');
     btnTheme.addEventListener('click', function () {
+        haptic(12);
         var icon = this.querySelector('.material-symbols-outlined');
         document.documentElement.classList.toggle('light-theme');
         icon.textContent = document.documentElement.classList.contains('light-theme') ? 'dark_mode' : 'light_mode';
     });
 
-    // ─── PERFORMANCE MODE TOGGLE ───
-    document.querySelectorAll('.tool-btn[data-mode]').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-            document.querySelectorAll('.tool-btn[data-mode]').forEach(function (b) { b.classList.remove('active'); });
-            this.classList.add('active');
-        });
-    });
+    // ─── DOUBLE TAP → HOME VIEW (on map area) ───
+    var lastTap = 0;
+    document.querySelector('.map-view').addEventListener('touchend', function (e) {
+        var now = Date.now();
+        if (now - lastTap < 300 && !touch.moved) {
+            // Double tap detected
+            closeToolPanel();
+            closeDrawer();
+            closeSettings();
+            setActiveNav('map');
+            resultBar.textContent = '🏠 Ana görünüme dönüldü';
+            setTimeout(function () { resultBar.textContent = 'Araç seçin ve haritaya tıklayın.'; }, 1500);
+            haptic(15);
+        }
+        lastTap = now;
+    }, { passive: true });
 
 })();

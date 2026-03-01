@@ -4,16 +4,35 @@
 <head>
 	<meta charset="utf-8">
 	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<link rel="icon" type="image/png" href="cbs-logo.png">
+	<link rel="apple-touch-icon" href="cbs-logo.png">
+	<!-- Mobil cihaz algılama → otomatik yönlendirme -->
+	<script>
+		if (/Android|iPhone|iPad|iPod|webOS|BlackBerry|Opera Mini|IEMobile/i.test(navigator.userAgent)
+			&& !window.location.pathname.includes('/mobile/')) {
+			window.location.replace('mobile/index.html' + window.location.search + window.location.hash);
+		}
+	</script>
 	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 	<title>CBS — 3D Şehir Modeli</title>
+	<meta name="description" content="Bursa Büyükşehir Belediyesi 3D Şehir Modeli — Ölçüm ve Dijitalleştirme Platformu">
+	<meta property="og:title" content="CBS — 3D Şehir Modeli">
+	<meta property="og:description"
+		content="Bursa Büyükşehir Belediyesi 3D Şehir Modeli — Ölçüm ve Dijitalleştirme Platformu">
+	<meta property="og:image" content="cbs-logo.png">
+	<meta property="og:type" content="website">
 
 	<!-- Cesium: CDN (online) veya lokal (file://) -->
 	<script>
-		if (window.location.protocol === 'file:') {
-			document.write('<script src="Cesium/Cesium.js"><\/script>');
-		} else {
-			document.write('<script src="https://cesium.com/downloads/cesiumjs/releases/1.105/Build/Cesium/Cesium.js"><\/script>');
-		}
+		(function () {
+			var src = window.location.protocol === 'file:'
+				? 'Cesium/Cesium.js'
+				: 'https://cesium.com/downloads/cesiumjs/releases/1.105/Build/Cesium/Cesium.js';
+			var s = document.createElement('script');
+			s.src = src;
+			s.async = false;
+			document.head.appendChild(s);
+		})();
 	</script>
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.15.0/proj4.js"></script>
 	<style>
