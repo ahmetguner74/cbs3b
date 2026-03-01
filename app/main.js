@@ -547,6 +547,9 @@ var _toolPanelIsOpen = false;
 		icon.textContent = 'chevron_right';
 		localStorage.setItem('cbs-toolpanel', 'closed');
 	}
+	// Global erişim (setActiveTool mobilde çağırır)
+	window.closeToolPanel = closeToolPanel;
+	window.openToolPanel = openToolPanel;
 
 	btn.addEventListener('click', function () {
 		if (_toolPanelIsOpen) closeToolPanel();
@@ -2025,7 +2028,7 @@ function setActiveTool(toolId) {
 		var aEl = document.getElementById(activeTool);
 		if (aEl) aEl.classList.add('active');
 		// Mobilde: araç seçildiğinde sol paneli kapat
-		if (isMobile && typeof closeToolPanel === 'function') closeToolPanel();
+		if (isMobile && window.closeToolPanel) window.closeToolPanel();
 	}
 
 	// Toggle butonunda aktif araç ikonunu göster
