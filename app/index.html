@@ -6,7 +6,14 @@
 	<meta http-equiv="X-UA-Compatible" content="IE=edge">
 	<link rel="icon" type="image/png" href="cbs-logo.png">
 	<link rel="apple-touch-icon" href="cbs-logo.png">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+	<meta name="viewport"
+		content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+	<!-- PWA / Mobil Uygulama Modu -->
+	<meta name="mobile-web-app-capable" content="yes">
+	<meta name="apple-mobile-web-app-capable" content="yes">
+	<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+	<meta name="apple-mobile-web-app-title" content="CBS Platform">
+	<meta name="theme-color" content="#070a12">
 	<title>CBS — 3D Şehir Modeli</title>
 	<meta name="description" content="Bursa Büyükşehir Belediyesi 3D Şehir Modeli — Ölçüm ve Dijitalleştirme Platformu">
 	<meta property="og:title" content="CBS — 3D Şehir Modeli">
@@ -26,6 +33,39 @@
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.15.0/proj4.js"></script>
 	<style>
 		@import url('https://cesium.com/downloads/cesiumjs/releases/1.105/Build/Cesium/Widgets/widgets.css');
+
+		/* ═══ MOBİL UYGULAMA DAVRANIŞI ═══ */
+		html,
+		body {
+			-webkit-overflow-scrolling: touch;
+			overscroll-behavior: none;
+			/* Pull-to-refresh engelle */
+			-webkit-tap-highlight-color: transparent;
+			/* Dokunma highlight kaldır */
+		}
+
+		/* Çift tıkla yakınlaşma engelle (tüm sayfa) */
+		* {
+			touch-action: manipulation;
+		}
+
+		/* Cesium canvas hariç — 3D hareket için pan-zoom gerekli */
+		#cesiumContainer canvas {
+			touch-action: none;
+		}
+
+		/* UI üzerinde metin seçimini engelle */
+		button,
+		label,
+		.select-none,
+		[class*="toolbar"],
+		#headerBar,
+		#sidePanel,
+		#resultDisplay,
+		#measureDrawer {
+			-webkit-user-select: none;
+			user-select: none;
+		}
 	</style>
 
 	<!-- Tailwind CSS -->
