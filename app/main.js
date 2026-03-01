@@ -30,6 +30,7 @@ if (!isLocalFile) {
 // KALİTE MODU: Sistem kaliteli modda başlar (FXAA + fog sadece HTTP'de)
 viewer.scene.postProcessStages.fxaa.enabled = !isLocalFile;
 viewer.scene.fog.enabled = !isLocalFile;
+viewer.scene.logarithmicDepthBuffer = true; // Mobilde z-fighting/titreme önler
 if (viewer.scene.skyAtmosphere) { viewer.scene.skyAtmosphere.show = false; }
 
 // file:// → skyBox da CORS hatası verir, kapat
@@ -173,9 +174,9 @@ function initSplashProgress(ts) {
 			splash.style.opacity = '0';
 			setTimeout(function () {
 				splash.remove();
-				// Auth yoksa login ekranını göster
+				// Login ekranını göster
 				var loginScreen = document.getElementById('loginScreen');
-				if (loginScreen && sessionStorage.getItem('cbs_auth') !== 'ok') {
+				if (loginScreen) {
 					loginScreen.style.display = '';
 					loginScreen.style.opacity = '1';
 				}

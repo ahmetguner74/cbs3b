@@ -1197,12 +1197,6 @@
 				var loginPass = document.getElementById('loginPass');
 				var togglePass = document.getElementById('loginTogglePass');
 
-				// Zaten giriş yapılmışsa login ekranını kaldır
-				if (sessionStorage.getItem('cbs_auth') === 'ok') {
-					loginScreen.remove();
-					return;
-				}
-
 				// Şifre göster/gizle
 				togglePass.addEventListener('click', function () {
 					var isPass = loginPass.type === 'password';
@@ -1218,7 +1212,6 @@
 
 					if (user === 'cbs' && pass === 'demo') {
 						// Başarılı giriş
-						sessionStorage.setItem('cbs_auth', 'ok');
 						loginScreen.style.opacity = '0';
 						setTimeout(function () { loginScreen.remove(); }, 500);
 					} else {
