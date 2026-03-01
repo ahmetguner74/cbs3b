@@ -1161,16 +1161,18 @@ function safeRemoveItem(item) {
 // var globalPointCollection = viewer.scene.primitives.add(new Cesium.PointPrimitiveCollection());
 // var globalLabelCollection = viewer.scene.primitives.add(new Cesium.LabelCollection());
 
-function addPointLabel(position, number) {
+function addPointLabel(position, number, colorStr) {
 	var pivot = liftPosition(position);
 	var enuMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(pivot);
+
+	var pointColor = colorStr ? Cesium.Color.fromCssColorString(colorStr) : Cesium.Color.WHITE;
 
 	// Nokta koleksiyonu - Lokal orijin
 	var pointCollection = new Cesium.PointPrimitiveCollection({ modelMatrix: enuMatrix });
 	var point = pointCollection.add({
 		position: Cesium.Cartesian3.ZERO,
 		pixelSize: 8,
-		color: Cesium.Color.WHITE,
+		color: pointColor,
 		outlineColor: Cesium.Color.BLACK,
 		outlineWidth: 1,
 		disableDepthTestDistance: Number.POSITIVE_INFINITY
@@ -1269,7 +1271,7 @@ function restoreLine(m) {
 	var lineColor = Cesium.Color.fromCssColorString(grp && grp.color ? grp.color : '#EAB308');
 	var n = m.points.length;
 	for (var i = 0; i < n; i++) {
-		m.entities.push(addPointLabel(m.points[i], i + 1));
+		m.entities.push(addPointLabel(m.points[i], i + 1, grp && grp.color ? grp.color : '#EAB308'));
 		if (i < n - 1) {
 			var seg = createStablePolyline([m.points[i], m.points[i + 1]], 3, lineColor);
 			if (seg) m.entities.push(seg);
@@ -1286,7 +1288,7 @@ function restorePolygon(m) {
 	var polyColor = Cesium.Color.fromCssColorString(grp && grp.color ? grp.color : '#14B8A6');
 	var n = m.points.length;
 	for (var i = 0; i < n; i++) {
-		m.entities.push(addPointLabel(m.points[i], i + 1));
+		m.entities.push(addPointLabel(m.points[i], i + 1, grp && grp.color ? grp.color : '#14B8A6'));
 		if (i < n - 1) {
 			var seg = createStablePolyline([m.points[i], m.points[i + 1]], 2, polyColor);
 			if (seg) m.entities.push(seg);
@@ -1309,16 +1311,18 @@ function restorePolygon(m) {
 
 function restoreHeight(m) {
 	var grp = groups.find(function (g) { return g.id === m.groupId; });
-	var hColor = Cesium.Color.fromCssColorString(grp && grp.color ? grp.color : '#22C55E');
-	m.entities.push(addPointLabel(m.points[0], 1));
-	m.entities.push(addPointLabel(m.points[1], 2));
+	var hexColor = grp && grp.color ? grp.color : '#22C55E';
+	var hColor = Cesium.Color.fromCssColorString(hexColor);
+	m.entities.push(addPointLabel(m.points[0], 1, hexColor));
+	m.entities.push(addPointLabel(m.points[1], 2, hexColor));
 	var hSeg = createStablePolyline(m.points.slice(), 2, hColor);
 	if (hSeg) m.entities.push(hSeg);
 	m.entities.push(addLabel(midpoint(m.points[0], m.points[1]), m.resultText, hColor));
 }
 
 function restoreCoord(m) {
-	m.entities.push(addPointLabel(m.points[0], 1));
+	var grp = groups.find(function (g) { return g.id === m.groupId; });
+	m.entities.push(addPointLabel(m.points[0], 1, grp && grp.color ? grp.color : '#14B8A6'));
 }
 
 // Başlangıçta kayıtlı verileri yükle
@@ -2139,10 +2143,13 @@ function redrawFromClickPoints() {
 	clickPoints = [];
 	pointCounter = 0;
 
+	var _grp = groups.find(function (g) { return g.id === activeGroupId; });
+	var hexColor = _grp && _grp.color ? _grp.color : '#14B8A6';
+
 	savedPoints.forEach(function (pt) {
 		clickPoints.push(pt);
 		pointCounter++;
-		var pnt = addPointLabel(pt, pointCounter);
+		var pnt = addPointLabel(pt, pointCounter, hexColor);
 		tempEntities.push(pnt);
 
 		if (activeTool === 'btnDistance' && clickPoints.length > 1) {
@@ -2459,7 +2466,8 @@ handler.setInputAction(function (click) {
 	clickPoints.push(cartesian);
 	pointCounter++;
 
-	var pnt = addPointLabel(cartesian, pointCounter);
+	var hexColor = _grp && _grp.color ? _grp.color : '#14B8A6';
+	var pnt = addPointLabel(cartesian, pointCounter, hexColor);
 	tempEntities.push(pnt);
 
 	// Mesafe ve Alan araçlarında Z ayar butonu ekle
