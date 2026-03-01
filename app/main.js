@@ -18,6 +18,10 @@ var viewer = new Cesium.Viewer('cesiumContainer', {
 	terrainProvider: new Cesium.EllipsoidTerrainProvider()  // Başlangıçta düz elipsoid
 });
 
+// Mobil tespiti (Düzeltme: isMobileBrowser yerine isMobile)
+var _isMob = Cesium.FeatureDetection.isMobile();
+
+
 // HTTP modunda Ion World Terrain'i asenkron yükle
 if (!isLocalFile) {
 	Cesium.createWorldTerrainAsync().then(function (terrain) {
@@ -31,10 +35,10 @@ if (!isLocalFile) {
 viewer.scene.postProcessStages.fxaa.enabled = !isLocalFile;
 viewer.scene.fog.enabled = !isLocalFile;
 // Logarithmic depth buffer bazen mobilde titremeyi artırabiliyor (GPU hassasiyeti)
-viewer.scene.logarithmicDepthBuffer = !Cesium.FeatureDetection.isMobileBrowser();
+viewer.scene.logarithmicDepthBuffer = !_isMob;
 viewer.scene.globe.depthTestAgainstTerrain = true;
 // Near plane değerini mobilde 0.5 yaparak derinlik hassasiyetini dengeliyoruz
-viewer.scene.camera.frustum.near = Cesium.FeatureDetection.isMobileBrowser() ? 0.5 : 0.1;
+viewer.scene.camera.frustum.near = _isMob ? 0.5 : 0.1;
 viewer.scene.pickTranslucentDepth = true;
 if (viewer.scene.skyAtmosphere) { viewer.scene.skyAtmosphere.show = false; }
 
