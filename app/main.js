@@ -1028,9 +1028,19 @@ function loadFromStorage() {
 }
 
 // ─── YARDIMCI ETİKET & GEOMETRİ FONKSİYONLARI ───────────────
+// Z-fighting çözümü: noktaları 0.3m yukarı kaldır (tileset yüzeyinin üstüne)
+var ENTITY_HEIGHT_OFFSET = 0.3; // metre
+function liftPosition(cartesian) {
+	var carto = Cesium.Cartographic.fromCartesian(cartesian);
+	carto.height += ENTITY_HEIGHT_OFFSET;
+	return Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, carto.height);
+}
+function liftPositions(arr) {
+	return arr.map(function (p) { return liftPosition(p); });
+}
 function addPointLabel(position, number) {
 	return drawLayer.entities.add({
-		position: position,
+		position: liftPosition(position),
 		point: { pixelSize: 8, color: Cesium.Color.WHITE, outlineColor: Cesium.Color.BLACK, outlineWidth: 1, disableDepthTestDistance: Number.POSITIVE_INFINITY },
 		label: {
 			text: String(number),
@@ -1048,7 +1058,7 @@ function addPointLabel(position, number) {
 
 function addLabel(position, text, color) {
 	return drawLayer.entities.add({
-		position: position,
+		position: liftPosition(position),
 		label: {
 			text: text,
 			font: 'bold 13px sans-serif',
@@ -1107,7 +1117,7 @@ function restoreLine(m) {
 		m.entities.push(addPointLabel(m.points[i], i + 1));
 		if (i < n - 1) {
 			var a = m.points[i]; var b = m.points[i + 1];
-			var line = drawLayer.entities.add({ polyline: { positions: [a, b], width: 3, material: lineColor, depthFailMaterial: lineColor.withAlpha(0.6), clampToGround: true, classificationType: Cesium.ClassificationType.BOTH } });
+			var line = drawLayer.entities.add({ polyline: { positions: liftPositions([a, b]), width: 3, material: lineColor, depthFailMaterial: lineColor.withAlpha(0.6) } });
 			m.entities.push(line);
 		}
 	}
@@ -1122,16 +1132,16 @@ function restorePolygon(m) {
 	for (var i = 0; i < n; i++) {
 		m.entities.push(addPointLabel(m.points[i], i + 1));
 		if (i < n - 1) {
-			var edge = drawLayer.entities.add({ polyline: { positions: [m.points[i], m.points[i + 1]], width: 2, material: polyColor, depthFailMaterial: polyColor.withAlpha(0.6), clampToGround: true, classificationType: Cesium.ClassificationType.BOTH } });
+			var edge = drawLayer.entities.add({ polyline: { positions: liftPositions([m.points[i], m.points[i + 1]]), width: 2, material: polyColor, depthFailMaterial: polyColor.withAlpha(0.6) } });
 			m.entities.push(edge);
 		}
 	}
 	// Kapanış çizgisi
-	var closeLine = drawLayer.entities.add({ polyline: { positions: [m.points[n - 1], m.points[0]], width: 2, material: polyColor, depthFailMaterial: polyColor.withAlpha(0.6), clampToGround: true, classificationType: Cesium.ClassificationType.BOTH } });
+	var closeLine = drawLayer.entities.add({ polyline: { positions: liftPositions([m.points[n - 1], m.points[0]]), width: 2, material: polyColor, depthFailMaterial: polyColor.withAlpha(0.6) } });
 	m.entities.push(closeLine);
 
 	// Poligon alanı
-	var poly = drawLayer.entities.add({ polygon: { hierarchy: new Cesium.PolygonHierarchy(m.points.slice()), material: polyColor.withAlpha(0.3), classificationType: Cesium.ClassificationType.BOTH } });
+	var poly = drawLayer.entities.add({ polygon: { hierarchy: new Cesium.PolygonHierarchy(liftPositions(m.points.slice())), material: polyColor.withAlpha(0.3), perPositionHeight: true } });
 	m.entities.push(poly);
 
 	// Etiket (haritada sadece 3D m²)
@@ -1146,7 +1156,7 @@ function restoreHeight(m) {
 	var hColor = Cesium.Color.fromCssColorString(grp && grp.color ? grp.color : '#22C55E');
 	m.entities.push(addPointLabel(m.points[0], 1));
 	m.entities.push(addPointLabel(m.points[1], 2));
-	var hLine = drawLayer.entities.add({ polyline: { positions: m.points.slice(), width: 2, material: hColor, depthFailMaterial: hColor.withAlpha(0.6), clampToGround: true, classificationType: Cesium.ClassificationType.BOTH } });
+	var hLine = drawLayer.entities.add({ polyline: { positions: liftPositions(m.points.slice()), width: 2, material: hColor, depthFailMaterial: hColor.withAlpha(0.6) } });
 	m.entities.push(hLine);
 	m.entities.push(addLabel(midpoint(m.points[0], m.points[1]), m.resultText, hColor));
 }
@@ -1965,11 +1975,9 @@ function redrawFromClickPoints() {
 			var segDist = Cesium.Cartesian3.distance(a, b);
 			var line = drawLayer.entities.add({
 				polyline: {
-					positions: [a, b], width: 3,
+					positions: liftPositions([a, b]), width: 3,
 					material: Cesium.Color.YELLOW,
-					depthFailMaterial: Cesium.Color.YELLOW.withAlpha(0.6),
-					clampToGround: true,
-					classificationType: Cesium.ClassificationType.BOTH
+					depthFailMaterial: Cesium.Color.YELLOW.withAlpha(0.6)
 				}
 			});
 			tempEntities.push(line);
@@ -1981,11 +1989,9 @@ function redrawFromClickPoints() {
 			var b2 = clickPoints[clickPoints.length - 1];
 			var edgeLine = drawLayer.entities.add({
 				polyline: {
-					positions: [a2, b2], width: 2,
+					positions: liftPositions([a2, b2]), width: 2,
 					material: Cesium.Color.AQUA,
-					depthFailMaterial: Cesium.Color.AQUA.withAlpha(0.6),
-					clampToGround: true,
-					classificationType: Cesium.ClassificationType.BOTH
+					depthFailMaterial: Cesium.Color.AQUA.withAlpha(0.6)
 				}
 			});
 			tempEntities.push(edgeLine);
@@ -2004,10 +2010,10 @@ function redrawFromClickPoints() {
 			activeShape = drawLayer.entities.add({
 				polygon: {
 					hierarchy: new Cesium.CallbackProperty(function () {
-						return new Cesium.PolygonHierarchy(clickPoints);
+						return new Cesium.PolygonHierarchy(liftPositions(clickPoints));
 					}, false),
 					material: Cesium.Color.AQUA.withAlpha(0.2),
-					classificationType: Cesium.ClassificationType.BOTH
+					perPositionHeight: true
 				}
 			});
 		}
@@ -2285,11 +2291,9 @@ handler.setInputAction(function (click) {
 
 		var line = drawLayer.entities.add({
 			polyline: {
-				positions: [a, b], width: 3,
+				positions: liftPositions([a, b]), width: 3,
 				material: _gc,
-				depthFailMaterial: _gc.withAlpha(0.6),
-				clampToGround: true,
-				classificationType: Cesium.ClassificationType.BOTH
+				depthFailMaterial: _gc.withAlpha(0.6)
 			}
 		});
 		tempEntities.push(line);
@@ -2308,11 +2312,9 @@ handler.setInputAction(function (click) {
 			var b2 = clickPoints[clickPoints.length - 1];
 			var edgeLine = drawLayer.entities.add({
 				polyline: {
-					positions: [a2, b2], width: 2,
+					positions: liftPositions([a2, b2]), width: 2,
 					material: _gc,
-					depthFailMaterial: _gc.withAlpha(0.6),
-					clampToGround: true,
-					classificationType: Cesium.ClassificationType.BOTH
+					depthFailMaterial: _gc.withAlpha(0.6)
 				}
 			});
 			tempEntities.push(edgeLine);
@@ -2324,10 +2326,10 @@ handler.setInputAction(function (click) {
 			activeShape = drawLayer.entities.add({
 				polygon: {
 					hierarchy: new Cesium.CallbackProperty(function () {
-						return new Cesium.PolygonHierarchy(clickPoints);
+						return new Cesium.PolygonHierarchy(liftPositions(clickPoints));
 					}, false),
 					material: _gc.withAlpha(0.2),
-					classificationType: Cesium.ClassificationType.BOTH
+					perPositionHeight: true
 				}
 			});
 		}
@@ -2344,11 +2346,9 @@ handler.setInputAction(function (click) {
 
 		var hLine = drawLayer.entities.add({
 			polyline: {
-				positions: clickPoints.slice(), width: 2,
+				positions: liftPositions(clickPoints.slice()), width: 2,
 				material: _gc,
-				depthFailMaterial: _gc.withAlpha(0.6),
-				clampToGround: true,
-				classificationType: Cesium.ClassificationType.BOTH
+				depthFailMaterial: _gc.withAlpha(0.6)
 			}
 		});
 		tempEntities.push(hLine);
