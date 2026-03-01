@@ -30,16 +30,15 @@ if (!isLocalFile) {
 // KALİTE MODU: Sistem kaliteli modda başlar (FXAA + fog sadece HTTP'de)
 viewer.scene.postProcessStages.fxaa.enabled = !isLocalFile;
 viewer.scene.fog.enabled = !isLocalFile;
-viewer.scene.logarithmicDepthBuffer = true; // Mobilde z-fighting/titreme önler
-viewer.scene.globe.depthTestAgainstTerrain = false; // Çizim entity'lerinin mesh altında kaybolmasını engelle
-viewer.scene.camera.frustum.near = 1.0; // Near plane — derinlik hassasiyetini artır
+viewer.scene.logarithmicDepthBuffer = true; // Z-fighting/titreme önler
+viewer.scene.globe.depthTestAgainstTerrain = true; // Yükseklik ve koordinat okuma derinlik testi
+viewer.scene.camera.frustum.near = 0.1; // Near plane — derinlik hassasiyetini maksimize et
+viewer.scene.pickTranslucentDepth = true; // Yarı saydam entity'lerde tıklama hassasiyeti
 if (viewer.scene.skyAtmosphere) { viewer.scene.skyAtmosphere.show = false; }
 
 // file:// → skyBox da CORS hatası verir, kapat
 if (isLocalFile && viewer.scene.skyBox) { viewer.scene.skyBox.show = false; }
 
-// YÜKSEKLİK VE KOORDİNAT OKUMA HATASINI ÇÖZEN AYAR (Derinlik Testi)
-viewer.scene.globe.depthTestAgainstTerrain = true;
 viewer.scene.globe.show = false; // Küreyi tamamen gizle (Globe butonu ile açılır)
 
 // ─── PERFORMANS: Sahne değişmediğinde GPU render'ı durdur ───
@@ -2010,7 +2009,7 @@ function redrawFromClickPoints() {
 			activeShape = drawLayer.entities.add({
 				polygon: {
 					hierarchy: new Cesium.CallbackProperty(function () {
-						return new Cesium.PolygonHierarchy(liftPositions(clickPoints));
+						return new Cesium.PolygonHierarchy(clickPoints);
 					}, false),
 					material: Cesium.Color.AQUA.withAlpha(0.2),
 					perPositionHeight: true
@@ -2326,7 +2325,7 @@ handler.setInputAction(function (click) {
 			activeShape = drawLayer.entities.add({
 				polygon: {
 					hierarchy: new Cesium.CallbackProperty(function () {
-						return new Cesium.PolygonHierarchy(liftPositions(clickPoints));
+						return new Cesium.PolygonHierarchy(clickPoints);
 					}, false),
 					material: _gc.withAlpha(0.2),
 					perPositionHeight: true
