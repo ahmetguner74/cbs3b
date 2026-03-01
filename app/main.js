@@ -861,49 +861,7 @@ function getClosestPointOnSegment(p, a, b) {
 }
 
 // ─── 3. LABEL YARDIMCILARI ─────────────────────────────────────
-var LABEL_STYLE = {
-	font: '13px monospace',
-	fillColor: Cesium.Color.WHITE,
-	outlineColor: Cesium.Color.BLACK,
-	outlineWidth: 2,
-	style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-	verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-	pixelOffset: new Cesium.Cartesian2(0, -12),
-	disableDepthTestDistance: Number.POSITIVE_INFINITY
-};
-
-function addLabel(position, text, color) {
-	return drawLayer.entities.add({
-		position: position,
-		label: Object.assign({}, LABEL_STYLE, {
-			text: text,
-			fillColor: color || Cesium.Color.WHITE
-		})
-	});
-}
-
-function addPointLabel(position, number) {
-	return drawLayer.entities.add({
-		position: position,
-		point: { pixelSize: 7, color: Cesium.Color.RED, outlineColor: Cesium.Color.WHITE, outlineWidth: 1, disableDepthTestDistance: Number.POSITIVE_INFINITY },
-		label: Object.assign({}, LABEL_STYLE, {
-			text: String(number),
-			font: '11px monospace',
-			pixelOffset: new Cesium.Cartesian2(10, -8),
-			fillColor: Cesium.Color.YELLOW
-		})
-	});
-}
-
-function midpoint(a, b) {
-	return Cesium.Cartesian3.midpoint(a, b, new Cesium.Cartesian3());
-}
-
-function centroid(points) {
-	var x = 0, y = 0, z = 0, n = points.length;
-	for (var i = 0; i < n; i++) { x += points[i].x; y += points[i].y; z += points[i].z; }
-	return new Cesium.Cartesian3(x / n, y / n, z / n);
-}
+// (Aktif tanımlar: loadFromStorage sonrası, satır ~985+)
 
 // ─── 4. ÖLÇÜM VERİ YAPISI & YEREL DEPOLAMA (LOCALSTORAGE) ───
 var measurements = [];
@@ -1275,23 +1233,28 @@ function showColorPalette(group, anchorEl) {
 	}, 50);
 }
 
-// Bir gruptaki tüm ölçüm entity'lerini yeni renge boya
+// Bir gruptaki tüm ölçüm entity'lerini yeni renge boya (in-place güncelleme)
 function applyGroupColor(groupId, hexColor) {
 	var cesColor = Cesium.Color.fromCssColorString(hexColor);
 	measurements.forEach(function (m) {
 		if (m.groupId !== groupId) return;
-		// Mevcut entity'leri temizle ve yeniden çiz
 		m.entities.forEach(function (ent) {
-			drawLayer.entities.remove(ent);
+			// Polyline rengi güncelle
+			if (ent.polyline) {
+				ent.polyline.material = cesColor;
+				if (ent.polyline.depthFailMaterial) {
+					ent.polyline.depthFailMaterial = cesColor.withAlpha(0.6);
+				}
+			}
+			// Polygon dolgu rengi güncelle
+			if (ent.polygon) {
+				ent.polygon.material = cesColor.withAlpha(0.3);
+			}
+			// Label rengi güncelle (nokta etiketleri hariç — onlar beyaz kalmalı)
+			if (ent.label && !ent.point) {
+				ent.label.fillColor = cesColor;
+			}
 		});
-		m.entities = [];
-		if (m.type === 'line') restoreLine(m);
-		else if (m.type === 'polygon') restorePolygon(m);
-		else if (m.type === 'height') restoreHeight(m);
-		else if (m.type === 'coord') restoreCoord(m);
-		if (!m.checked) {
-			m.entities.forEach(function (ent) { ent.show = false; });
-		}
 	});
 	viewer.scene.requestRender();
 }

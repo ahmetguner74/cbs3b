@@ -1,8 +1,8 @@
-# 3D Tileset verileri (çok büyük)
-Scene/
+# Logo tasarım dosyaları
+logo/
 
-# CesiumJS kütüphanesi (CDN veya npm ile yüklenir)
-app/Cesium/
+# Lokal araçlar
+Chrome_ile_Ac.bat
 
 # Sistem dosyaları
 Thumbs.db
@@ -15,9 +15,7 @@ desktop.ini
 *.swp
 *.swo
 
-# Skills (geliştirme araçları)
+# Skills / AI
 skills/
-
-# Gemini/AI ayarları
 .gemini/
 .agents/
