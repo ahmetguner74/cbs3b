@@ -1042,7 +1042,7 @@ function loadFromStorage() {
 // GPU float32 hassasiyet sorunu: ECEF koordinatları (~4M metre) GPU'da titrer
 // Çözüm: İlk noktayı pivot yapıp tüm vertex'leri lokal ofset olarak gönder
 // modelMatrix ile mutlak pozisyon CPU'da hesaplanır (double precision)
-var ENTITY_HEIGHT_OFFSET = 0.5; // metre — z-fighting ofseti (titremeyi durdurmak için artırıldı)
+var ENTITY_HEIGHT_OFFSET = 0.02; // metre — Z-fighting önleyici fakat YÜKSEK HASSASİYETLİ min. eşik (Hassasiyet 1. Öncelik)
 
 // Global Primitive Koleksiyonları (Performans ve Stabilite için)
 var globalPointCollection = viewer.scene.primitives.add(new Cesium.PointPrimitiveCollection());
@@ -1730,9 +1730,11 @@ function highlightMeasurement(id) {
 			}
 		});
 	});
-	// Seçili ölçüm varsa Sil FAB göster
+	// Seçili ölçüm varsa ve mobil cihazdaysak Sil FAB göster
 	var delFab = document.getElementById('deleteSelFab');
-	if (delFab) delFab.style.display = activeHighlightId !== null ? 'flex' : 'none';
+	if (delFab) {
+		delFab.style.display = (_isMob && activeHighlightId !== null) ? 'flex' : 'none';
+	}
 	viewer.scene.requestRender();
 }
 
