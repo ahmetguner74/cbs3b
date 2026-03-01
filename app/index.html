@@ -6,13 +6,6 @@
 	<meta http-equiv="X-UA-Compatible" content="IE=edge">
 	<link rel="icon" type="image/png" href="cbs-logo.png">
 	<link rel="apple-touch-icon" href="cbs-logo.png">
-	<!-- Mobil cihaz algılama → otomatik yönlendirme -->
-	<script>
-		if (/Android|iPhone|iPad|iPod|webOS|BlackBerry|Opera Mini|IEMobile/i.test(navigator.userAgent)
-			&& !window.location.pathname.includes('/mobile/')) {
-			window.location.replace('mobile/index.html' + window.location.search + window.location.hash);
-		}
-	</script>
 	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 	<title>CBS — 3D Şehir Modeli</title>
 	<meta name="description" content="Bursa Büyükşehir Belediyesi 3D Şehir Modeli — Ölçüm ve Dijitalleştirme Platformu">
@@ -24,15 +17,11 @@
 
 	<!-- Cesium: CDN (online) veya lokal (file://) -->
 	<script>
-		(function () {
-			var src = window.location.protocol === 'file:'
-				? 'Cesium/Cesium.js'
-				: 'https://cesium.com/downloads/cesiumjs/releases/1.105/Build/Cesium/Cesium.js';
-			var s = document.createElement('script');
-			s.src = src;
-			s.async = false;
-			document.head.appendChild(s);
-		})();
+		if (window.location.protocol === 'file:') {
+			document.write('<script src="Cesium/Cesium.js"><\/script>');
+		} else {
+			document.write('<script src="https://cesium.com/downloads/cesiumjs/releases/1.105/Build/Cesium/Cesium.js"><\/script>');
+		}
 	</script>
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.15.0/proj4.js"></script>
 	<style>
@@ -1123,10 +1112,10 @@
 		</div>
 	</div>
 
-	<!-- ═══ LOGIN SCREEN ═══ -->
+	<!-- ═══ LOGIN SCREEN (Splash bittikten sonra gösterilir) ═══ -->
 	<div id="loginScreen"
 		class="fixed inset-0 z-[10000] flex items-center justify-center transition-opacity duration-500"
-		style="background:linear-gradient(135deg,#070a12 0%,#0b0f19 40%,#111827 70%,#0f172a 100%)">
+		style="display:none; background:linear-gradient(135deg,#070a12 0%,#0b0f19 40%,#111827 70%,#0f172a 100%)">
 		<!-- Dekoratif arka plan efektleri -->
 		<div class="absolute inset-0 overflow-hidden pointer-events-none">
 			<div class="absolute -top-32 -left-32 w-96 h-96 bg-primary/5 rounded-full blur-3xl"></div>
@@ -1201,47 +1190,37 @@
 	<!-- ═══ LOGIN SCRIPT ═══ -->
 	<script>
 			(function () {
-				const loginScreen = document.getElementById('loginScreen');
-				const loginForm = document.getElementById('loginForm');
-				const loginError = document.getElementById('loginError');
-				const loginUser = document.getElementById('loginUser');
-				const loginPass = document.getElementById('loginPass');
-				const togglePass = document.getElementById('loginTogglePass');
-				const splashScreen = document.getElementById('splashScreen');
+				var loginScreen = document.getElementById('loginScreen');
+				var loginForm = document.getElementById('loginForm');
+				var loginError = document.getElementById('loginError');
+				var loginUser = document.getElementById('loginUser');
+				var loginPass = document.getElementById('loginPass');
+				var togglePass = document.getElementById('loginTogglePass');
 
-				// Oturum kontrolü
+				// Zaten giriş yapılmışsa login ekranını kaldır
 				if (sessionStorage.getItem('cbs_auth') === 'ok') {
-					loginScreen.style.display = 'none';
+					loginScreen.remove();
 					return;
 				}
 
-				// Splash'ı gizle (login gösterilirken)
-				if (splashScreen) splashScreen.style.display = 'none';
-
 				// Şifre göster/gizle
 				togglePass.addEventListener('click', function () {
-					const isPass = loginPass.type === 'password';
+					var isPass = loginPass.type === 'password';
 					loginPass.type = isPass ? 'text' : 'password';
 					togglePass.querySelector('span').textContent = isPass ? 'visibility_off' : 'visibility';
 				});
 
-				// Enter ile giriş
+				// Form gönderimi
 				loginForm.addEventListener('submit', function (e) {
 					e.preventDefault();
-					const user = loginUser.value.trim().toLowerCase();
-					const pass = loginPass.value;
+					var user = loginUser.value.trim().toLowerCase();
+					var pass = loginPass.value;
 
 					if (user === 'cbs' && pass === 'demo') {
 						// Başarılı giriş
 						sessionStorage.setItem('cbs_auth', 'ok');
 						loginScreen.style.opacity = '0';
-						setTimeout(function () {
-							loginScreen.style.display = 'none';
-							if (splashScreen) {
-								splashScreen.style.display = '';
-								splashScreen.style.opacity = '1';
-							}
-						}, 500);
+						setTimeout(function () { loginScreen.remove(); }, 500);
 					} else {
 						// Hatalı giriş
 						loginError.classList.remove('hidden');

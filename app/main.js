@@ -171,7 +171,15 @@ function initSplashProgress(ts) {
 		if (statusText) statusText.textContent = 'Hazır!';
 		setTimeout(function () {
 			splash.style.opacity = '0';
-			setTimeout(function () { splash.remove(); }, 1000);
+			setTimeout(function () {
+				splash.remove();
+				// Auth yoksa login ekranını göster
+				var loginScreen = document.getElementById('loginScreen');
+				if (loginScreen && sessionStorage.getItem('cbs_auth') !== 'ok') {
+					loginScreen.style.display = '';
+					loginScreen.style.opacity = '1';
+				}
+			}, 1000);
 		}, 300);
 	}
 
