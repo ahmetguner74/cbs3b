@@ -1318,6 +1318,12 @@ function renderGroupItem(container, group) {
 	folderIcon.className = 'material-symbols-outlined text-[16px] text-primary';
 	folderIcon.innerText = group.isOpen ? 'folder_open' : 'folder';
 
+	// Grup içindeki ölçüm sayısı badge'i
+	var groupCount = measurements.filter(function (m) { return m.groupId === group.id; }).length;
+	var countBadge = document.createElement('span');
+	countBadge.innerText = groupCount;
+	countBadge.style.cssText = 'font-size:9px;min-width:14px;height:14px;line-height:14px;text-align:center;border-radius:7px;padding:0 3px;display:inline-block;font-weight:700;opacity:' + (groupCount > 0 ? '0.9' : '0.4') + ';background:' + (group.color || '#14B8A6') + '22;color:' + (group.color || '#14B8A6') + ';border:1px solid ' + (group.color || '#14B8A6') + '44;';
+
 	var groupName = document.createElement('span');
 	groupName.className = 'text-[10px] font-bold text-slate-300 flex-1 truncate uppercase tracking-tight';
 	groupName.innerText = group.name;
@@ -1370,6 +1376,7 @@ function renderGroupItem(container, group) {
 	};
 
 	header.appendChild(arrow);
+	header.appendChild(countBadge);
 	header.appendChild(folderIcon);
 	header.appendChild(groupName);
 	header.appendChild(colorBtn);
@@ -1485,6 +1492,12 @@ function renderGroupItem(container, group) {
 	container.appendChild(groupWrapper);
 }
 
+// Türkçe karakterleri ASCII'ye dönüştür + büyük harf yap
+function normalizeGroupName(str) {
+	var trMap = { 'ç': 'C', 'Ç': 'C', 'ğ': 'G', 'Ğ': 'G', 'ı': 'I', 'İ': 'I', 'ö': 'O', 'Ö': 'O', 'ş': 'S', 'Ş': 'S', 'ü': 'U', 'Ü': 'U' };
+	return str.replace(/[çÇğĞıİöÖşŞüÜ]/g, function (c) { return trMap[c] || c; }).toUpperCase().replace(/\s+/g, '_');
+}
+
 function startEditing(e, m) {
 	e.stopPropagation();
 	var nameSpan = e.target;
@@ -1500,7 +1513,7 @@ function startEditing(e, m) {
 
 	function finish() {
 		var n = input.value.trim();
-		if (n !== "") m.name = n;
+		if (n !== "") m.name = normalizeGroupName(n);
 		renderList();
 	}
 	input.onblur = finish;
@@ -1528,7 +1541,7 @@ document.getElementById('btnNewFolder').onclick = function () {
 	var n = prompt("Yeni klasör ismi:", "Yeni Grup");
 	if (n) {
 		groupCount++;
-		var newGroup = { id: groupCount, name: n, isOpen: true, checked: true };
+		var newGroup = { id: groupCount, name: normalizeGroupName(n), isOpen: true, checked: true };
 		groups.push(newGroup);
 		activeGroupId = newGroup.id;
 		renderList();
@@ -2132,6 +2145,10 @@ handler.setInputAction(function (click) {
 		return;
 	}
 
+	// Aktif grubun Cesium rengini al
+	var _grp = groups.find(function (g) { return g.id === activeGroupId; });
+	var _gc = Cesium.Color.fromCssColorString(_grp && _grp.color ? _grp.color : '#14B8A6');
+
 	var cartesian;
 	if (snappedCartesian !== null) {
 		// Snap olduysa o noktayı kullan (Referans kopması için clone aldık)
@@ -2162,13 +2179,13 @@ handler.setInputAction(function (click) {
 		var line = drawLayer.entities.add({
 			polyline: {
 				positions: [a, b], width: 3,
-				material: Cesium.Color.YELLOW,
-				depthFailMaterial: Cesium.Color.YELLOW.withAlpha(0.6) // Mesh altında kalınca da göster
+				material: _gc,
+				depthFailMaterial: _gc.withAlpha(0.6) // Mesh altında kalınca da göster
 			}
 		});
 		tempEntities.push(line);
 
-		var segLabel = addLabel(midpoint(a, b), segDist.toFixed(2) + ' m', Cesium.Color.YELLOW);
+		var segLabel = addLabel(midpoint(a, b), segDist.toFixed(2) + ' m', _gc);
 		tempEntities.push(segLabel);
 
 		// Mesafe aracı polyline olduğu için sol tıklada kaydetmiyoruz, sadece önizleme güncelliyoruz.
@@ -2183,8 +2200,8 @@ handler.setInputAction(function (click) {
 			var edgeLine = drawLayer.entities.add({
 				polyline: {
 					positions: [a2, b2], width: 2,
-					material: Cesium.Color.AQUA,
-					depthFailMaterial: Cesium.Color.AQUA.withAlpha(0.6) // Mesh altında kalınca da göster
+					material: _gc,
+					depthFailMaterial: _gc.withAlpha(0.6) // Mesh altında kalınca da göster
 				}
 			});
 			tempEntities.push(edgeLine);
@@ -2198,7 +2215,7 @@ handler.setInputAction(function (click) {
 					hierarchy: new Cesium.CallbackProperty(function () {
 						return new Cesium.PolygonHierarchy(clickPoints);
 					}, false),
-					material: Cesium.Color.AQUA.withAlpha(0.2),
+					material: _gc.withAlpha(0.2),
 					perPositionHeight: true // Mesh altında kalmasını engeller
 				}
 			});
@@ -2217,13 +2234,13 @@ handler.setInputAction(function (click) {
 		var hLine = drawLayer.entities.add({
 			polyline: {
 				positions: clickPoints.slice(), width: 2,
-				material: Cesium.Color.LIME,
-				depthFailMaterial: Cesium.Color.LIME.withAlpha(0.6)
+				material: _gc,
+				depthFailMaterial: _gc.withAlpha(0.6)
 			}
 		});
 		tempEntities.push(hLine);
 
-		var hLabel = addLabel(midpoint(clickPoints[0], clickPoints[1]), '↕ ' + diff.toFixed(2) + ' m', Cesium.Color.LIME);
+		var hLabel = addLabel(midpoint(clickPoints[0], clickPoints[1]), '↕ ' + diff.toFixed(2) + ' m', _gc);
 		tempEntities.push(hLabel);
 
 		var resultText = '↕ ' + diff.toFixed(2) + ' m';
@@ -2294,6 +2311,10 @@ handler.setInputAction(function (click) {
 // ─── 8. SAĞ TIK: BİTİR ───────────────────────────────────────
 handler.setInputAction(function () {
 
+	// Aktif grubun Cesium rengini al
+	var _grp = groups.find(function (g) { return g.id === activeGroupId; });
+	var _gc = Cesium.Color.fromCssColorString(_grp && _grp.color ? _grp.color : '#14B8A6');
+
 	// MESAFE BİTİR
 	if (activeTool === 'btnDistance' && clickPoints.length > 1) {
 		var totalDist = 0;
@@ -2315,7 +2336,7 @@ handler.setInputAction(function () {
 		tempEntities = cleanedEntities;
 
 		// Toplam mesafe etiketi ekle — çizgi üzerindeki orta noktaya
-		var totalLabel = addLabel(midpointAlongLine(clickPoints), resultText, Cesium.Color.YELLOW);
+		var totalLabel = addLabel(midpointAlongLine(clickPoints), resultText, _gc);
 		tempEntities.push(totalLabel);
 
 		measureCount++;
@@ -2341,7 +2362,7 @@ handler.setInputAction(function () {
 		var staticPoly = drawLayer.entities.add({
 			polygon: {
 				hierarchy: new Cesium.PolygonHierarchy(clickPoints.slice()),
-				material: Cesium.Color.AQUA.withAlpha(0.3),
+				material: _gc.withAlpha(0.3),
 				perPositionHeight: true // Mesh altında kalmasını engeller
 			}
 		});
@@ -2353,8 +2374,8 @@ handler.setInputAction(function () {
 		var closeLine = drawLayer.entities.add({
 			polyline: {
 				positions: [lastPt, firstPt], width: 2,
-				material: Cesium.Color.AQUA,
-				depthFailMaterial: Cesium.Color.AQUA.withAlpha(0.6)
+				material: _gc,
+				depthFailMaterial: _gc.withAlpha(0.6)
 			}
 		});
 		tempEntities.push(closeLine);
@@ -2391,7 +2412,7 @@ handler.setInputAction(function () {
 		// Etiket Metni
 		var labelText = area3D.toFixed(2) + ' m²';  // Harita üzerinde sadece 3D
 		var resultText = '3D: ' + area3D.toFixed(2) + 'm² / 2D: ' + area2D.toFixed(2) + 'm²';
-		var areaLabel = addLabel(centroid(clickPoints), labelText, Cesium.Color.fromCssColorString('#67e8f9'));
+		var areaLabel = addLabel(centroid(clickPoints), labelText, _gc);
 		tempEntities.push(areaLabel);
 
 		document.querySelector('#resultDisplay > div').innerHTML = '<b>Alan:</b> ' + resultText + ' (' + clickPoints.length + ' köşe)';
