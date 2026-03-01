@@ -274,7 +274,10 @@ function initSplashProgress(ts) {
 
 // ─── SPLASH: RASTGELE 3 KISAYOL İPUCU ─────────────────────────────
 document.addEventListener('DOMContentLoaded', function () {
-	var tips = [
+	// Mobil mi masaüstü mü?
+	var _isMob = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || ('ontouchstart' in window && window.innerWidth < 900);
+
+	var desktopTips = [
 		{ key: 'Sol Tık', text: 'Nokta Koy' },
 		{ key: 'Sağ Tık', text: 'Ölçümü Bitir' },
 		{ key: 'Scroll', text: 'Yakınlaş / Uzaklaş' },
@@ -287,6 +290,18 @@ document.addEventListener('DOMContentLoaded', function () {
 		{ key: 'Esc', text: 'Aracı İptal Et' },
 		{ key: 'H', text: 'Ana Görünüme Dön' }
 	];
+
+	var mobileTips = [
+		{ key: '👆 Dokun', text: 'Nokta Koy' },
+		{ key: '✓ Buton', text: 'Ölçümü Bitir' },
+		{ key: '↩ Buton', text: 'Son Noktayı Geri Al' },
+		{ key: '🤏 Sıkıştır', text: 'Yakınlaş / Uzaklaş' },
+		{ key: '☝️ Kaydır', text: 'Haritayı Taşı' },
+		{ key: '🔄 İki Parmak', text: 'Haritayı Döndür' },
+		{ key: '🏠 Ev İkonu', text: 'Ana Görünüme Dön' }
+	];
+
+	var tips = _isMob ? mobileTips : desktopTips;
 	var container = document.getElementById('splashTips');
 	if (!container) return;
 
@@ -295,12 +310,24 @@ document.addEventListener('DOMContentLoaded', function () {
 		var j = Math.floor(Math.random() * (i + 1));
 		var tmp = tips[i]; tips[i] = tips[j]; tips[j] = tmp;
 	}
-	var kbdClass = 'px-1.5 py-0.5 bg-slate-800 rounded text-slate-400 font-mono border border-slate-700';
-	for (var k = 0; k < 3; k++) {
-		var div = document.createElement('div');
-		div.className = 'flex items-center gap-1.5';
-		div.innerHTML = '<kbd class="' + kbdClass + '">' + tips[k].key + '</kbd><span>' + tips[k].text + '</span>';
-		container.appendChild(div);
+
+	if (_isMob) {
+		// Mobilde emoji badge stili
+		for (var k = 0; k < 3; k++) {
+			var div = document.createElement('div');
+			div.className = 'flex items-center gap-2';
+			div.innerHTML = '<span class="text-xs bg-slate-800/80 rounded-full px-2 py-0.5 border border-slate-700 whitespace-nowrap">' + tips[k].key + '</span><span class="text-slate-400">' + tips[k].text + '</span>';
+			container.appendChild(div);
+		}
+	} else {
+		// Masaüstünde klavye kısayolu stili
+		var kbdClass = 'px-1.5 py-0.5 bg-slate-800 rounded text-slate-400 font-mono border border-slate-700';
+		for (var k = 0; k < 3; k++) {
+			var div = document.createElement('div');
+			div.className = 'flex items-center gap-1.5';
+			div.innerHTML = '<kbd class="' + kbdClass + '">' + tips[k].key + '</kbd><span>' + tips[k].text + '</span>';
+			container.appendChild(div);
+		}
 	}
 });
 document.getElementById('btnHomeView').addEventListener('click', function () {
@@ -2016,7 +2043,12 @@ function setActiveTool(toolId) {
 		}
 	}
 
-	var msg = {
+	var msg = isMobile ? {
+		'btnDistance': 'Mesafe: Noktaları dokunarak koyun. <i>(✓ = bitir)</i>',
+		'btnArea': 'Alan: Köşelere dokunun. <i>(✓ = kapat)</i>',
+		'btnHeight': 'Yükseklik: 2 noktaya dokunun.',
+		'btnCoord': 'Nokta At: Konuma dokunun.'
+	} : {
 		'btnDistance': 'Mesafe: İlk noktayı tıklayın. <i>(Sağ tık = bitir)</i>',
 		'btnArea': 'Alan: Köşe noktalarını tıklayın. <i>(Sağ tık = kapat)</i>',
 		'btnHeight': 'Yükseklik: 2 nokta tıklayın.',
