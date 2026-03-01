@@ -20,6 +20,7 @@ var viewer = new Cesium.Viewer('cesiumContainer', {
 
 // Mobil tespiti (tarayıcı tabanlı — Cesium API'ye bağımlı değil)
 var _isMob = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1);
+var isMobile = _isMob; // Geriye dönük uyumluluk için
 
 
 // HTTP modunda Ion World Terrain'i asenkron yükle
@@ -34,11 +35,13 @@ if (!isLocalFile) {
 // KALİTE MODU: Sistem kaliteli modda başlar (FXAA + fog sadece HTTP'de)
 viewer.scene.postProcessStages.fxaa.enabled = !isLocalFile;
 viewer.scene.fog.enabled = !isLocalFile;
-// Logarithmic depth buffer bazen mobilde titremeyi artırabiliyor (GPU hassasiyeti)
-viewer.scene.logarithmicDepthBuffer = !_isMob;
+// Logarithmic depth buffer 1:1 ölçekli dünyada titremeyi önlemek için kritiktir. 
+// Sadece çok eski mobil GPU'larda sorun yaratır, modern cihazlarda açık kalmalıdır.
+viewer.scene.logarithmicDepthBuffer = true;
 viewer.scene.globe.depthTestAgainstTerrain = true;
-// Near plane değerini mobilde 0.5 yaparak derinlik hassasiyetini dengeliyoruz
-viewer.scene.camera.frustum.near = _isMob ? 0.5 : 0.1;
+// Near plane değerini mobilde 1.0 yaparak derinlik tamponu (Z-buffer) hassasiyetini optimize ediyoruz
+viewer.scene.camera.frustum.near = _isMob ? 1.0 : 0.1;
+viewer.scene.logarithmicDepthBuffer = true; // Modern cihazlarda her zaman açık olmalı
 viewer.scene.pickTranslucentDepth = true;
 if (viewer.scene.skyAtmosphere) { viewer.scene.skyAtmosphere.show = false; }
 
@@ -119,7 +122,7 @@ var drawLayer = new Cesium.CustomDataSource('Olcumler');
 viewer.dataSources.add(drawLayer);
 
 // Z-fighting ofseti (metre) — eksik değişken tanımlandı
-var ENTITY_HEIGHT_OFFSET = 0.05;
+var ENTITY_HEIGHT_OFFSET = 0.5; // metre — çizimlerin titremesini engelleyen ofset
 
 // requestRenderMode=true iken entity değişikliklerinde sahneyi otomatik yenile
 drawLayer.entities.collectionChanged.addEventListener(function () {
@@ -280,10 +283,9 @@ function initSplashProgress(ts) {
 	setTimeout(dismiss, MAX_SHOW);
 }
 
-// ─── SPLASH: RASTGELE 3 KISAYOL İPUCU ─────────────────────────────
+// SPLASH: RASTGELE 3 KISAYOL İPUCU
 document.addEventListener('DOMContentLoaded', function () {
-	// Mobil mi masaüstü mü?
-	var _isMob = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || ('ontouchstart' in window && window.innerWidth < 900);
+	// (Global _isMob kullanılıyor)
 
 	var desktopTips = [
 		{ key: 'Sol Tık', text: 'Nokta Koy' },
@@ -1040,10 +1042,14 @@ function loadFromStorage() {
 // GPU float32 hassasiyet sorunu: ECEF koordinatları (~4M metre) GPU'da titrer
 // Çözüm: İlk noktayı pivot yapıp tüm vertex'leri lokal ofset olarak gönder
 // modelMatrix ile mutlak pozisyon CPU'da hesaplanır (double precision)
-var ENTITY_HEIGHT_OFFSET = 0.3; // metre — z-fighting ofseti
+var ENTITY_HEIGHT_OFFSET = 0.5; // metre — z-fighting ofseti (titremeyi durdurmak için artırıldı)
 
-// Entity API için basit lift (point/label entities —bunlar disableDepthTestDistance ile titremez)
+// Global Primitive Koleksiyonları (Performans ve Stabilite için)
+var globalPointCollection = viewer.scene.primitives.add(new Cesium.PointPrimitiveCollection());
+var globalLabelCollection = viewer.scene.primitives.add(new Cesium.LabelCollection());
+
 function liftPosition(cartesian) {
+	if (!cartesian) return cartesian;
 	var carto = Cesium.Cartographic.fromCartesian(cartesian);
 	carto.height += ENTITY_HEIGHT_OFFSET;
 	return Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, carto.height);
@@ -1116,23 +1122,37 @@ function createStablePolygon(positions, material) {
 	return primitive;
 }
 
-// Evrensel silme: Entity VEYA Primitive — m.entities[] dizisine her iki tür de girer
+// Evrensel silme: Entity VEYA Primitive VEYA Collection Item
 function safeRemoveItem(item) {
 	if (!item) return;
+	// 1) Entity
 	if (item.entityCollection) {
-		// Entity API
 		try { drawLayer.entities.remove(item); } catch (e) { }
-	} else {
-		// Primitive API
-		try { viewer.scene.primitives.remove(item); } catch (e) { }
+		return;
 	}
+	// 2) PointPrimitive / Label / Billboard (Collection üzerinden silinmeli)
+	if (item.collection) {
+		// PointPrimitive'in içinde Label varsa onu da sil
+		if (item.label && item.label.collection) {
+			try { item.label.collection.remove(item.label); } catch (e) { }
+		}
+		try { item.collection.remove(item); } catch (e) { }
+		return;
+	}
+	// 3) Primitive (Geometry)
+	try { viewer.scene.primitives.remove(item); } catch (e) { }
 }
 
 function addPointLabel(position, number) {
-	return drawLayer.entities.add({
+	return globalPointCollection.add({
 		position: liftPosition(position),
-		point: { pixelSize: 8, color: Cesium.Color.WHITE, outlineColor: Cesium.Color.BLACK, outlineWidth: 1, disableDepthTestDistance: Number.POSITIVE_INFINITY },
-		label: {
+		pixelSize: 8,
+		color: Cesium.Color.WHITE,
+		outlineColor: Cesium.Color.BLACK,
+		outlineWidth: 1,
+		disableDepthTestDistance: Number.POSITIVE_INFINITY,
+		label: globalLabelCollection.add({
+			position: liftPosition(position),
 			text: String(number),
 			font: 'bold 13px sans-serif',
 			fillColor: Cesium.Color.WHITE,
@@ -1142,24 +1162,22 @@ function addPointLabel(position, number) {
 			verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
 			pixelOffset: new Cesium.Cartesian2(0, -12),
 			disableDepthTestDistance: Number.POSITIVE_INFINITY
-		}
+		})
 	});
 }
 
 function addLabel(position, text, color) {
-	return drawLayer.entities.add({
+	return globalLabelCollection.add({
 		position: liftPosition(position),
-		label: {
-			text: text,
-			font: 'bold 13px sans-serif',
-			fillColor: color || Cesium.Color.WHITE,
-			outlineColor: Cesium.Color.BLACK,
-			outlineWidth: 2,
-			style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-			verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-			pixelOffset: new Cesium.Cartesian2(0, -8),
-			disableDepthTestDistance: Number.POSITIVE_INFINITY
-		}
+		text: text,
+		font: 'bold 13px sans-serif',
+		fillColor: color || Cesium.Color.WHITE,
+		outlineColor: Cesium.Color.BLACK,
+		outlineWidth: 2,
+		style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+		verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+		pixelOffset: new Cesium.Cartesian2(0, -8),
+		disableDepthTestDistance: Number.POSITIVE_INFINITY
 	});
 }
 
@@ -1698,9 +1716,18 @@ function highlightMeasurement(id) {
 	measurements.forEach(function (item) {
 		var isActive = item.id === activeHighlightId;
 		item.entities.forEach(function (ent) {
-			if (ent.polyline) ent.polyline.material = isActive ? Cesium.Color.CYAN : (item.type === 'height' ? Cesium.Color.LIME : Cesium.Color.YELLOW);
-			if (ent.polygon) ent.polygon.material = isActive ? Cesium.Color.CYAN.withAlpha(0.5) : Cesium.Color.AQUA.withAlpha(0.3);
-			if (ent.point) ent.point.color = isActive ? Cesium.Color.CYAN : Cesium.Color.RED;
+			// Primitive Polyline / Polygon rengini güncelle
+			if (ent.appearance && ent.appearance.material) {
+				var targetColor = isActive ? Cesium.Color.CYAN : (item.type === 'height' ? Cesium.Color.LIME : Cesium.Color.YELLOW);
+				if (ent.geometryInstances && ent.geometryInstances.geometry && ent.geometryInstances.geometry._workerName === 'PolygonGeometry') {
+					targetColor = isActive ? Cesium.Color.CYAN.withAlpha(0.5) : Cesium.Color.AQUA.withAlpha(0.3);
+				}
+				ent.appearance.material.uniforms.color = targetColor;
+			}
+			// PointPrimitive rengini güncelle
+			if (ent.pixelSize !== undefined) {
+				ent.color = isActive ? Cesium.Color.CYAN : Cesium.Color.RED;
+			}
 		});
 	});
 	// Seçili ölçüm varsa Sil FAB göster
@@ -1799,14 +1826,13 @@ var tempEntities = [];
 var activeShape = null;
 var pointCounter = 0;
 var snappedCartesian = null;
-var snapIndicator = drawLayer.entities.add({
-	point: {
-		pixelSize: 12,
-		color: Cesium.Color.fromCssColorString('#facc15').withAlpha(0.6), // tailwind yellow-400
-		outlineColor: Cesium.Color.WHITE,
-		outlineWidth: 2,
-		disableDepthTestDistance: Number.POSITIVE_INFINITY
-	},
+var snapCollection = viewer.scene.primitives.add(new Cesium.PointPrimitiveCollection());
+var snapIndicator = snapCollection.add({
+	pixelSize: 12,
+	color: Cesium.Color.fromCssColorString('#facc15').withAlpha(0.6),
+	outlineColor: Cesium.Color.WHITE,
+	outlineWidth: 2,
+	disableDepthTestDistance: Number.POSITIVE_INFINITY,
 	show: false
 });
 
@@ -2089,23 +2115,14 @@ function redrawFromClickPoints() {
 		document.querySelector('#resultDisplay > div').innerHTML = '<b>Mesafe:</b> ' + totalDist.toFixed(2) + ' m (' + Math.max(0, clickPoints.length - 1) + ' segment). ' + (isMobile ? '<i>(↩ geri al)</i>' : '<i>(Geri: Ctrl+Z)</i>');
 	} else if (activeTool === 'btnArea') {
 		if (clickPoints.length >= 3) {
-			activeShape = drawLayer.entities.add({
-				polygon: {
-					hierarchy: new Cesium.CallbackProperty(function () {
-						return new Cesium.PolygonHierarchy(clickPoints);
-					}, false),
-					material: Cesium.Color.AQUA.withAlpha(0.2),
-					perPositionHeight: true
-				}
-			});
+			// ARTIK ENTİTY DEĞİL PRİMİTİVE KULLANIYORUZ (Antİ-Jitter için)
+			activeShape = createStablePolygon(clickPoints, Cesium.Color.AQUA.withAlpha(0.2));
 		}
-		document.querySelector('#resultDisplay > div').innerHTML = '<b>Alan:</b> ' + clickPoints.length + ' nokta. ' + (isMobile ? '<i>(↩ geri al, ✓ bitir)</i>' : '<i>(Geri: Ctrl+Z) Sağ tık kapat.</i>');
+		document.querySelector('#resultDisplay > div').innerHTML = '<b>Alan:</b> ' + clickPoints.length + ' nokta. ' + (_isMob ? '<i>(↩ geri al, ✓ bitir)</i>' : '<i>(Geri: Ctrl+Z) Sağ tık kapat.</i>');
 	}
 }
 
-// ─── MOBİL ALGILAMA ─────────────────────────────────────────
-var isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|Opera Mini|IEMobile/i.test(navigator.userAgent)
-	|| ('ontouchstart' in window && window.innerWidth < 900);
+// ─── MOBİL ALGILAMA SİLİNDİ (Üstte tek bir _isMob tanımlandı) ───
 
 function setActiveTool(toolId) {
 	// Önceki aracın tamamlanmamış çizimlerini temizle
@@ -2120,7 +2137,7 @@ function setActiveTool(toolId) {
 		var aEl = document.getElementById(activeTool);
 		if (aEl) aEl.classList.add('active');
 		// Mobilde: araç seçildiğinde sol paneli kapat
-		if (isMobile && window.closeToolPanel) window.closeToolPanel();
+		if (_isMob && window.closeToolPanel) window.closeToolPanel();
 	}
 
 	// Toggle butonunda aktif araç ikonunu göster
@@ -2138,7 +2155,7 @@ function setActiveTool(toolId) {
 		}
 	}
 
-	var msg = isMobile ? {
+	var msg = _isMob ? {
 		'btnDistance': 'Mesafe: Noktaları dokunarak koyun. <i>(✓ = bitir)</i>',
 		'btnArea': 'Alan: Köşelere dokunun. <i>(✓ = kapat)</i>',
 		'btnHeight': 'Yükseklik: 2 noktaya dokunun.',
@@ -2160,7 +2177,7 @@ function setActiveTool(toolId) {
 function updateMobileDrawButtons() {
 	var fab = document.getElementById('mobileFab');
 	if (!fab) return;
-	if (isMobile && activeTool && (activeTool === 'btnDistance' || activeTool === 'btnArea' || activeTool === 'btnCoord')) {
+	if (_isMob && activeTool && (activeTool === 'btnDistance' || activeTool === 'btnArea' || activeTool === 'btnCoord')) {
 		fab.style.display = 'flex';
 	} else {
 		fab.style.display = 'none';
@@ -2304,11 +2321,11 @@ handler.setInputAction(function (movement) {
 		snappedCartesian = bestCartesian;
 		snapIndicator.position = snappedCartesian;
 		if (isEdgeSnap) {
-			snapIndicator.point.color = Cesium.Color.fromCssColorString('#3b82f6').withAlpha(0.8); // Mavi (Çizgi)
-			snapIndicator.point.pixelSize = 8;
+			snapIndicator.color = Cesium.Color.fromCssColorString('#3b82f6').withAlpha(0.8); // Mavi (Çizgi)
+			snapIndicator.pixelSize = 8;
 		} else {
-			snapIndicator.point.color = Cesium.Color.fromCssColorString('#ef4444').withAlpha(0.8); // Kırmızı (Nokta)
-			snapIndicator.point.pixelSize = 12;
+			snapIndicator.color = Cesium.Color.fromCssColorString('#ef4444').withAlpha(0.8); // Kırmızı (Nokta)
+			snapIndicator.pixelSize = 12;
 		}
 		snapIndicator.show = true;
 	} else {
@@ -2393,19 +2410,12 @@ handler.setInputAction(function (click) {
 		// Dinamik poligon önizleme (3+ nokta olunca)
 		if (activeShape) { safeRemoveItem(activeShape); activeShape = null; }
 		if (clickPoints.length >= 3) {
-			activeShape = drawLayer.entities.add({
-				polygon: {
-					hierarchy: new Cesium.CallbackProperty(function () {
-						return new Cesium.PolygonHierarchy(clickPoints);
-					}, false),
-					material: _gc.withAlpha(0.2),
-					perPositionHeight: true
-				}
-			});
+			// ANTİ-JİTTER: Entity yerine Primitive kullanıyoruz
+			activeShape = createStablePolygon(clickPoints, _gc.withAlpha(0.2));
 		}
 
 		// Önizleme için anlık 2D Alan hesabı eklenebilir ama şu an köşe sayısı gösterelim:
-		document.querySelector('#resultDisplay > div').innerHTML = '<b>Alan:</b> ' + clickPoints.length + ' nokta. ' + (isMobile ? '<i>(↩ geri al, ✓ bitir)</i>' : '<i>(Geri: Ctrl+Z) Sağ tık kapat.</i>');
+		document.querySelector('#resultDisplay > div').innerHTML = '<b>Alan:</b> ' + clickPoints.length + ' nokta. ' + (_isMob ? '<i>(↩ geri al, ✓ bitir)</i>' : '<i>(Geri: Ctrl+Z) Sağ tık kapat.</i>');
 	}
 
 	// ── YÜKSEKLİK ──
@@ -2533,29 +2543,17 @@ handler.setInputAction(function () {
 
 	// ALAN BİTİR
 	else if (activeTool === 'btnArea' && clickPoints.length > 2) {
-		// Dinamik poligonu sil, statik ekle
-		if (activeShape) { drawLayer.entities.remove(activeShape); activeShape = null; }
+		// Dinamik poligon önizleme yerine SABİT PRİMİTİVE poligon ekle
+		if (activeShape) { safeRemoveItem(activeShape); activeShape = null; }
 
-		var staticPoly = drawLayer.entities.add({
-			polygon: {
-				hierarchy: new Cesium.PolygonHierarchy(clickPoints.slice()),
-				material: _gc.withAlpha(0.3),
-				perPositionHeight: true // Mesh altında kalmasını engeller
-			}
-		});
-		tempEntities.push(staticPoly);
+		var staticPoly = createStablePolygon(clickPoints, _gc.withAlpha(0.3));
+		if (staticPoly) tempEntities.push(staticPoly);
 
-		// Kapatma çizgisi
+		// Kapatma çizgisi (ANTİ-JİTTER)
 		var lastPt = clickPoints[clickPoints.length - 1];
 		var firstPt = clickPoints[0];
-		var closeLine = drawLayer.entities.add({
-			polyline: {
-				positions: [lastPt, firstPt], width: 2,
-				material: _gc,
-				depthFailMaterial: _gc.withAlpha(0.6)
-			}
-		});
-		tempEntities.push(closeLine);
+		var closeLine = createStablePolyline([lastPt, firstPt], 2, _gc);
+		if (closeLine) tempEntities.push(closeLine);
 
 		// --- 3D Alan hesabı (3D Newell Algoritması - Cartesian3 ECEF) ---
 		var nx = 0, ny = 0, nz = 0;
