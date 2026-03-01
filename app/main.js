@@ -31,6 +31,8 @@ if (!isLocalFile) {
 viewer.scene.postProcessStages.fxaa.enabled = !isLocalFile;
 viewer.scene.fog.enabled = !isLocalFile;
 viewer.scene.logarithmicDepthBuffer = true; // Mobilde z-fighting/titreme önler
+viewer.scene.globe.depthTestAgainstTerrain = false; // Çizim entity'lerinin mesh altında kaybolmasını engelle
+viewer.scene.camera.frustum.near = 1.0; // Near plane — derinlik hassasiyetini artır
 if (viewer.scene.skyAtmosphere) { viewer.scene.skyAtmosphere.show = false; }
 
 // file:// → skyBox da CORS hatası verir, kapat
@@ -127,6 +129,10 @@ Cesium.Cesium3DTileset.fromUrl("../Scene/merinos1.json", {
 	tileset = loadedTileset;
 	viewer.scene.primitives.add(tileset);
 	viewer.zoomTo(tileset);
+	// Mobilde performans ayarı — tile kalitesini düşür
+	if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+		tileset.maximumScreenSpaceError = 6;
+	}
 	// Tileset hazır olduğunda splash screen event'lerini başlat
 	initSplashProgress(tileset);
 }).catch(function (err) {
@@ -1975,6 +1981,10 @@ function redrawFromClickPoints() {
 	}
 }
 
+// ─── MOBİL ALGILAMA ─────────────────────────────────────────
+var isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|Opera Mini|IEMobile/i.test(navigator.userAgent)
+	|| ('ontouchstart' in window && window.innerWidth < 900);
+
 function setActiveTool(toolId) {
 	// Önceki aracın tamamlanmamış çizimlerini temizle
 	clearTempDrawing();
@@ -1987,6 +1997,8 @@ function setActiveTool(toolId) {
 	if (activeTool) {
 		var aEl = document.getElementById(activeTool);
 		if (aEl) aEl.classList.add('active');
+		// Mobilde: araç seçildiğinde sol paneli kapat
+		if (isMobile && typeof closeToolPanel === 'function') closeToolPanel();
 	}
 
 	var msg = {
@@ -1997,6 +2009,38 @@ function setActiveTool(toolId) {
 	};
 	var message = activeTool ? msg[activeTool] : 'Araç seçin ve haritaya tıklayın.';
 	document.querySelector('#resultDisplay > div').innerHTML = message;
+
+	// Mobil floating butonları göster/gizle
+	updateMobileDrawButtons();
+}
+
+// ─── MOBİL ÇİZİM BUTONLARI KONTROL ─────────────────────────
+function updateMobileDrawButtons() {
+	var fab = document.getElementById('mobileFab');
+	if (!fab) return;
+	if (isMobile && activeTool && (activeTool === 'btnDistance' || activeTool === 'btnArea' || activeTool === 'btnCoord')) {
+		fab.style.display = 'flex';
+	} else {
+		fab.style.display = 'none';
+	}
+}
+
+// ─── MOBİLDEN ÇAĞRILABİLİR: ÇİZİM BİTİR ──────────────────
+function finalizeMeasurement() {
+	// Sağ tık handler'ını tetikle
+	handler.getInputAction(Cesium.ScreenSpaceEventType.RIGHT_CLICK)();
+}
+
+// ─── MOBİLDEN ÇAĞRILABİLİR: SON NOKTAYI GERİ AL ───────────
+function undoLastPoint() {
+	if (activeTool && clickPoints.length > 0 && activeTool !== 'btnCoord') {
+		clickPoints.pop();
+		removeLastZButton();
+		redrawFromClickPoints();
+		if (activeTool === 'btnHeight') {
+			document.querySelector('#resultDisplay > div').innerHTML = 'Yükseklik: 2 nokta tıklayın.';
+		}
+	}
 }
 
 ['btnDistance', 'btnArea', 'btnHeight', 'btnCoord'].forEach(function (id) {

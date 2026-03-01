@@ -1105,6 +1105,44 @@
 		</div>
 	</div>
 
+	<!-- ═══ MOBİL ÇİZİM BUTONLARI (FAB) ═══ -->
+	<div id="mobileFab" style="display:none; position:fixed; bottom:calc(80px + env(safe-area-inset-bottom, 0px)); left:50%; transform:translateX(-50%); z-index:900;
+		gap:12px; align-items:center;">
+		<!-- Geri Al (Undo) -->
+		<button onclick="undoLastPoint()" title="Geri Al" style="width:48px;height:48px;border-radius:50%;border:none;
+			background:rgba(239,68,68,0.85);backdrop-filter:blur(10px);
+			color:#fff;font-size:22px;cursor:pointer;
+			box-shadow:0 4px 20px rgba(0,0,0,0.4);
+			display:flex;align-items:center;justify-content:center;
+			transition:transform 0.15s ease">
+			<span style="font-family:'Material Symbols Outlined';font-size:24px">undo</span>
+		</button>
+		<!-- Bitir (Finalize) -->
+		<button onclick="finalizeMeasurement()" title="Çizimi Bitir" style="width:56px;height:56px;border-radius:50%;border:none;
+			background:rgba(16,185,129,0.9);backdrop-filter:blur(10px);
+			color:#fff;font-size:28px;cursor:pointer;
+			box-shadow:0 4px 24px rgba(16,185,129,0.4);
+			display:flex;align-items:center;justify-content:center;
+			transition:transform 0.15s ease">
+			<span style="font-family:'Material Symbols Outlined';font-size:30px">check</span>
+		</button>
+	</div>
+
+	<style>
+		/* Mobilde Z overlay butonlarını gizle */
+		@media (max-width: 768px),
+		(hover: none) and (pointer: coarse) {
+			#zOverlayContainer {
+				display: none !important;
+			}
+		}
+
+		/* FAB buton hover/active efektleri */
+		#mobileFab button:active {
+			transform: scale(0.9) !important;
+		}
+	</style>
+
 	<!-- ═══ SPLASH SCREEN (Açılış) ═══ -->
 	<div id="splashScreen"
 		class="fixed inset-0 z-[9999] flex items-center justify-center transition-opacity duration-1000"
