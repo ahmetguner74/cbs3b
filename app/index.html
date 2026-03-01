@@ -7,10 +7,17 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 	<title>CBS — 3D Şehir Modeli</title>
 
-	<script src="Cesium/Cesium.js"></script>
+	<!-- Cesium: CDN (online) veya lokal (file://) -->
+	<script>
+		if (window.location.protocol === 'file:') {
+			document.write('<script src="Cesium/Cesium.js"><\/script>');
+		} else {
+			document.write('<script src="https://cesium.com/downloads/cesiumjs/releases/1.105/Build/Cesium/Cesium.js"><\/script>');
+		}
+	</script>
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.15.0/proj4.js"></script>
 	<style>
-		@import url(Cesium/Widgets/widgets.css);
+		@import url('https://cesium.com/downloads/cesiumjs/releases/1.105/Build/Cesium/Widgets/widgets.css');
 	</style>
 
 	<!-- Tailwind CSS -->

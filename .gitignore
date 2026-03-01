@@ -1,6 +1,9 @@
 # Logo tasarım dosyaları
 logo/
 
+# CesiumJS kütüphanesi (CDN'den yükleniyor)
+app/Cesium/
+
 # Lokal araçlar
 Chrome_ile_Ac.bat
 
