@@ -22,3 +22,9 @@ desktop.ini
 skills/
 .gemini/
 .agents/
+
+# Data ve alt klasörleri
+Data/
+Scene/Data/
+**/Data/
+**/Scene/Data/
