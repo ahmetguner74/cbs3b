@@ -129,6 +129,58 @@ drawLayer.entities.collectionChanged.addEventListener(function () {
 	viewer.scene.requestRender();
 });
 
+var currentAreaMode = 'free'; // 'free', 'box3p'
+
+// ─── ALAN KUTU HESAPLAMA FONKSİYONLARI ──────────────────────────
+
+function calculateBox3P(p1, p2, p3) {
+	// 3 Noktadan yönlü dikdörtgen (kutu) hesaplar.
+	// P1-P2 ana kenar, P3 genişliği/yönü belirler.
+
+	// ENU (East-North-Up) lokal koordinat sistemini P1 etrafında kur
+	var enuMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(p1);
+	var invEnuMatrix = Cesium.Matrix4.inverse(enuMatrix, new Cesium.Matrix4());
+
+	// P1, P2 ve P3'ü lokal (2D-vari) düzleme al
+	var localP1 = Cesium.Matrix4.multiplyByPoint(invEnuMatrix, p1, new Cesium.Cartesian3()); // (0,0,0)
+	var localP2 = Cesium.Matrix4.multiplyByPoint(invEnuMatrix, p2, new Cesium.Cartesian3());
+	var localP3 = Cesium.Matrix4.multiplyByPoint(invEnuMatrix, p3, new Cesium.Cartesian3());
+
+	// P1-P2 vektörü
+	var v_12 = new Cesium.Cartesian2(localP2.x - localP1.x, localP2.y - localP1.y);
+
+	// P1-P3 vektörü
+	var v_13 = new Cesium.Cartesian2(localP3.x - localP1.x, localP3.y - localP1.y);
+
+	// Ana eksen yönü (normalized)
+	var len12 = Cesium.Cartesian2.magnitude(v_12);
+	if (len12 === 0) return [p1, p2, p3, p3]; // Önlem: p1 ve p2 aynıysa
+
+	var dir = new Cesium.Cartesian2(v_12.x / len12, v_12.y / len12);
+
+	// Dik yön (normal)
+	var normal = new Cesium.Cartesian2(-dir.y, dir.x);
+
+	// P3'ün normal üzerindeki izdüşümü (Genişlik/Yükseklik vektörü)
+	var projLength = Cesium.Cartesian2.dot(v_13, normal);
+	var widthVec = new Cesium.Cartesian2(normal.x * projLength, normal.y * projLength);
+
+	// Lokal P4 ve Düzeltilmiş Lokal P3 (köşe olması için)
+	// P1, P2 ve P3 düzleminde kalması için z-ekseninde enterpolasyon yapıyoruz.
+	// P3_Corrected, P3'ün Z değerini aynen alacak. P4 de bu düzlemi tamamlayacak.
+	var p3_z = localP3.z;
+	var p4_z = localP1.z + (p3_z - localP2.z); // Paralelkenar z-yükseklik kuralı
+
+	var localP4 = new Cesium.Cartesian3(localP1.x + widthVec.x, localP1.y + widthVec.y, p4_z);
+	var localP3_Corrected = new Cesium.Cartesian3(localP2.x + widthVec.x, localP2.y + widthVec.y, p3_z);
+
+	// Dünyaya geri çevir (Artık tamamen kullanıcı tıklamalarından elde edilen 3D düzleminde!)
+	var worldP4 = Cesium.Matrix4.multiplyByPoint(enuMatrix, localP4, new Cesium.Cartesian3());
+	var worldP3_Corrected = Cesium.Matrix4.multiplyByPoint(enuMatrix, localP3_Corrected, new Cesium.Cartesian3());
+
+	return [p1, p2, worldP3_Corrected, worldP4];
+}
+
 var tileset; // Asenkron yüklenecek
 
 // Tileset'i asenkron yükle (CesiumJS 1.105+ uyumlu)
@@ -349,6 +401,11 @@ var fullscreenBtn = document.querySelector('.cesium-viewer-fullscreenContainer')
 var btnHomeView = document.getElementById('btnHomeView');
 if (fullscreenBtn && btnHomeView) {
 	btnHomeView.parentNode.insertBefore(fullscreenBtn, btnHomeView.nextSibling); // Place fullscreen AFTER home button
+
+	// Madde 1: Full Screen butonu mobilde sorunlu olabildiği için mobilde gizleyelim
+	if (_isMob) {
+		fullscreenBtn.style.display = 'none';
+	}
 }
 
 // ─── THEME TOGGLE ──────────────────────────────────────────────
@@ -787,7 +844,23 @@ viewModeBtns.forEach(function (btn) {
 	});
 });
 
-// ─── 1.7. KAMERA GÖRÜNÜMLERİ VE PROJEKSİYON (VIEW ANGLES & PROJECTION) ───
+// Ekran merkezindeki (crosshair) odak noktasını döndürür.
+function getCameraFocus() {
+	var center = new Cesium.Cartesian2(viewer.canvas.clientWidth / 2, viewer.canvas.clientHeight / 2);
+	var ray = viewer.camera.getPickRay(center);
+	var target = viewer.scene.pickPosition(center);
+
+	if (!Cesium.defined(target)) {
+		target = viewer.scene.globe.pick(ray, viewer.scene);
+	}
+
+	if (!Cesium.defined(target)) {
+		if (tileset && tileset.boundingSphere) return tileset.boundingSphere.center;
+		return viewer.camera.position;
+	}
+	return target;
+}
+
 // Açılar
 var cameraAngleBtns = document.querySelectorAll('.camera-angle-btn');
 var currentCameraIcon = document.getElementById('currentCameraIcon');
@@ -795,15 +868,18 @@ cameraAngleBtns.forEach(function (btn) {
 	btn.addEventListener('click', function () {
 		var heading = Cesium.Math.toRadians(parseFloat(this.getAttribute('data-heading')));
 		var pitch = Cesium.Math.toRadians(parseFloat(this.getAttribute('data-pitch')));
-		var range = 500.0; // Kuşbakışı yaklaşım mesafesi. Modele göre ayarlanabilir.
+
+		var focus = getCameraFocus();
+		var range = Cesium.Cartesian3.distance(viewer.camera.position, focus);
+		if (range < 1 || range > 5000) range = 500; // Makul bir sınır
+
 		var newIcon = this.getAttribute('data-icon');
 
 		if (currentCameraIcon && newIcon) {
 			currentCameraIcon.textContent = newIcon;
 		}
 
-		if (!tileset) return;
-		viewer.camera.flyToBoundingSphere(tileset.boundingSphere, {
+		viewer.camera.flyToBoundingSphere(new Cesium.BoundingSphere(focus, 0), {
 			offset: new Cesium.HeadingPitchRange(heading, pitch, range),
 			duration: 2.0
 		});
@@ -833,15 +909,34 @@ cameraProjBtns.forEach(function (btn) {
 
 		if (proj === 'orthographic' && !isOrthographic) {
 			// Switch to Orthographic
-			var distance = tileset ? Cesium.Cartesian3.distance(viewer.camera.position, tileset.boundingSphere.center) : 500;
+			var focus = getCameraFocus();
+			var distance = Cesium.Cartesian3.distance(viewer.camera.position, focus);
+			if (distance < 1 || distance > 5000) distance = 500;
+
 			orthographicFrustum.width = distance;
 			orthographicFrustum.aspectRatio = perspectiveFrustum.aspectRatio;
-			viewer.camera.frustum = orthographicFrustum;
-			isOrthographic = true;
+
+			// Mevcut odak noktasına uç ve üstten bakışa geç
+			viewer.camera.flyTo({
+				destination: focus,
+				orientation: {
+					heading: 0,
+					pitch: Cesium.Math.toRadians(-90),
+					roll: 0
+				},
+				offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-90), distance),
+				duration: 1.0,
+				complete: function () {
+					viewer.camera.frustum = orthographicFrustum;
+					isOrthographic = true;
+					viewer.scene.screenSpaceCameraController.enableTilt = false;
+				}
+			});
 		} else if (proj === 'perspective' && isOrthographic) {
 			// Switch to Perspective
 			viewer.camera.frustum = perspectiveFrustum;
 			isOrthographic = false;
+			viewer.scene.screenSpaceCameraController.enableTilt = true;
 		}
 	});
 });
@@ -926,7 +1021,7 @@ function getClosestPointOnSegment(p, a, b) {
 
 // ─── 4. ÖLÇÜM VERİ YAPISI & YEREL DEPOLAMA (LOCALSTORAGE) ───
 var measurements = [];
-var groups = [{ id: 0, name: 'Genel', isOpen: true, checked: true, color: '#14B8A6' }];
+var groups = [{ id: 0, name: 'Genel', isOpen: false, checked: true, color: '#14B8A6' }];
 
 // ─── 8 SABİT RENK PALETİ ───
 var COLOR_PALETTE = [
@@ -1004,6 +1099,7 @@ function loadFromStorage() {
 		if (savedGroups.length > 0) {
 			groups = savedGroups;
 			groups.forEach(function (g) {
+				g.isOpen = false; // Always start collapsed
 				if (g.id > groupCount) groupCount = g.id;
 				if (!g.color) g.color = '#14B8A6'; // Eski kayıtlar için varsayılan renk
 			});
@@ -1031,7 +1127,7 @@ function loadFromStorage() {
 			else if (m.type === 'coord') restoreCoord(restoredMeasurement);
 
 			if (!m.checked) {
-				restoredMeasurement.entities.forEach(function (e) { e.show = false; });
+				restoredMeasurement.entities.forEach(function (e) { e.show = false; if (e.label) e.label.show = false; });
 			}
 
 			measurements.push(restoredMeasurement);
@@ -1130,6 +1226,23 @@ function createStablePolygon(positions, material) {
 	return primitive;
 }
 
+function createStablePoint(position, color) {
+	var pivot = liftPosition(position);
+	var enuMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(pivot);
+	var pointCollection = new Cesium.PointPrimitiveCollection({ modelMatrix: enuMatrix });
+	var point = pointCollection.add({
+		position: Cesium.Cartesian3.ZERO,
+		pixelSize: 4,
+		color: color || Cesium.Color.WHITE,
+		outlineColor: Cesium.Color.BLACK,
+		outlineWidth: 1
+	});
+	var pointPrimitive = viewer.scene.primitives.add(pointCollection);
+	pointPrimitive.id = pointPrimitive;
+	point.id = pointPrimitive;
+	return pointPrimitive;
+}
+
 // Evrensel silme: Entity VEYA Primitive VEYA Collection Item
 function safeRemoveItem(item) {
 	if (!item) return;
@@ -1164,8 +1277,6 @@ function safeRemoveItem(item) {
 
 // Global koleksiyonlar mobil jitter sorunu yaratıyor (koordinatlar ECEF kaldığı için)
 // Bu nedenle artık kullanılmıyor, yerine modelMatrix'li bireysel Primitive'ler eklendi
-// var globalPointCollection = viewer.scene.primitives.add(new Cesium.PointPrimitiveCollection());
-// var globalLabelCollection = viewer.scene.primitives.add(new Cesium.LabelCollection());
 
 function addPointLabel(position, number, colorStr) {
 	var pivot = liftPosition(position);
@@ -1177,35 +1288,14 @@ function addPointLabel(position, number, colorStr) {
 	var pointCollection = new Cesium.PointPrimitiveCollection({ modelMatrix: enuMatrix });
 	var point = pointCollection.add({
 		position: Cesium.Cartesian3.ZERO,
-		pixelSize: 8,
+		pixelSize: 4,
 		color: pointColor,
 		outlineColor: Cesium.Color.BLACK,
-		outlineWidth: 1,
-		disableDepthTestDistance: Number.POSITIVE_INFINITY
+		outlineWidth: 1
 	});
 	var pointPrimitive = viewer.scene.primitives.add(pointCollection);
 	pointPrimitive.id = pointPrimitive;
 	point.id = pointPrimitive;
-
-	// Etiket koleksiyonu - Lokal orijin
-	var labelCollection = new Cesium.LabelCollection({ modelMatrix: enuMatrix });
-	var label = labelCollection.add({
-		position: Cesium.Cartesian3.ZERO,
-		text: String(number),
-		font: 'bold 13px sans-serif',
-		fillColor: Cesium.Color.WHITE,
-		outlineColor: Cesium.Color.BLACK,
-		outlineWidth: 2,
-		style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-		verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-		pixelOffset: new Cesium.Cartesian2(0, -12),
-		disableDepthTestDistance: Number.POSITIVE_INFINITY
-	});
-	var labelPrimitive = viewer.scene.primitives.add(labelCollection);
-	labelPrimitive.id = labelPrimitive;
-
-	labelPrimitive.owner = pointPrimitive;
-	pointPrimitive.label = labelPrimitive;
 
 	viewer.scene.requestRender();
 	return pointPrimitive;
@@ -1225,8 +1315,7 @@ function addLabel(position, text, color) {
 		outlineWidth: 2,
 		style: Cesium.LabelStyle.FILL_AND_OUTLINE,
 		verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-		pixelOffset: new Cesium.Cartesian2(0, -8),
-		disableDepthTestDistance: Number.POSITIVE_INFINITY
+		pixelOffset: new Cesium.Cartesian2(0, -8)
 	});
 
 	var labelPrimitive = viewer.scene.primitives.add(labelCollection);
@@ -1321,9 +1410,23 @@ function restoreHeight(m) {
 	var hColor = Cesium.Color.fromCssColorString(hexColor);
 	m.entities.push(addPointLabel(m.points[0], 1, hexColor));
 	m.entities.push(addPointLabel(m.points[1], 2, hexColor));
-	var hSeg = createStablePolyline(m.points.slice(), 2, hColor);
-	if (hSeg) m.entities.push(hSeg);
-	m.entities.push(addLabel(midpoint(m.points[0], m.points[1]), m.resultText, hColor));
+
+	// L-şeklinde çizgi: P1 → P_mid (yatay) → P2 (dikey)
+	var c1 = Cesium.Cartographic.fromCartesian(m.points[0]);
+	var c2 = Cesium.Cartographic.fromCartesian(m.points[1]);
+	var pMid = Cesium.Cartesian3.fromRadians(c2.longitude, c2.latitude, c1.height);
+
+	// Yatay çizgi (P1 → P_mid)
+	var hSegH = createStablePolyline([m.points[0], pMid], 2, hColor);
+	if (hSegH) m.entities.push(hSegH);
+
+	// Dikey çizgi (P_mid → P2) — kesikli efekt için farklı renk
+	var vertColor = hColor.withAlpha(0.6);
+	var hSegV = createStablePolyline([pMid, m.points[1]], 3, vertColor);
+	if (hSegV) m.entities.push(hSegV);
+
+	// Etiket dikey çizginin ortasına
+	m.entities.push(addLabel(midpoint(pMid, m.points[1]), m.resultText, hColor));
 }
 
 function restoreCoord(m) {
@@ -1559,7 +1662,7 @@ function renderGroupItem(container, group) {
 		measurements.forEach(function (m) {
 			if (m.groupId === group.id) {
 				m.checked = group.checked;
-				m.entities.forEach(function (ent) { ent.show = group.checked; });
+				m.entities.forEach(function (ent) { ent.show = group.checked; if (ent.label) ent.label.show = group.checked; });
 			}
 		});
 		viewer.scene.requestRender();
@@ -1672,7 +1775,7 @@ function renderGroupItem(container, group) {
 		chk.onclick = function (e) {
 			e.stopPropagation();
 			m.checked = chk.checked;
-			m.entities.forEach(function (ent) { ent.show = chk.checked; });
+			m.entities.forEach(function (ent) { ent.show = chk.checked; if (ent.label) ent.label.show = chk.checked; });
 			if (chk.checked) highlightMeasurement(m.id);
 			else if (activeHighlightId === m.id) highlightMeasurement(m.id);
 			viewer.scene.requestRender();
@@ -1877,7 +1980,7 @@ document.getElementById('selectAllToggle').addEventListener('click', function ()
 	groups.forEach(function (g) { g.checked = _allVisible; });
 	measurements.forEach(function (m) {
 		m.checked = _allVisible;
-		m.entities.forEach(function (ent) { ent.show = _allVisible; });
+		m.entities.forEach(function (ent) { ent.show = _allVisible; if (ent.label) ent.label.show = _allVisible; });
 	});
 	viewer.scene.requestRender();
 	renderList();
@@ -2228,12 +2331,12 @@ function setActiveTool(toolId) {
 
 	var msg = _isMob ? {
 		'btnDistance': 'Mesafe: Noktaları dokunarak koyun. <i>(✓ = bitir)</i>',
-		'btnArea': 'Alan: Köşelere dokunun. <i>(✓ = kapat)</i>',
+		'btnArea': 'Alan (' + (currentAreaMode === 'free' ? 'Serbest' : '3 Nokta') + '): Köşelere dokunun. <i>(✓ = kapat)</i>',
 		'btnHeight': 'Yükseklik: 2 noktaya dokunun.',
 		'btnCoord': 'Nokta At: Konuma dokunun.'
 	} : {
 		'btnDistance': 'Mesafe: İlk noktayı tıklayın. <i>(Sağ tık = bitir)</i>',
-		'btnArea': 'Alan: Köşe noktalarını tıklayın. <i>(Sağ tık = kapat)</i>',
+		'btnArea': 'Alan (' + (currentAreaMode === 'free' ? 'Serbest' : '3 Nokta') + '): Noktaları tıklayın. <i>(Sağ tık = kapat)</i>',
 		'btnHeight': 'Yükseklik: 2 nokta tıklayın.',
 		'btnCoord': 'Nokta At: Noktaya tıklayın.'
 	};
@@ -2273,9 +2376,26 @@ function undoLastPoint() {
 	}
 }
 
-['btnDistance', 'btnArea', 'btnHeight', 'btnCoord'].forEach(function (id) {
+['btnDistance', 'btnHeight', 'btnCoord'].forEach(function (id) {
 	var el = document.getElementById(id);
 	if (el) el.onclick = function () { setActiveTool(id); };
+});
+
+// Area butonuna özel click: sadece toggle yapar (mevcut modu kullanır)
+var btnArea = document.getElementById('btnArea');
+if (btnArea) {
+	btnArea.onclick = function () { setActiveTool('btnArea'); };
+}
+
+// Dropdown alt-modları click handler
+var areaModeBtns = document.querySelectorAll('.area-mode-btn');
+areaModeBtns.forEach(function (btn) {
+	btn.onclick = function () {
+		currentAreaMode = this.getAttribute('data-mode');
+		setActiveTool('btnArea'); // Zaten aktifse kapatıp tekrar açacak veya aktif değilse doğrudan açacak (UX)
+		// UI olarak menüyü kapatıyoruz CSS :hover ile de kapanabilir ama activeTool kapatır zaten paneli
+		if (window.closeToolPanel) window.closeToolPanel(); // Mobil
+	};
 });
 
 // EKRANI TEMİZLE — SADECE EKRANDAKİ ÇİZİMLERİ GİZLER, VERİYİ SİLMEZ
@@ -2293,6 +2413,7 @@ document.getElementById('btnClearScreen').onclick = function () {
 		m.checked = false;
 		m.entities.forEach(function (ent) {
 			ent.show = false;
+			if (ent.label) ent.label.show = false;
 		});
 	});
 
@@ -2502,22 +2623,58 @@ handler.setInputAction(function (click) {
 
 	// ── ALAN ──
 	else if (activeTool === 'btnArea') {
-		if (clickPoints.length > 1) {
-			var a2 = clickPoints[clickPoints.length - 2];
-			var b2 = clickPoints[clickPoints.length - 1];
-			var edgeSeg = createStablePolyline([a2, b2], 2, _gc);
-			if (edgeSeg) tempEntities.push(edgeSeg);
-		}
+		if (currentAreaMode === 'free') {
+			if (clickPoints.length > 1) {
+				var a2 = clickPoints[clickPoints.length - 2];
+				var b2 = clickPoints[clickPoints.length - 1];
+				var edgeSeg = createStablePolyline([a2, b2], 2, _gc);
+				if (edgeSeg) tempEntities.push(edgeSeg);
+			}
 
-		// Dinamik poligon önizleme (3+ nokta olunca)
-		if (activeShape) { safeRemoveItem(activeShape); activeShape = null; }
-		if (clickPoints.length >= 3) {
-			// ANTİ-JİTTER: Entity yerine Primitive kullanıyoruz
-			activeShape = createStablePolygon(clickPoints, _gc.withAlpha(0.2));
-		}
+			// Dinamik poligon önizleme (3+ nokta olunca)
+			if (activeShape) { safeRemoveItem(activeShape); activeShape = null; }
+			if (clickPoints.length >= 3) {
+				// ANTİ-JİTTER: Entity yerine Primitive kullanıyoruz
+				activeShape = createStablePolygon(clickPoints, _gc.withAlpha(0.2));
+			}
 
-		// Önizleme için anlık 2D Alan hesabı eklenebilir ama şu an köşe sayısı gösterelim:
-		document.querySelector('#resultDisplay > div').innerHTML = '<b>Alan:</b> ' + clickPoints.length + ' nokta. ' + (_isMob ? '<i>(↩ geri al, ✓ bitir)</i>' : '<i>(Geri: Ctrl+Z) Sağ tık kapat.</i>');
+			document.querySelector('#resultDisplay > div').innerHTML = '<b>Alan (Serbest):</b> ' + clickPoints.length + ' nokta. ' + (_isMob ? '<i>(↩ geri al, ✓ bitir)</i>' : '<i>(Geri: Ctrl+Z) Sağ tık kapat.</i>');
+		} else if (currentAreaMode === 'box3p') {
+			// 3 Noktalı Kutu Modu
+			if (clickPoints.length > 1 && clickPoints.length < 3) {
+				var a3 = clickPoints[clickPoints.length - 2];
+				var b3 = clickPoints[clickPoints.length - 1];
+				var edgeSeg3 = createStablePolyline([a3, b3], 2, _gc);
+				if (edgeSeg3) tempEntities.push(edgeSeg3);
+			}
+
+			if (clickPoints.length === 3) {
+				// 3 Nokta girildi, kutuyu hesapla ve kapat
+				var boxPts3 = calculateBox3P(clickPoints[0], clickPoints[1], clickPoints[2]);
+
+				// 3. ve 4. noktaları görsel olarak sahneye ve tempEntities'e ekle
+				// Not: İlk iki nokta zaten tıklandıkları anda eklendi ve tempEntities'te duruyorlar.
+				// Orijinal 3. kullanıcı noktasını siliyoruz çünkü calculateBox3P onu bir dikdörtgen olmak üzere biraz düzeltti.
+				// `clickPoints` listesinde son tıklanan noktayı gizle (pointPrimitive var)
+				var lastPointPrimitive = tempEntities.pop();
+				if (lastPointPrimitive) safeRemoveItem(lastPointPrimitive);
+
+				// Yeni p3 (düzeltilmiş) ve p4 (yeni oluşturulan) noktalarını sahneye ekle
+				var p3_entity = createStablePoint(boxPts3[2], _gc);
+				if (p3_entity) tempEntities.push(p3_entity);
+
+				var p4_entity = createStablePoint(boxPts3[3], _gc);
+				if (p4_entity) tempEntities.push(p4_entity);
+
+				// Noktaları Array'a yaz
+				clickPoints = boxPts3.slice(); // 4 köşeye dönüştür
+
+				// Çizimi bitirme işlemini tetikle (Sağ tık simülasyonu)
+				handler.getInputAction(Cesium.ScreenSpaceEventType.RIGHT_CLICK)();
+			} else {
+				document.querySelector('#resultDisplay > div').innerHTML = '<b>Alan (3 Nokta Kutu):</b> ' + (3 - clickPoints.length) + ' nokta kaldı. ' + (_isMob ? '<i>(↩ geri al)</i>' : '<i>(Geri: Ctrl+Z)</i>');
+			}
+		}
 	}
 
 	// ── YÜKSEKLİK ──
@@ -2526,10 +2683,17 @@ handler.setInputAction(function (click) {
 		var c2 = Cesium.Cartographic.fromCartesian(clickPoints[1]);
 		var diff = Math.abs(c1.height - c2.height);
 
-		var hSeg = createStablePolyline(clickPoints.slice(), 2, _gc);
-		if (hSeg) tempEntities.push(hSeg);
+		// L-şeklinde çizgi: P1 → P_mid (yatay) → P2 (dikey)
+		var pMid = Cesium.Cartesian3.fromRadians(c2.longitude, c2.latitude, c1.height);
 
-		var hLabel = addLabel(midpoint(clickPoints[0], clickPoints[1]), '↕ ' + diff.toFixed(2) + ' m', _gc);
+		var hSegH = createStablePolyline([clickPoints[0], pMid], 2, _gc);
+		if (hSegH) tempEntities.push(hSegH);
+
+		var vertColor = _gc.withAlpha(0.6);
+		var hSegV = createStablePolyline([pMid, clickPoints[1]], 3, vertColor);
+		if (hSegV) tempEntities.push(hSegV);
+
+		var hLabel = addLabel(midpoint(pMid, clickPoints[1]), '↕ ' + diff.toFixed(2) + ' m', _gc);
 		tempEntities.push(hLabel);
 
 		var resultText = '↕ ' + diff.toFixed(2) + ' m';
