@@ -7,8 +7,8 @@ Belediyeler için geliştirilmiş, **CesiumJS** tabanlı 3D şehir görselleşti
 ## ✨ Özellikler
 
 - 🗺️ **3D Şehir Modeli** — 3D Tiles formatında şehir görselleştirme
-- 📏 **Ölçüm Araçları** — Mesafe, alan ve hacim ölçümü
-- 📐 **Snap Özelliği** — Mevcut noktalara ve çizgilere otomatik yapışma
+- 📏 **Ölçüm Araçları** — Mesafe, alan' yüksekli ve nokta ölçümü
+- 📐 **Snap Özelliği** — Mevcut noktalara ve çizgilere otomatik snap
 - 🎨 **Tema Desteği** — Açık ve koyu tema
 - 📱 **Responsive Tasarım** — Masaüstü ve mobil uyumlu
 - 📊 **Ölçüm Grupları** — Ölçümleri kategorilere ayırma ve yönetme
@@ -60,7 +60,7 @@ Bu proje şu an geliştirme aşamasındadır.
 
 ## 👤 Geliştirici
 
-**Ahmet Güner** — Belediye CBS Uzmanı
+**Ahmet Güner** — 3D Model ve CBS Uzmanı
 
 ---
 
