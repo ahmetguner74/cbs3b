@@ -775,6 +775,67 @@
 			color: #94a3b8 !important;
 		}
 
+		/* Light: Changelog Modal */
+		html.light #changelogModal .bg-slate-900 {
+			background-color: #ffffff !important;
+			border-color: #e2e8f0 !important;
+		}
+
+		html.light #changelogModal .bg-slate-800\/50 {
+			background-color: #f8fafc !important;
+		}
+
+		html.light #changelogModal .border-slate-800 {
+			border-color: #e2e8f0 !important;
+		}
+
+		html.light #changelogModal .border-slate-700 {
+			border-color: #e2e8f0 !important;
+		}
+
+		html.light #changelogModal .text-white {
+			color: #0f172a !important;
+		}
+
+		html.light #changelogModal .text-slate-300 {
+			color: #1e293b !important;
+		}
+
+		html.light #changelogModal .text-slate-400 {
+			color: #334155 !important;
+		}
+
+		html.light #changelogModal .text-slate-400\/80 {
+			color: #475569 !important;
+		}
+
+		html.light #changelogModal .text-slate-400.hover\:text-white:hover {
+			color: #0f172a !important;
+		}
+
+		html.light #changelogModal .ring-slate-900 {
+			--tw-ring-color: #ffffff !important;
+		}
+
+		html.light #changelogModal .bg-slate-600 {
+			background-color: #cbd5e1 !important;
+		}
+
+		/* Light: Header Changelog Badge */
+		html.light #btnOpenChangelog {
+			background-color: #f1f5f9 !important;
+			border-color: #e2e8f0 !important;
+		}
+
+		html.light #btnOpenChangelog:hover {
+			background-color: #e2e8f0 !important;
+			border-color: var(--primary) !important;
+		}
+
+		html.light #btnOpenChangelog .text-slate-300 {
+			color: #1e293b !important;
+		}
+
 		/* Light: Result display */
 		html.light #resultDisplay .text-slate-300 {
 			color: var(--text-secondary) !important;
@@ -2063,10 +2124,11 @@
 			</div>
 			<!-- Footer -->
 			<div class="px-5 py-3 border-t border-slate-700/50 flex items-center justify-between">
-				<label class="flex items-center gap-2 cursor-pointer select-none">
+				<label class="flex items-center gap-2 cursor-pointer select-none group">
 					<input type="checkbox" id="helpDontShow"
-						class="w-3.5 h-3.5 rounded border-slate-600 bg-slate-800 text-primary focus:ring-primary/30 cursor-pointer">
-					<span class="text-[11px] text-slate-400">Bir daha gösterme</span>
+						style="width:16px;height:16px;accent-color:#14B8A6;cursor:pointer;border:2px solid #64748b;border-radius:3px;">
+					<span class="text-[11px] text-slate-400 group-hover:text-slate-200 transition-colors">Bir daha
+						gösterme</span>
 				</label>
 				<button id="helpOkBtn"
 					class="px-5 py-1.5 bg-primary hover:bg-primary/80 text-white text-xs font-bold rounded-lg transition-colors tracking-wide">Tamam</button>
@@ -2196,7 +2258,7 @@
 							<span class="text-xs font-bold text-slate-300">v0.9.0</span>
 						</div>
 						<p class="text-[11px] text-slate-400/80 leading-relaxed">
-							• Sisteme güvenli giriş (login) ekranı entegre edildi.<br>
+							• Tam ekran görüntüleme sistemi entegre edildi.<br>
 							• Kullanıcı deneyimini artıran yardım ve dinamik kısayollar paneli eklendi.
 						</p>
 					</div>
