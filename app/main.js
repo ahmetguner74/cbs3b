@@ -6,6 +6,46 @@
 Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIyYmExYjdkYS03YjFkLTRkMDMtYjFkMS1kNjJiYzA1ZGIyNWQiLCJpZCI6NDE3MTMsImlhdCI6MTc2NjEzMjI3OH0.OGK7rOk1E5pLcZ_Wauyz8hiUlSPb9zmMWuRW2lhp-7c';
 var _isMunicipality = true;
 
+// ═══ TELEMETRİ VE LOG YÖNETİMİ (Geri Bildirim Kara Kutusu) ═══
+var TelemetryManager = {
+	logs: [],
+	maxLogs: 100,
+	addLog: function (action) {
+		var t = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+		this.logs.push('[' + t + '] ' + action);
+		if (this.logs.length > this.maxLogs) this.logs.shift();
+	},
+	getSystemInfo: function () {
+		var gl = null;
+		try {
+			var c = document.createElement('canvas');
+			gl = c.getContext('webgl') || c.getContext('experimental-webgl');
+		} catch (e) { }
+		var gpu = 'Bilinmiyor';
+		if (gl) {
+			var ext = gl.getExtension('WEBGL_debug_renderer_info');
+			if (ext) gpu = gl.getParameter(ext.UNMASKED_RENDERER_WEBGL);
+		}
+		return [
+			'Tarayıcı: ' + navigator.userAgent,
+			'Platform: ' + navigator.platform,
+			'Ekran: ' + screen.width + 'x' + screen.height + ' (' + (window.devicePixelRatio || 1) + 'x)',
+			'GPU: ' + gpu,
+			'Bellek: ' + (navigator.deviceMemory ? navigator.deviceMemory + ' GB' : 'Bilinmiyor'),
+			'Dil: ' + navigator.language
+		].join('\n');
+	},
+	takeScreenshot: function () {
+		try {
+			if (typeof viewer !== 'undefined' && viewer.scene) {
+				viewer.render();
+				return viewer.canvas.toDataURL('image/jpeg', 0.6);
+			}
+		} catch (e) { }
+		return null;
+	}
+};
+
 // 2. Protokol tespiti: file:// → Ion/terrain kullanma (CORS hatası verir)
 var isLocalFile = window.location.protocol === 'file:';
 
@@ -3848,3 +3888,83 @@ document.getElementById('btnZoomOut').addEventListener('click', function () {
 		viewer.camera.zoomOut(moveRate);
 	}
 });
+
+// ═══ TELEMETRİ LOG HOOKS (Otomatik İşlem Kaydı) ═══
+(function () {
+	if (typeof TelemetryManager === 'undefined') return;
+
+	// Sayfa yüklendiğinde
+	TelemetryManager.addLog('Uygulama başlatıldı');
+
+	// Araç paneli tıklamaları (event delegation)
+	var toolsPanel = document.getElementById('toolsPanel');
+	if (toolsPanel) {
+		toolsPanel.addEventListener('click', function (e) {
+			var btn = e.target.closest('button');
+			if (btn) {
+				var title = btn.title || btn.textContent.trim().substring(0, 30);
+				TelemetryManager.addLog('Araç tıklandı: ' + title);
+			}
+		});
+	}
+
+	// Ölçüm paneli tıklamaları
+	var measurePanel = document.getElementById('measurePanel');
+	if (measurePanel) {
+		measurePanel.addEventListener('click', function (e) {
+			var btn = e.target.closest('button');
+			if (btn) {
+				var title = btn.title || btn.id || btn.textContent.trim().substring(0, 20);
+				TelemetryManager.addLog('Ölçüm paneli: ' + title);
+			}
+		});
+	}
+
+	// Klavye kısayolları log
+	document.addEventListener('keydown', function (e) {
+		if (e.key >= '1' && e.key <= '4') {
+			var tools = { '1': 'Nokta', '2': 'Mesafe', '3': 'Alan', '4': 'Yükseklik' };
+			TelemetryManager.addLog('Kısayol: ' + (tools[e.key] || e.key) + ' aracı');
+		}
+		if (e.key === 'Delete') TelemetryManager.addLog('Kısayol: Seçili silme (Delete)');
+		if (e.key === 'Escape') TelemetryManager.addLog('Kısayol: İptal (ESC)');
+		if (e.ctrlKey && e.key === 'z') TelemetryManager.addLog('Kısayol: Geri al (Ctrl+Z)');
+	});
+
+	// Import/Export butonları
+	['btnImportGeoJSON', 'btnImportCSV', 'btnImportDXF', 'btnExportGeoJSON', 'btnExportCSV', 'btnExportDXF',
+		'ImportGeoJSON', 'ImportCSV', 'ImportDXF', 'ExportGeoJSON', 'ExportCSV', 'ExportDXF'].forEach(function (id) {
+			var el = document.getElementById(id);
+			if (el) {
+				el.addEventListener('click', function () {
+					TelemetryManager.addLog('İçe/Dışa aktarım: ' + id);
+				});
+			}
+		});
+
+	// Tema değişikliği
+	var themeBtn = document.getElementById('btnToggleTheme');
+	if (themeBtn) {
+		themeBtn.addEventListener('click', function () {
+			var theme = document.documentElement.classList.contains('light') ? 'Koyu' : 'Açık';
+			TelemetryManager.addLog('Tema değiştirildi: ' + theme);
+		});
+	}
+
+	// Global hata yakalayıcı
+	window.addEventListener('error', function (e) {
+		TelemetryManager.addLog('HATA: ' + (e.message || 'Bilinmeyen hata') + ' (' + (e.filename || '') + ':' + (e.lineno || '') + ')');
+	});
+
+	// Promise rejection yakalayıcı
+	window.addEventListener('unhandledrejection', function (e) {
+		TelemetryManager.addLog('PROMISE HATA: ' + (e.reason || 'Bilinmeyen'));
+	});
+
+	// CesiumJS render hatası
+	if (typeof viewer !== 'undefined' && viewer.scene) {
+		viewer.scene.renderError.addEventListener(function (scene, error) {
+			TelemetryManager.addLog('RENDER HATA: ' + (error.message || error));
+		});
+	}
+})();
