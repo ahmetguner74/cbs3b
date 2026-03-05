@@ -1357,15 +1357,7 @@
 		</div>
 	</div>
 
-	<!-- ═══ WATERMARK (Sahne üzeri) ═══ -->
-	<div id="watermark" class="fixed bottom-16 right-4 z-30 pointer-events-none select-none opacity-20">
-		<div class="text-right">
-			<div class="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">3D SAYISAL VERİ ÜRETİM VE
-				ANALİZ PORTALI</div>
-			<div class="text-[9px] font-mono text-slate-500">DEMO — Ticari Kullanım İçin Lisans Gereklidir</div>
-			<div class="text-[8px] font-mono text-slate-600">© 2026 Tüm Hakları Saklıdır</div>
-		</div>
-	</div>
+
 
 	<!-- ═══ MOBİL ÇİZİM BUTONLARI (FAB) ═══ -->
 	<div id="mobileFab" style="display:none; position:fixed; bottom:calc(80px + env(safe-area-inset-bottom, 0px)); left:50%; transform:translateX(-50%); z-index:900;
@@ -1604,7 +1596,7 @@
 	<div id="helpModal" class="fixed inset-0 z-[10000] flex items-center justify-center opacity-0 invisible"
 		style="pointer-events:none;transition:opacity 0.3s ease,visibility 0.3s ease;background:rgba(0,0,0,0.5);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)">
 		<div id="helpModalInner"
-			class="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-[520px] max-w-[90vw] max-h-[90vh] overflow-hidden flex flex-col"
+			class="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-[620px] max-w-[90vw] max-h-[90vh] overflow-hidden flex flex-col"
 			style="pointer-events:auto">
 			<!-- Header -->
 			<div class="flex items-center justify-between px-5 py-4 border-b border-slate-700/50">
@@ -1620,50 +1612,379 @@
 			</div>
 			<!-- Content -->
 			<div class="overflow-y-auto p-5 space-y-5 hide-scrollbar">
-				<!-- Klavye Kısayolları -->
+				<!-- Klavye Kısayolları - Gerçekçi Klavye Görseli -->
 				<div>
 					<h3 class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-3">⌨️ Klavye
 						Kısayolları</h3>
-					<div class="grid grid-cols-2 gap-x-6 gap-y-2">
-						<div class="flex items-center justify-between"><span class="text-xs text-slate-300">Nokta
-								At</span><kbd
-								class="px-2 py-0.5 bg-slate-800 border border-slate-600 rounded text-[11px] text-primary font-mono">1</kbd>
+					<style>
+						.kb-visual {
+							position: relative;
+							background: linear-gradient(145deg, #0f1521, #1a2235);
+							border-radius: 12px;
+							padding: 16px 12px 12px;
+							border: 1px solid rgba(255, 255, 255, 0.06);
+							box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+						}
+
+						.kb-row {
+							display: flex;
+							gap: 3px;
+							margin-bottom: 3px;
+							justify-content: flex-start;
+						}
+
+						.kb-key {
+							position: relative;
+							min-width: 32px;
+							height: 30px;
+							border-radius: 5px;
+							display: flex;
+							align-items: center;
+							justify-content: center;
+							font-family: 'Inter', system-ui, sans-serif;
+							font-size: 9px;
+							font-weight: 600;
+							color: #4a5568;
+							background: linear-gradient(180deg, #1e2a3a 0%, #182030 100%);
+							border: 1px solid rgba(255, 255, 255, 0.06);
+							box-shadow: 0 2px 0 #0d1520, 0 3px 4px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+							cursor: default;
+							transition: all 0.2s ease;
+							user-select: none;
+							padding: 0 5px;
+							letter-spacing: 0.3px;
+						}
+
+						.kb-key.active {
+							color: #fff;
+							border-color: rgba(255, 255, 255, 0.12);
+							transform: translateY(-1px);
+						}
+
+						.kb-key.active:hover {
+							transform: translateY(-2px);
+							filter: brightness(1.15);
+						}
+
+						/* Color categories */
+						.kb-key.c-cyan {
+							background: linear-gradient(180deg, #0e3a4a 0%, #0a2e3c 100%);
+							border-color: rgba(6, 182, 212, 0.3);
+							box-shadow: 0 2px 0 #061a22, 0 3px 6px rgba(6, 182, 212, 0.15), inset 0 1px 0 rgba(6, 182, 212, 0.1), 0 0 12px rgba(6, 182, 212, 0.08);
+							color: #22d3ee;
+						}
+
+						.kb-key.c-red {
+							background: linear-gradient(180deg, #3a1420 0%, #2e0e18 100%);
+							border-color: rgba(239, 68, 68, 0.3);
+							box-shadow: 0 2px 0 #1a0810, 0 3px 6px rgba(239, 68, 68, 0.15), inset 0 1px 0 rgba(239, 68, 68, 0.1), 0 0 12px rgba(239, 68, 68, 0.08);
+							color: #f87171;
+						}
+
+						.kb-key.c-amber {
+							background: linear-gradient(180deg, #3a2e14 0%, #2e240e 100%);
+							border-color: rgba(245, 158, 11, 0.3);
+							box-shadow: 0 2px 0 #1a1408, 0 3px 6px rgba(245, 158, 11, 0.15), inset 0 1px 0 rgba(245, 158, 11, 0.1), 0 0 12px rgba(245, 158, 11, 0.08);
+							color: #fbbf24;
+						}
+
+						.kb-key.c-green {
+							background: linear-gradient(180deg, #143a20 0%, #0e2e18 100%);
+							border-color: rgba(34, 197, 94, 0.3);
+							box-shadow: 0 2px 0 #081a0e, 0 3px 6px rgba(34, 197, 94, 0.15), inset 0 1px 0 rgba(34, 197, 94, 0.1), 0 0 12px rgba(34, 197, 94, 0.08);
+							color: #4ade80;
+						}
+
+						.kb-key.c-purple {
+							background: linear-gradient(180deg, #2a1450 0%, #220e40 100%);
+							border-color: rgba(168, 85, 247, 0.3);
+							box-shadow: 0 2px 0 #120830, 0 3px 6px rgba(168, 85, 247, 0.15), inset 0 1px 0 rgba(168, 85, 247, 0.1), 0 0 12px rgba(168, 85, 247, 0.08);
+							color: #c084fc;
+						}
+
+						.kb-key.c-blue {
+							background: linear-gradient(180deg, #142a50 0%, #0e2040 100%);
+							border-color: rgba(59, 130, 246, 0.3);
+							box-shadow: 0 2px 0 #081430, 0 3px 6px rgba(59, 130, 246, 0.15), inset 0 1px 0 rgba(59, 130, 246, 0.1), 0 0 12px rgba(59, 130, 246, 0.08);
+							color: #60a5fa;
+						}
+
+						/* Tooltips */
+						.kb-tip {
+							position: absolute;
+							bottom: calc(100% + 4px);
+							left: 50%;
+							transform: translateX(-50%);
+							white-space: nowrap;
+							font-size: 7px;
+							font-weight: 700;
+							letter-spacing: 0.4px;
+							padding: 2px 5px;
+							border-radius: 3px;
+							pointer-events: none;
+							text-transform: uppercase;
+							z-index: 2;
+						}
+
+						.kb-tip::after {
+							content: '';
+							position: absolute;
+							top: 100%;
+							left: 50%;
+							transform: translateX(-50%);
+							border: 3px solid transparent;
+						}
+
+						.kb-tip.t-cyan {
+							background: rgba(6, 182, 212, 0.2);
+							color: #22d3ee;
+						}
+
+						.kb-tip.t-cyan::after {
+							border-top-color: rgba(6, 182, 212, 0.2);
+						}
+
+						.kb-tip.t-red {
+							background: rgba(239, 68, 68, 0.2);
+							color: #f87171;
+						}
+
+						.kb-tip.t-red::after {
+							border-top-color: rgba(239, 68, 68, 0.2);
+						}
+
+						.kb-tip.t-amber {
+							background: rgba(245, 158, 11, 0.2);
+							color: #fbbf24;
+						}
+
+						.kb-tip.t-amber::after {
+							border-top-color: rgba(245, 158, 11, 0.2);
+						}
+
+						.kb-tip.t-green {
+							background: rgba(34, 197, 94, 0.2);
+							color: #4ade80;
+						}
+
+						.kb-tip.t-green::after {
+							border-top-color: rgba(34, 197, 94, 0.2);
+						}
+
+						.kb-tip.t-purple {
+							background: rgba(168, 85, 247, 0.2);
+							color: #c084fc;
+						}
+
+						.kb-tip.t-purple::after {
+							border-top-color: rgba(168, 85, 247, 0.2);
+						}
+
+						.kb-tip.t-blue {
+							background: rgba(59, 130, 246, 0.2);
+							color: #60a5fa;
+						}
+
+						.kb-tip.t-blue::after {
+							border-top-color: rgba(59, 130, 246, 0.2);
+						}
+
+						/* Legend */
+						.kb-legend {
+							display: flex;
+							flex-wrap: wrap;
+							gap: 8px 14px;
+							margin-top: 10px;
+							justify-content: center;
+						}
+
+						.kb-legend-item {
+							display: flex;
+							align-items: center;
+							gap: 4px;
+							font-size: 8px;
+							font-weight: 600;
+							color: #64748b;
+							letter-spacing: 0.3px;
+						}
+
+						.kb-legend-dot {
+							width: 6px;
+							height: 6px;
+							border-radius: 50%;
+						}
+
+						/* Wider keys */
+						.kb-key.w-esc {
+							min-width: 38px;
+						}
+
+						.kb-key.w-ctrl {
+							min-width: 42px;
+							font-size: 8px;
+						}
+
+						.kb-key.w-del {
+							min-width: 42px;
+							font-size: 8px;
+						}
+
+						.kb-key.w-back {
+							min-width: 50px;
+							font-size: 8px;
+						}
+
+						.kb-key.w-tab {
+							min-width: 44px;
+							font-size: 8px;
+						}
+
+						.kb-key.w-caps {
+							min-width: 50px;
+							font-size: 8px;
+						}
+
+						.kb-key.w-shift {
+							min-width: 62px;
+							font-size: 8px;
+						}
+
+						.kb-key.w-space {
+							min-width: 140px;
+						}
+
+						.kb-key.w-alt {
+							min-width: 36px;
+							font-size: 8px;
+						}
+
+						.kb-key.w-fn {
+							min-width: 28px;
+						}
+					</style>
+					<div class="kb-visual">
+						<!-- Row 1: Esc + F keys -->
+						<div class="kb-row" style="margin-bottom:8px">
+							<div class="kb-key active c-red w-esc"><span class="kb-tip t-red">İptal</span>Esc</div>
+							<div style="width:16px"></div>
+							<div class="kb-key active c-blue w-fn"><span class="kb-tip t-blue">Yardım</span>F1</div>
+							<div class="kb-key w-fn">F2</div>
+							<div class="kb-key w-fn">F3</div>
+							<div class="kb-key w-fn">F4</div>
+							<div style="width:8px"></div>
+							<div class="kb-key w-fn">F5</div>
+							<div class="kb-key w-fn">F6</div>
+							<div class="kb-key w-fn">F7</div>
+							<div class="kb-key w-fn">F8</div>
+							<div style="width:8px"></div>
+							<div class="kb-key w-fn">F9</div>
+							<div class="kb-key w-fn">F10</div>
+							<div class="kb-key w-fn">F11</div>
+							<div class="kb-key w-fn">F12</div>
+							<div style="width:6px"></div>
+							<div class="kb-key active c-red w-del"><span class="kb-tip t-red">Sil</span>Del</div>
 						</div>
-						<div class="flex items-center justify-between"><span class="text-xs text-slate-300">Mesafe
-								Ölç</span><kbd
-								class="px-2 py-0.5 bg-slate-800 border border-slate-600 rounded text-[11px] text-primary font-mono">2</kbd>
+						<!-- Row 2: Number row -->
+						<div class="kb-row">
+							<div class="kb-key">~</div>
+							<div class="kb-key active c-cyan"><span class="kb-tip t-cyan">Nokta</span>1</div>
+							<div class="kb-key active c-cyan"><span class="kb-tip t-cyan">Mesafe</span>2</div>
+							<div class="kb-key active c-cyan"><span class="kb-tip t-cyan">Alan</span>3</div>
+							<div class="kb-key active c-cyan"><span class="kb-tip t-cyan">Yükseklik</span>4</div>
+							<div class="kb-key">5</div>
+							<div class="kb-key">6</div>
+							<div class="kb-key">7</div>
+							<div class="kb-key">8</div>
+							<div class="kb-key">9</div>
+							<div class="kb-key">0</div>
+							<div class="kb-key">-</div>
+							<div class="kb-key">=</div>
+							<div class="kb-key w-back">⌫</div>
 						</div>
-						<div class="flex items-center justify-between"><span class="text-xs text-slate-300">Alan
-								Ölç</span><kbd
-								class="px-2 py-0.5 bg-slate-800 border border-slate-600 rounded text-[11px] text-primary font-mono">3</kbd>
+						<!-- Row 3: QWERTY row -->
+						<div class="kb-row">
+							<div class="kb-key w-tab">Tab</div>
+							<div class="kb-key">Q</div>
+							<div class="kb-key">W</div>
+							<div class="kb-key">E</div>
+							<div class="kb-key">R</div>
+							<div class="kb-key">T</div>
+							<div class="kb-key">Y</div>
+							<div class="kb-key">U</div>
+							<div class="kb-key">I</div>
+							<div class="kb-key">O</div>
+							<div class="kb-key">P</div>
+							<div class="kb-key">[</div>
+							<div class="kb-key">]</div>
+							<div class="kb-key" style="min-width:38px">\</div>
 						</div>
-						<div class="flex items-center justify-between"><span class="text-xs text-slate-300">Yükseklik
-								Ölç</span><kbd
-								class="px-2 py-0.5 bg-slate-800 border border-slate-600 rounded text-[11px] text-primary font-mono">4</kbd>
+						<!-- Row 4: ASDF row -->
+						<div class="kb-row">
+							<div class="kb-key w-caps">Caps</div>
+							<div class="kb-key">A</div>
+							<div class="kb-key">S</div>
+							<div class="kb-key">D</div>
+							<div class="kb-key">F</div>
+							<div class="kb-key">G</div>
+							<div class="kb-key active c-green"><span class="kb-tip t-green">Görünüm</span>H</div>
+							<div class="kb-key">J</div>
+							<div class="kb-key">K</div>
+							<div class="kb-key active c-purple"><span class="kb-tip t-purple">Panel</span>L</div>
+							<div class="kb-key">;</div>
+							<div class="kb-key">'</div>
+							<div class="kb-key" style="min-width:58px; font-size:8px">Enter</div>
 						</div>
-						<div class="flex items-center justify-between"><span class="text-xs text-slate-300">Geri
-								Al</span><kbd
-								class="px-2 py-0.5 bg-slate-800 border border-slate-600 rounded text-[11px] text-primary font-mono">Ctrl+Z</kbd>
+						<!-- Row 5: ZXCV row -->
+						<div class="kb-row">
+							<div class="kb-key w-shift">Shift</div>
+							<div class="kb-key active c-amber"><span class="kb-tip t-amber">Geri Al</span>Z</div>
+							<div class="kb-key">X</div>
+							<div class="kb-key">C</div>
+							<div class="kb-key">V</div>
+							<div class="kb-key">B</div>
+							<div class="kb-key">N</div>
+							<div class="kb-key">M</div>
+							<div class="kb-key">,</div>
+							<div class="kb-key">.</div>
+							<div class="kb-key">/</div>
+							<div class="kb-key w-shift">Shift</div>
 						</div>
-						<div class="flex items-center justify-between"><span class="text-xs text-slate-300">Çizimi
-								İptal</span><kbd
-								class="px-2 py-0.5 bg-slate-800 border border-slate-600 rounded text-[11px] text-primary font-mono">Esc</kbd>
+						<!-- Row 6: Bottom row -->
+						<div class="kb-row">
+							<div class="kb-key active c-amber w-ctrl"><span class="kb-tip t-amber"
+									style="opacity:0">Ctrl</span>Ctrl</div>
+							<div class="kb-key" style="min-width:36px;font-size:8px">Win</div>
+							<div class="kb-key w-alt">Alt</div>
+							<div class="kb-key w-space"></div>
+							<div class="kb-key w-alt">Alt</div>
+							<div class="kb-key" style="min-width:36px;font-size:8px">Fn</div>
+							<div class="kb-key w-ctrl">Ctrl</div>
 						</div>
-						<div class="flex items-center justify-between"><span class="text-xs text-slate-300">Seçili
-								Ölçümü Sil</span><kbd
-								class="px-2 py-0.5 bg-slate-800 border border-slate-600 rounded text-[11px] text-primary font-mono">Delete</kbd>
+						<!-- Ctrl+Z combo indicator -->
+						<div
+							style="position:absolute;bottom:38px;left:18px;display:flex;align-items:center;gap:3px;opacity:0.7">
+							<svg width="20" height="16" viewBox="0 0 20 16" fill="none" style="opacity:0.4">
+								<path d="M4 12 C4 12 4 4 12 4" stroke="#fbbf24" stroke-width="1" stroke-dasharray="2 2"
+									fill="none" />
+								<path d="M11 2 L13 4 L11 6" stroke="#fbbf24" stroke-width="1" fill="none" />
+							</svg>
+							<span
+								style="font-size:7px;color:#fbbf24;font-weight:700;letter-spacing:0.3px;opacity:0.6">Ctrl+Z</span>
 						</div>
-						<div class="flex items-center justify-between"><span class="text-xs text-slate-300">Ölçüm
-								Paneli</span><kbd
-								class="px-2 py-0.5 bg-slate-800 border border-slate-600 rounded text-[11px] text-primary font-mono">L</kbd>
+					</div>
+					<!-- Legend -->
+					<div class="kb-legend">
+						<div class="kb-legend-item"><span class="kb-legend-dot" style="background:#22d3ee"></span>Ölçüm
+							Araçları</div>
+						<div class="kb-legend-item"><span class="kb-legend-dot" style="background:#f87171"></span>İptal
+							/ Silme</div>
+						<div class="kb-legend-item"><span class="kb-legend-dot"
+								style="background:#fbbf24"></span>Düzenleme</div>
+						<div class="kb-legend-item"><span class="kb-legend-dot"
+								style="background:#4ade80"></span>Navigasyon</div>
+						<div class="kb-legend-item"><span class="kb-legend-dot" style="background:#c084fc"></span>Panel
 						</div>
-						<div class="flex items-center justify-between"><span class="text-xs text-slate-300">Ana
-								Görünüm</span><kbd
-								class="px-2 py-0.5 bg-slate-800 border border-slate-600 rounded text-[11px] text-primary font-mono">H</kbd>
-						</div>
-						<div class="flex items-center justify-between"><span class="text-xs text-slate-300">Bu
-								Pencere</span><kbd
-								class="px-2 py-0.5 bg-slate-800 border border-slate-600 rounded text-[11px] text-primary font-mono">F1</kbd>
+						<div class="kb-legend-item"><span class="kb-legend-dot" style="background:#60a5fa"></span>Yardım
 						</div>
 					</div>
 				</div>
