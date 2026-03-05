@@ -2195,6 +2195,8 @@
 				}, 350);
 				if (chkDontShow.checked) {
 					try { localStorage.setItem(STORAGE_KEY, '1'); } catch (e) { }
+				} else {
+					try { localStorage.removeItem(STORAGE_KEY); } catch (e) { }
 				}
 			}
 
