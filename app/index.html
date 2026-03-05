@@ -824,7 +824,17 @@
 			<div class="flex flex-col">
 				<div class="flex items-center gap-2">
 					<h1 class="text-xs font-extrabold text-slate-100 uppercase tracking-wider leading-none">CBS</h1>
-
+					<button id="btnOpenChangelog"
+						class="group flex items-center gap-1.5 px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-primary/50 rounded-md cursor-pointer transition-all duration-200"
+						title="Sürüm Geçmişini Gör">
+						<span class="relative flex h-2 w-2">
+							<span
+								class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+							<span class="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+						</span>
+						<span
+							class="text-[10px] font-bold tracking-wider text-slate-300 group-hover:text-white uppercase">v0.9.1</span>
+					</button>
 				</div>
 				<p class="text-xs text-slate-300 font-semibold tracking-tight mt-0.5">3D Sayısal Veri Üretim ve Analiz
 					Portalı</p>
@@ -996,7 +1006,15 @@
 				<span class="material-symbols-outlined text-[20px]" id="themeIcon">dark_mode</span>
 			</button>
 
-			<!-- Cesium Fullscreen Button will be positioned here automatically by JS -->
+			<!-- Tam Ekran -->
+			<button id="btnFullscreen"
+				class="w-[36px] h-[36px] text-slate-400 hover:text-white transition-colors cursor-pointer focus:outline-none z-50 flex items-center justify-center"
+				title="Tam Ekran">
+				<svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px"
+					fill="currentColor">
+					<path d="M120-120v-320h80v184l504-504H520v-80h320v320h-80v-184L256-200h184v80H120Z" />
+				</svg>
+			</button>
 			<button id="btnHelp"
 				class="w-[36px] h-[36px] text-slate-400 hover:text-white transition-colors cursor-pointer focus:outline-none z-50 flex items-center justify-center"
 				title="Yardım & Kısayollar (F1)">
@@ -1171,11 +1189,6 @@
 							class="w-7 h-7 flex items-center justify-center rounded-md text-red-500/80 hover:text-white hover:bg-red-500 hover:shadow-md hover:shadow-red-500/20 transition-all"
 							title="Tümünü Sil">
 							<span class="material-symbols-outlined text-[16px]">delete_sweep</span>
-						</button>
-						<button id="btnClearStorage"
-							class="w-7 h-7 flex items-center justify-center rounded-md text-slate-400 hover:text-orange-400 hover:bg-orange-400/10 transition-all"
-							title="Kayıtlı Veriyi Temizle (localStorage)">
-							<span class="material-symbols-outlined text-[16px]">cleaning_services</span>
 						</button>
 					</div>
 				</div>
@@ -1596,7 +1609,7 @@
 	<div id="helpModal" class="fixed inset-0 z-[10000] flex items-center justify-center opacity-0 invisible"
 		style="pointer-events:none;transition:opacity 0.3s ease,visibility 0.3s ease;background:rgba(0,0,0,0.5);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)">
 		<div id="helpModalInner"
-			class="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-[620px] max-w-[90vw] max-h-[90vh] overflow-hidden flex flex-col"
+			class="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-[720px] max-w-[92vw] max-h-[90vh] overflow-hidden flex flex-col"
 			style="pointer-events:auto">
 			<!-- Header -->
 			<div class="flex items-center justify-between px-5 py-4 border-b border-slate-700/50">
@@ -1620,29 +1633,29 @@
 						.kb-visual {
 							position: relative;
 							background: linear-gradient(145deg, #0f1521, #1a2235);
-							border-radius: 12px;
-							padding: 16px 12px 12px;
+							border-radius: 14px;
+							padding: 20px 16px 16px;
 							border: 1px solid rgba(255, 255, 255, 0.06);
 							box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.04);
 						}
 
 						.kb-row {
 							display: flex;
-							gap: 3px;
-							margin-bottom: 3px;
+							gap: 5px;
+							margin-bottom: 4px;
 							justify-content: flex-start;
 						}
 
 						.kb-key {
 							position: relative;
-							min-width: 32px;
-							height: 30px;
-							border-radius: 5px;
+							min-width: 40px;
+							height: 34px;
+							border-radius: 6px;
 							display: flex;
 							align-items: center;
 							justify-content: center;
 							font-family: 'Inter', system-ui, sans-serif;
-							font-size: 9px;
+							font-size: 10px;
 							font-weight: 600;
 							color: #4a5568;
 							background: linear-gradient(180deg, #1e2a3a 0%, #182030 100%);
@@ -1651,7 +1664,7 @@
 							cursor: default;
 							transition: all 0.2s ease;
 							user-select: none;
-							padding: 0 5px;
+							padding: 0 6px;
 							letter-spacing: 0.3px;
 						}
 
@@ -1712,15 +1725,15 @@
 						/* Tooltips */
 						.kb-tip {
 							position: absolute;
-							bottom: calc(100% + 4px);
+							bottom: calc(100% + 5px);
 							left: 50%;
 							transform: translateX(-50%);
 							white-space: nowrap;
-							font-size: 7px;
+							font-size: 8.5px;
 							font-weight: 700;
 							letter-spacing: 0.4px;
-							padding: 2px 5px;
-							border-radius: 3px;
+							padding: 2px 6px;
+							border-radius: 4px;
 							pointer-events: none;
 							text-transform: uppercase;
 							z-index: 2;
@@ -1793,78 +1806,78 @@
 						.kb-legend {
 							display: flex;
 							flex-wrap: wrap;
-							gap: 8px 14px;
-							margin-top: 10px;
+							gap: 8px 16px;
+							margin-top: 12px;
 							justify-content: center;
 						}
 
 						.kb-legend-item {
 							display: flex;
 							align-items: center;
-							gap: 4px;
-							font-size: 8px;
+							gap: 5px;
+							font-size: 9px;
 							font-weight: 600;
 							color: #64748b;
 							letter-spacing: 0.3px;
 						}
 
 						.kb-legend-dot {
-							width: 6px;
-							height: 6px;
+							width: 7px;
+							height: 7px;
 							border-radius: 50%;
 						}
 
 						/* Wider keys */
 						.kb-key.w-esc {
-							min-width: 38px;
+							min-width: 44px;
 						}
 
 						.kb-key.w-ctrl {
-							min-width: 42px;
-							font-size: 8px;
+							min-width: 48px;
+							font-size: 9px;
 						}
 
 						.kb-key.w-del {
-							min-width: 42px;
-							font-size: 8px;
+							min-width: 48px;
+							font-size: 9px;
 						}
 
 						.kb-key.w-back {
-							min-width: 50px;
-							font-size: 8px;
+							min-width: 56px;
+							font-size: 9px;
 						}
 
 						.kb-key.w-tab {
-							min-width: 44px;
-							font-size: 8px;
+							min-width: 50px;
+							font-size: 9px;
 						}
 
 						.kb-key.w-caps {
-							min-width: 50px;
-							font-size: 8px;
+							min-width: 56px;
+							font-size: 9px;
 						}
 
 						.kb-key.w-shift {
-							min-width: 62px;
-							font-size: 8px;
+							min-width: 70px;
+							font-size: 9px;
 						}
 
 						.kb-key.w-space {
-							min-width: 140px;
+							min-width: 160px;
 						}
 
 						.kb-key.w-alt {
-							min-width: 36px;
-							font-size: 8px;
+							min-width: 40px;
+							font-size: 9px;
 						}
 
 						.kb-key.w-fn {
-							min-width: 28px;
+							min-width: 32px;
 						}
 					</style>
 					<div class="kb-visual">
 						<!-- Row 1: Esc + F keys -->
-						<div class="kb-row" style="margin-bottom:8px">
+						<div class="kb-row" style="margin-bottom:20px">
 							<div class="kb-key active c-red w-esc"><span class="kb-tip t-red">İptal</span>Esc</div>
 							<div style="width:16px"></div>
 							<div class="kb-key active c-blue w-fn"><span class="kb-tip t-blue">Yardım</span>F1</div>
@@ -2126,10 +2139,8 @@
 			btnOpen.addEventListener('click', openHelp);
 			btnClose.addEventListener('click', closeHelp);
 			btnOk.addEventListener('click', closeHelp);
-			modal.addEventListener('click', function (e) { if (e.target === modal) closeHelp(); });
 			document.addEventListener('keydown', function (e) {
 				if (e.key === 'F1') { e.preventDefault(); openHelp(); }
-				if (e.key === 'Escape' && isOpen && !isAnimating) closeHelp();
 			});
 
 			// Splash bittikten sonra otomatik göster (localStorage'da kapatılmadıysa)
@@ -2140,6 +2151,178 @@
 					}, { once: true });
 				}
 			} catch (e) { }
+		})();
+	</script>
+
+	<!-- ═══ SÜRÜM GEÇMİŞİ MODAL ═══ -->
+	<div id="changelogModal"
+		class="hidden fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm transition-opacity">
+		<div
+			class="bg-slate-900 border border-slate-700 rounded-xl w-[500px] max-w-[90vw] max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+			<!-- Header -->
+			<div class="flex justify-between items-center px-5 py-4 border-b border-slate-800 bg-slate-800/50">
+				<div class="flex items-center gap-2">
+					<span class="material-symbols-outlined text-primary text-[20px]">history</span>
+					<h3 class="text-white font-bold text-sm tracking-wide uppercase">Sürüm Geçmişi</h3>
+				</div>
+				<button id="btnCloseChangelog" class="text-slate-400 hover:text-white transition-colors">
+					<span class="material-symbols-outlined text-[20px]">close</span>
+				</button>
+			</div>
+			<!-- Timeline -->
+			<div class="p-5 overflow-y-auto flex-1 hide-scrollbar">
+				<div class="relative border-l border-slate-700 ml-3 space-y-6 pb-4">
+					<!-- v0.9.1 — YENİ -->
+					<div class="relative pl-6">
+						<div
+							class="absolute -left-[5px] top-1.5 w-[9px] h-[9px] rounded-full bg-primary ring-4 ring-slate-900">
+						</div>
+						<div class="flex items-center gap-2 mb-1">
+							<span class="text-sm font-bold text-white">v0.9.1</span>
+							<span
+								class="px-1.5 py-0.5 rounded bg-primary/20 text-primary text-[8px] font-black uppercase tracking-wider">YENİ</span>
+						</div>
+						<p class="text-[11px] text-slate-400 leading-relaxed">
+							• UI iyileştirmeleri, klavye kısayolları paneli ve genel hata düzeltmeleri yapıldı.<br>
+							• İçe bükey (C-tipi) poligon çizimlerinde yaşanan üçgenleme yırtılmaları giderildi.
+						</p>
+					</div>
+					<!-- v0.9.0 -->
+					<div class="relative pl-6">
+						<div
+							class="absolute -left-[4px] top-1.5 w-[7px] h-[7px] rounded-full bg-slate-600 ring-4 ring-slate-900">
+						</div>
+						<div class="flex items-center gap-2 mb-1">
+							<span class="text-xs font-bold text-slate-300">v0.9.0</span>
+						</div>
+						<p class="text-[11px] text-slate-400/80 leading-relaxed">
+							• Sisteme güvenli giriş (login) ekranı entegre edildi.<br>
+							• Kullanıcı deneyimini artıran yardım ve dinamik kısayollar paneli eklendi.
+						</p>
+					</div>
+					<!-- v0.8.0 -->
+					<div class="relative pl-6">
+						<div
+							class="absolute -left-[4px] top-1.5 w-[7px] h-[7px] rounded-full bg-slate-600 ring-4 ring-slate-900">
+						</div>
+						<div class="flex items-center gap-2 mb-1">
+							<span class="text-xs font-bold text-slate-300">v0.8.0</span>
+						</div>
+						<p class="text-[11px] text-slate-400/80 leading-relaxed">
+							• 3 noktalı kutu (Box3P) ile yönlü alan ölçüm yeteneği kazandırıldı.<br>
+							• L-çizgi referanslı gelişmiş 3D yükseklik (kot) aracı geliştirildi.
+						</p>
+					</div>
+					<!-- v0.7.0 -->
+					<div class="relative pl-6">
+						<div
+							class="absolute -left-[4px] top-1.5 w-[7px] h-[7px] rounded-full bg-slate-600 ring-4 ring-slate-900">
+						</div>
+						<div class="flex items-center gap-2 mb-1">
+							<span class="text-xs font-bold text-slate-300">v0.7.0</span>
+						</div>
+						<p class="text-[11px] text-slate-400/80 leading-relaxed">
+							• Düşük donanımlar için Performans ve Kalite (FXAA) modları eklendi.<br>
+							• Tüm vektörel çizimler tek bir stil merkezi üzerinden standartlaştırıldı.
+						</p>
+					</div>
+					<!-- v0.6.0 -->
+					<div class="relative pl-6">
+						<div
+							class="absolute -left-[4px] top-1.5 w-[7px] h-[7px] rounded-full bg-slate-600 ring-4 ring-slate-900">
+						</div>
+						<div class="flex items-center gap-2 mb-1">
+							<span class="text-xs font-bold text-slate-300">v0.6.0</span>
+						</div>
+						<p class="text-[11px] text-slate-400/80 leading-relaxed">
+							• Çizim kolaylığı için Vertex/Edge Snap (Yakalama) sistemi kuruldu.<br>
+							• TM30 (EPSG:5254) ve WGS84 koordinat sistemleri tam uyumlu hale getirildi.
+						</p>
+					</div>
+					<!-- v0.5.0 -->
+					<div class="relative pl-6">
+						<div
+							class="absolute -left-[4px] top-1.5 w-[7px] h-[7px] rounded-full bg-slate-600 ring-4 ring-slate-900">
+						</div>
+						<div class="flex items-center gap-2 mb-1">
+							<span class="text-xs font-bold text-slate-300">v0.5.0</span>
+						</div>
+						<p class="text-[11px] text-slate-400/80 leading-relaxed">
+							• Arayüz mobil cihazlara (tablet/telefon) tam uyumlu hale getirildi.<br>
+							• Dokunmatik ekranlar için özel harita kontrolleri eklendi.
+						</p>
+					</div>
+					<!-- v0.4.0 -->
+					<div class="relative pl-6">
+						<div
+							class="absolute -left-[4px] top-1.5 w-[7px] h-[7px] rounded-full bg-slate-600 ring-4 ring-slate-900">
+						</div>
+						<div class="flex items-center gap-2 mb-1">
+							<span class="text-xs font-bold text-slate-300">v0.4.0</span>
+						</div>
+						<p class="text-[11px] text-slate-400/80 leading-relaxed">
+							• Çizimlerin dışarı aktarımı için CSV, GeoJSON ve DXF formatları eklendi.<br>
+							• Dışarıdan CAD/GIS verisi alma (Import) özelliği devreye alındı.
+						</p>
+					</div>
+					<!-- v0.3.0 -->
+					<div class="relative pl-6">
+						<div
+							class="absolute -left-[4px] top-1.5 w-[7px] h-[7px] rounded-full bg-slate-600 ring-4 ring-slate-900">
+						</div>
+						<div class="flex items-center gap-2 mb-1">
+							<span class="text-xs font-bold text-slate-300">v0.3.0</span>
+						</div>
+						<p class="text-[11px] text-slate-400/80 leading-relaxed">
+							• Sağ panel ölçüm listesi, katman ve klasör/grup sistemi geliştirildi.<br>
+							• Çizimlerin tarayıcıda kalıcı olması için LocalStorage entegre edildi.
+						</p>
+					</div>
+					<!-- v0.2.0 -->
+					<div class="relative pl-6">
+						<div
+							class="absolute -left-[4px] top-1.5 w-[7px] h-[7px] rounded-full bg-slate-600 ring-4 ring-slate-900">
+						</div>
+						<div class="flex items-center gap-2 mb-1">
+							<span class="text-xs font-bold text-slate-300">v0.2.0</span>
+						</div>
+						<p class="text-[11px] text-slate-400/80 leading-relaxed">
+							• Temel araç kutusu oluşturuldu: Nokta, mesafe ve serbest alan ölçümü.<br>
+							• 2D ve 3D alan hesaplama matematiksel algoritmaları eklendi.
+						</p>
+					</div>
+					<!-- v0.1.0 -->
+					<div class="relative pl-6">
+						<div
+							class="absolute -left-[4px] top-1.5 w-[7px] h-[7px] rounded-full bg-slate-600 ring-4 ring-slate-900">
+						</div>
+						<div class="flex items-center gap-2 mb-1">
+							<span class="text-xs font-bold text-slate-300">v0.1.0</span>
+						</div>
+						<p class="text-[11px] text-slate-400/80 leading-relaxed">
+							• Projenin temelleri atıldı. CesiumJS 3D motoru altyapısı kuruldu.<br>
+							• Büyük boyutlu 3D fotogrametri modellerini görüntüleme yeteneği sağlandı.
+						</p>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<!-- ═══ SÜRÜM GEÇMİŞİ MODAL KONTROLÜ ═══ -->
+	<script>
+		(function () {
+			var btnOpen = document.getElementById('btnOpenChangelog');
+			var btnClose = document.getElementById('btnCloseChangelog');
+			var modal = document.getElementById('changelogModal');
+			if (btnOpen && btnClose && modal) {
+				btnOpen.addEventListener('click', function () { modal.classList.remove('hidden'); });
+				btnClose.addEventListener('click', function () { modal.classList.add('hidden'); });
+				modal.addEventListener('click', function (e) { if (e.target === modal) modal.classList.add('hidden'); });
+				document.addEventListener('keydown', function (e) {
+					if (e.key === 'Escape' && !modal.classList.contains('hidden')) modal.classList.add('hidden');
+				});
+			}
 		})();
 	</script>
 </body>

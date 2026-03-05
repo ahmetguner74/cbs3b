@@ -502,16 +502,28 @@ document.getElementById('btnHomeView').addEventListener('click', function () {
 	if (tileset) viewer.flyTo(tileset);
 });
 
-// Move fullscreen button to header next to home button
-var fullscreenBtn = document.querySelector('.cesium-viewer-fullscreenContainer');
-var btnHomeView = document.getElementById('btnHomeView');
-if (fullscreenBtn && btnHomeView) {
-	btnHomeView.parentNode.insertBefore(fullscreenBtn, btnHomeView.nextSibling); // Place fullscreen AFTER home button
+// Cesium fullscreen butonunu gizle — kendi custom butonumuzu kullanıyoruz
+var cesiumFsBtn = document.querySelector('.cesium-viewer-fullscreenContainer');
+if (cesiumFsBtn) cesiumFsBtn.style.display = 'none';
 
-	// Madde 1: Full Screen butonu mobilde sorunlu olabildiği için mobilde gizleyelim
-	if (_isMob) {
-		fullscreenBtn.style.display = 'none';
-	}
+// Custom Tam Ekran butonu
+var btnFullscreen = document.getElementById('btnFullscreen');
+if (btnFullscreen) {
+	btnFullscreen.onclick = function () {
+		if (!document.fullscreenElement) {
+			document.documentElement.requestFullscreen().catch(function () { });
+		} else {
+			document.exitFullscreen();
+		}
+	};
+	document.addEventListener('fullscreenchange', function () {
+		btnFullscreen.innerHTML = document.fullscreenElement
+			? '<svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor"><path d="M440-120v-320h80v184l504-504H840v80H656l504 504v-184h80v320H440Z"/></svg>'
+			: '<svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor"><path d="M120-120v-320h80v184l504-504H520v-80h320v320h-80v-184L256-200h184v80H120Z"/></svg>';
+		btnFullscreen.title = document.fullscreenElement ? 'Tam Ekrandan Çık' : 'Tam Ekran';
+	});
+	// Mobilde gizle
+	if (_isMob) btnFullscreen.style.display = 'none';
 }
 
 // ─── THEME TOGGLE ──────────────────────────────────────────────
