@@ -2226,6 +2226,9 @@ document.addEventListener('keydown', function (e) {
 
 // Tümünü Sil
 document.getElementById('btnDeleteAll').onclick = function () {
+	var totalCount = measurements.length;
+	if (totalCount === 0) return;
+	if (!confirm('Tüm gruplardaki ' + totalCount + ' ölçüm haritadan ve listeden kalıcı olarak silinecek.\n\nBu işlem geri alınamaz. Devam etmek istediğinize emin misiniz?')) return;
 	measurements.forEach(function (m) {
 		m.entities.forEach(function (ent) { safeRemoveItem(ent); });
 	});
