@@ -199,49 +199,41 @@ var currentAreaMode = 'free'; // 'free', 'box3p'
 function calculateBox3P(p1, p2, p3) {
 	// 3 Noktadan yönlü dikdörtgen (kutu) hesaplar.
 	// P1-P2 ana kenar, P3 genişliği/yönü belirler.
+	// TAM 3D — yatay, eğimli veya dikey her yüzeyde doğru dikdörtgen üretir.
 
-	// ENU (East-North-Up) lokal koordinat sistemini P1 etrafında kur
+	// ENU koordinat sistemine dönüştür (anti-jitter)
 	var enuMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(p1);
 	var invEnuMatrix = Cesium.Matrix4.inverse(enuMatrix, new Cesium.Matrix4());
 
-	// P1, P2 ve P3'ü lokal (2D-vari) düzleme al
-	var localP1 = Cesium.Matrix4.multiplyByPoint(invEnuMatrix, p1, new Cesium.Cartesian3()); // (0,0,0)
+	var localP1 = Cesium.Matrix4.multiplyByPoint(invEnuMatrix, p1, new Cesium.Cartesian3());
 	var localP2 = Cesium.Matrix4.multiplyByPoint(invEnuMatrix, p2, new Cesium.Cartesian3());
 	var localP3 = Cesium.Matrix4.multiplyByPoint(invEnuMatrix, p3, new Cesium.Cartesian3());
 
-	// P1-P2 vektörü
-	var v_12 = new Cesium.Cartesian2(localP2.x - localP1.x, localP2.y - localP1.y);
+	// P1→P2 yön vektörü (tam 3D)
+	var v12 = Cesium.Cartesian3.subtract(localP2, localP1, new Cesium.Cartesian3());
+	var len12 = Cesium.Cartesian3.magnitude(v12);
+	if (len12 === 0) return [p1, p2, p3, p3];
 
-	// P1-P3 vektörü
-	var v_13 = new Cesium.Cartesian2(localP3.x - localP1.x, localP3.y - localP1.y);
+	// Normalize edilmiş ana eksen
+	var dir = Cesium.Cartesian3.divideByScalar(v12, len12, new Cesium.Cartesian3());
 
-	// Ana eksen yönü (normalized)
-	var len12 = Cesium.Cartesian2.magnitude(v_12);
-	if (len12 === 0) return [p1, p2, p3, p3]; // Önlem: p1 ve p2 aynıysa
+	// P1→P3 vektörü (tam 3D)
+	var v13 = Cesium.Cartesian3.subtract(localP3, localP1, new Cesium.Cartesian3());
 
-	var dir = new Cesium.Cartesian2(v_12.x / len12, v_12.y / len12);
+	// P3'ün P1-P2 doğrultusu üzerindeki bileşenini çıkar → dik bileşeni bul
+	var projScalar = Cesium.Cartesian3.dot(v13, dir);
+	var projVec = Cesium.Cartesian3.multiplyByScalar(dir, projScalar, new Cesium.Cartesian3());
+	var perpVec = Cesium.Cartesian3.subtract(v13, projVec, new Cesium.Cartesian3());
 
-	// Dik yön (normal)
-	var normal = new Cesium.Cartesian2(-dir.y, dir.x);
+	// Dikdörtgen köşelerini hesapla (3D)
+	var localP3_Corrected = Cesium.Cartesian3.add(localP2, perpVec, new Cesium.Cartesian3());
+	var localP4 = Cesium.Cartesian3.add(localP1, perpVec, new Cesium.Cartesian3());
 
-	// P3'ün normal üzerindeki izdüşümü (Genişlik/Yükseklik vektörü)
-	var projLength = Cesium.Cartesian2.dot(v_13, normal);
-	var widthVec = new Cesium.Cartesian2(normal.x * projLength, normal.y * projLength);
-
-	// Lokal P4 ve Düzeltilmiş Lokal P3 (köşe olması için)
-	// P1, P2 ve P3 düzleminde kalması için z-ekseninde enterpolasyon yapıyoruz.
-	// P3_Corrected, P3'ün Z değerini aynen alacak. P4 de bu düzlemi tamamlayacak.
-	var p3_z = localP3.z;
-	var p4_z = localP1.z + (p3_z - localP2.z); // Paralelkenar z-yükseklik kuralı
-
-	var localP4 = new Cesium.Cartesian3(localP1.x + widthVec.x, localP1.y + widthVec.y, p4_z);
-	var localP3_Corrected = new Cesium.Cartesian3(localP2.x + widthVec.x, localP2.y + widthVec.y, p3_z);
-
-	// Dünyaya geri çevir (Artık tamamen kullanıcı tıklamalarından elde edilen 3D düzleminde!)
+	// Dünyaya geri dönüştür
+	var worldP3 = Cesium.Matrix4.multiplyByPoint(enuMatrix, localP3_Corrected, new Cesium.Cartesian3());
 	var worldP4 = Cesium.Matrix4.multiplyByPoint(enuMatrix, localP4, new Cesium.Cartesian3());
-	var worldP3_Corrected = Cesium.Matrix4.multiplyByPoint(enuMatrix, localP3_Corrected, new Cesium.Cartesian3());
 
-	return [p1, p2, worldP3_Corrected, worldP4];
+	return [p1, p2, worldP3, worldP4];
 }
 
 // ─── MERKEZİ ALAN YÖNETİCİSİ (ENDÜSTRİ STANDARDI) ───
@@ -1418,6 +1410,7 @@ function createStablePolygon(positions, material) {
 			asynchronous: false,
 			allowPicking: false
 		}));
+		primitive._isPolygonFill = true;
 		return primitive;
 	} catch (e) {
 		console.warn('Poligon oluşturulamadı (geçersiz geometri):', e);
@@ -2147,10 +2140,9 @@ function highlightMeasurement(id) {
 			// Primitive Polyline / Polygon rengini güncelle
 			if (ent.appearance && ent.appearance.material) {
 				var targetColor = isActive ? Cesium.Color.CYAN : groupCesColor;
-				// Polygon fill tespiti: CoplanarPolygonGeometry veya PolygonGeometry
-				var wName = (ent.geometryInstances && ent.geometryInstances.geometry && ent.geometryInstances.geometry._workerName) || '';
-				if (wName.indexOf('Polygon') !== -1) {
-					targetColor = isActive ? Cesium.Color.CYAN.withAlpha(0.5) : groupCesColor.withAlpha(VEC_STYLE.polygon.fillAlpha);
+				// Polygon fill tespiti: _isPolygonFill flag (güvenilir)
+				if (ent._isPolygonFill) {
+					targetColor = isActive ? Cesium.Color.CYAN.withAlpha(VEC_STYLE.polygon.fillAlpha) : groupCesColor.withAlpha(VEC_STYLE.polygon.fillAlpha);
 				}
 				ent.appearance.material.uniforms.color = targetColor;
 			}
@@ -2234,6 +2226,9 @@ document.getElementById('btnDeleteAll').onclick = function () {
 	});
 	measurements = [];
 	activeHighlightId = null;
+	// Varsayılan grup (id:0) hariç tüm grupları sil
+	groups = groups.filter(function (g) { return g.id === 0; });
+	activeGroupId = 0;
 	viewer.scene.requestRender();
 	renderList();
 	debouncedSave();
