@@ -28,3 +28,17 @@ Data/
 Scene/Data/
 **/Data/
 **/Scene/Data/
+
+# ── Yedek / Geçici Dosyalar ──
+*.bak
+*.orig
+*_original.*
+_backup_editions/
+Scene/yedek/
+
+# ── Analiz / Debug ──
+app/analyze.js
+app/audit_results.txt
+
+# ── Büyük Veri (Pointcloud) ──
+pointcloud/

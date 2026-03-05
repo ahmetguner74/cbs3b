@@ -1239,18 +1239,88 @@ function saveToStorage() {
 			activeGroupId: activeGroupId
 		};
 		var json = JSON.stringify(dataToSave);
-		var sizeMB = (json.length / (1024 * 1024)).toFixed(2);
-		if (json.length > 4 * 1024 * 1024) {
-			console.warn('⚠️ localStorage verisi ' + sizeMB + ' MB — sınıra yaklaşıyor!');
+		var sizeBytes = json.length;
+		var sizeMB = (sizeBytes / (1024 * 1024)).toFixed(2);
+		var pct = Math.min(100, Math.round((sizeBytes / (5 * 1024 * 1024)) * 100));
+
+		// ─── 4MB UYARI (sarı toast) ───
+		if (sizeBytes > 4 * 1024 * 1024 && !window._storageWarnShown) {
+			window._storageWarnShown = true;
+			showStorageToast(
+				'⚠️ Depolama Alanı %' + pct + ' Dolu (' + sizeMB + ' MB)',
+				'Verilerinizi kaybetmemek için dışa aktarın (GeoJSON/CSV/DXF).',
+				'warning'
+			);
 		}
+
 		localStorage.setItem(STORAGE_KEY, json);
 	} catch (e) {
 		console.error('localStorage kayıt hatası:', e);
+		// ─── 5MB DOLU (kırmızı engelleme) ───
 		if (e.name === 'QuotaExceededError' || e.code === 22) {
-			var toast = document.querySelector('#resultDisplay > div');
-			if (toast) toast.innerHTML = '<span class="text-red-400 font-bold text-[11px]">⚠️ Depolama alanı dolu! Bazı referans gruplarını silmeyi deneyin.</span>';
+			showStorageToast(
+				'🚨 Depolama Alanı Tamamen Dolu!',
+				'Yeni veriler artık KAYDEDİLEMİYOR. Sayfayı yenilediğinizde son ölçümleriniz kaybolacak.\n\n→ Verilerinizi hemen dışa aktarın (GeoJSON/CSV/DXF)\n→ Ardından "Tümünü Sil" ile alanı temizleyin.',
+				'critical'
+			);
 		}
 	}
+}
+
+// ─── DEPOLAMA UYARI TOAST SİSTEMİ ───
+function showStorageToast(title, message, level) {
+	// Varsa önceki uyarıyı kaldır
+	var existing = document.getElementById('storageWarningToast');
+	if (existing) existing.remove();
+
+	var isCritical = (level === 'critical');
+	var bgColor = isCritical ? 'rgba(220,38,38,0.95)' : 'rgba(217,119,6,0.95)';
+	var borderColor = isCritical ? '#fca5a5' : '#fbbf24';
+	var icon = isCritical ? '🚨' : '⚠️';
+
+	var overlay = document.createElement('div');
+	overlay.id = 'storageWarningToast';
+	overlay.style.cssText = [
+		'position:fixed;top:0;left:0;right:0;bottom:0;z-index:99999',
+		'display:flex;align-items:center;justify-content:center',
+		'background:rgba(0,0,0,' + (isCritical ? '0.7' : '0.4') + ')',
+		'backdrop-filter:blur(4px);animation:fadeIn 0.3s ease'
+	].join(';');
+
+	var box = document.createElement('div');
+	box.style.cssText = [
+		'background:' + bgColor,
+		'border:2px solid ' + borderColor,
+		'border-radius:16px;padding:24px 28px;max-width:420px;width:90vw',
+		'box-shadow:0 20px 60px rgba(0,0,0,0.5)',
+		'text-align:center;color:white;font-family:system-ui,sans-serif'
+	].join(';');
+
+	var h = document.createElement('div');
+	h.style.cssText = 'font-size:16px;font-weight:800;margin-bottom:12px;letter-spacing:0.3px;';
+	h.textContent = title;
+
+	var p = document.createElement('div');
+	p.style.cssText = 'font-size:12px;line-height:1.6;opacity:0.95;white-space:pre-line;margin-bottom:16px;';
+	p.textContent = message;
+
+	var btn = document.createElement('button');
+	btn.textContent = isCritical ? 'Anladım, Hemen Dışa Aktaracağım' : 'Tamam, Anladım';
+	btn.style.cssText = [
+		'padding:10px 24px;border-radius:8px;border:2px solid rgba(255,255,255,0.4)',
+		'background:rgba(255,255,255,0.15);color:white',
+		'font-size:12px;font-weight:700;cursor:pointer',
+		'transition:all 0.2s'
+	].join(';');
+	btn.onmouseenter = function () { this.style.background = 'rgba(255,255,255,0.3)'; };
+	btn.onmouseleave = function () { this.style.background = 'rgba(255,255,255,0.15)'; };
+	btn.onclick = function () { overlay.remove(); };
+
+	box.appendChild(h);
+	box.appendChild(p);
+	box.appendChild(btn);
+	overlay.appendChild(box);
+	document.body.appendChild(overlay);
 }
 
 // Debounced kayıt — 500ms içinde tekrar çağrılırsa öncekini iptal eder
@@ -2111,21 +2181,6 @@ function startEditing(e, m) {
 	};
 }
 
-function deleteGroup(id) {
-	// Gruba ait ölçümleri sil
-	var toDelete = measurements.filter(function (m) { return m.groupId === id; });
-	toDelete.forEach(function (m) { deleteMeasurement(m.id); });
-
-	// Grubu kaldır
-	var gIdx = groups.findIndex(function (g) { return g.id === id; });
-	if (gIdx !== -1) groups.splice(gIdx, 1);
-
-	// Eğer aktif grup silindiyse "Genel"e geç
-	if (activeGroupId === id) activeGroupId = 0;
-	renderList();
-	debouncedSave();
-}
-
 document.getElementById('btnNewFolder').onclick = function () {
 	var n = prompt("Yeni klasör ismi:", "Yeni Grup");
 	if (n) {
@@ -2246,13 +2301,7 @@ document.getElementById('btnDeleteAll').onclick = function () {
 	debouncedSave();
 };
 
-// localStorage Temizle (Sıfırla) Butonu
-document.getElementById('btnClearStorage').onclick = function () {
-	if (confirm('Tüm kayıtlı verileri (ölçümler, referanslar, gruplar) kalıcı olarak silmek ve sayfayı yenilemek istediğinize emin misiniz?\n\nBu işlem geri alınamaz.')) {
-		localStorage.removeItem(STORAGE_KEY);
-		location.reload();
-	}
-};
+
 
 // Tümünü Göster / Gizle (Toggle)
 var _allVisible = true;
