@@ -112,9 +112,21 @@
 
                 <!-- Measurement overlay (visible when tool panel open) -->
                 <div id="measOverlay" style="display:none">
-                    <div class="meas-point" style="left:25%;top:35%">1</div>
-                    <div class="meas-point" style="left:55%;top:28%">2</div>
-                    <div class="meas-point" style="left:65%;top:55%">3</div>
+                    <div class="meas-point p1" style="left:25%;top:35%">1</div>
+                    <div class="meas-point p-mid" style="left:55%;top:35%;display:none"></div>
+                    <div class="meas-point p2" style="left:55%;top:28%">2</div>
+
+                    <div class="meas-line l-horiz"
+                        style="left:calc(25% + 10px);top:calc(35% + 10px);width:180px;transform:rotate(0deg);display:none">
+                    </div>
+                    <div class="meas-line-vertical l-vert"
+                        style="left:calc(55% + 10px);top:calc(28% + 10px);width:70px;transform:rotate(90deg);display:none">
+                    </div>
+
+                    <div class="meas-label-float lbl-horiz" style="left:40%;top:32%;display:none">124.5 m</div>
+                    <div class="meas-label-float lbl-vert" style="left:58%;top:31%;display:none">12.3 m</div>
+
+                    <!-- Default lines (for other tools) -->
                     <div class="meas-line"
                         style="left:calc(25% + 10px);top:calc(35% + 10px);width:180px;transform:rotate(-12deg)"></div>
                     <div class="meas-line"
@@ -132,10 +144,30 @@
                                     class="material-symbols-outlined">pin_drop</span></button>
                             <button class="tool-btn" data-tool="distance" title="Mesafe"><span
                                     class="material-symbols-outlined">straighten</span></button>
-                            <button class="tool-btn" data-tool="area" title="Alan"><span
+                            <button class="tool-btn" data-tool="area" id="btnToolArea" title="Alan"><span
                                     class="material-symbols-outlined">square_foot</span></button>
-                            <button class="tool-btn" data-tool="height" title="Yükseklik"><span
-                                    class="material-symbols-outlined">height</span></button>
+                            <div class="tool-submenu" id="submenuArea">
+                                <button class="tool-btn" data-tool="area_free" title="Serbest Alan">
+                                    <span class="material-symbols-outlined">pentagon</span>
+                                </button>
+                                <button class="tool-btn" data-tool="area_box3p" title="3 Noktalı Kutu">
+                                    <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960"
+                                        width="24px" fill="currentColor">
+                                        <path d="M120-120v-720h720v720H120Zm80-80h560v-560H200v560Zm0 0v-560 560Z" />
+                                    </svg>
+                                </button>
+                            </div>
+                            <button class="tool-btn" data-tool="height" title="Yükseklik"
+                                style="display:flex; flex-direction:column; justify-content:center; align-items:center;">
+                                <div style="display:flex; flex-direction:column; align-items:center; margin-top:2px;">
+                                    <span style="font-weight: 500; font-size: 20px; line-height: 1;">H</span>
+                                    <div
+                                        style="width: 14px; height: 3px; background-color: currentColor; margin-top: 1px; border-radius: 2px;">
+                                    </div>
+                                </div>
+                            </button>
+                            <button class="tool-btn" data-tool="line_l" title="L-Mesafe (M.13)"><span
+                                    class="material-symbols-outlined">square</span></button>
                             <div class="tool-divider"></div>
                             <button class="tool-btn danger" title="Ekranı Temizle"><span
                                     class="material-symbols-outlined">delete_sweep</span></button>
@@ -434,6 +466,7 @@
         </main>
     </div>
 
+    <script src="../messages.js"></script>
     <script src="app.js"></script>
 </body>
 

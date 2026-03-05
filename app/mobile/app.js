@@ -100,23 +100,73 @@
         if (state.toolPanelOpen) closeToolPanel(); else openToolPanel();
     });
 
+    var submenuArea = document.getElementById('submenuArea');
+
     toolBtns.forEach(function (btn) {
-        btn.addEventListener('click', function () {
+        btn.addEventListener('click', function (e) {
             haptic(12);
+            var toolId = this.dataset.tool;
+            var isSub = this.classList.contains('sub');
             var wasActive = this.classList.contains('active');
+
+            // Handle Area Submenu toggle
+            if (toolId === 'area') {
+                submenuArea.classList.toggle('show');
+                // Don't deactivate area if it was active, just toggle submenu
+                if (!wasActive) {
+                    toolBtns.forEach(function (b) { if (!b.classList.contains('sub')) b.classList.remove('active'); });
+                    this.classList.add('active');
+                }
+                return;
+            }
+
+            // Normal tool selection
             toolBtns.forEach(function (b) { b.classList.remove('active'); });
+
+            // If it's a sub-tool, keep parent (area) active visually if needed, 
+            // but the CSS already handles .active on the button itself.
+            if (isSub) {
+                document.getElementById('btnToolArea').classList.add('active');
+            } else {
+                submenuArea.classList.remove('show');
+            }
+
             if (!wasActive) {
                 this.classList.add('active');
-                state.activeTool = this.dataset.tool;
+                state.activeTool = toolId;
                 measOverlay.style.display = 'block';
-                var toolNames = { coord: '📍 Nokta modu aktif — haritaya dokunun', distance: '📏 Mesafe ölçümü — noktaları işaretleyin', area: '📐 Alan ölçümü — köşeleri belirleyin', height: '📊 Yükseklik ölçümü — başlangıç noktası seçin' };
-                resultBar.textContent = toolNames[this.dataset.tool] || 'Araç seçildi';
+                var toolNames = {
+                    coord: window.AppMessages.HINT_POINT,
+                    distance: window.AppMessages.HINT_DISTANCE,
+                    area_free: window.AppMessages.HINT_AREA_FREE,
+                    area_box3p: window.AppMessages.HINT_AREA_BOX3P,
+                    height: window.AppMessages.HINT_HEIGHT,
+                    line_l: window.AppMessages.HINT_LINE_L
+                };
+                var name = toolNames[toolId] || 'Araç seçildi';
+                resultBar.textContent = name;
                 resultBar.style.borderColor = 'rgba(59,130,246,0.3)';
+
+                // L-Line Specific Overlay Refinement
+                var isLineL = toolId === 'line_l';
+                measOverlay.querySelectorAll('.meas-point, .meas-line, .meas-label-float').forEach(function (el) {
+                    el.style.display = isLineL ? 'none' : '';
+                });
+                if (isLineL) {
+                    measOverlay.querySelector('.p1').style.display = 'block';
+                    measOverlay.querySelector('.p2').style.display = 'block';
+                    measOverlay.querySelector('.p-mid').style.display = 'block';
+                    measOverlay.querySelector('.l-horiz').style.display = 'block';
+                    measOverlay.querySelector('.l-vert').style.display = 'block';
+                    measOverlay.querySelector('.lbl-horiz').style.display = 'block';
+                    measOverlay.querySelector('.lbl-vert').style.display = 'block';
+                }
             } else {
                 state.activeTool = null;
                 measOverlay.style.display = 'none';
                 resultBar.textContent = 'Araç seçin ve haritaya tıklayın.';
                 resultBar.style.borderColor = '';
+                if (isSub) document.getElementById('btnToolArea').classList.remove('active');
             }
         });
     });
