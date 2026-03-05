@@ -3,6 +3,7 @@
 
 <head>
 	<meta charset="utf-8">
+	<!-- ═══ EDITION: Sabit Belediye Sürümü ═══ -->
 	<meta http-equiv="X-UA-Compatible" content="IE=edge">
 	<link rel="icon" type="image/png" href="cbs-logo.png">
 	<link rel="apple-touch-icon" href="cbs-logo.png">
@@ -12,7 +13,7 @@
 	<meta name="mobile-web-app-capable" content="yes">
 	<meta name="apple-mobile-web-app-capable" content="yes">
 	<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-	<meta name="apple-mobile-web-app-title" content="CBS Platform">
+	<meta name="apple-mobile-web-app-title" content="3D SAYISAL VERİ ÜRETİM VE ANALİZ PORTALI">
 	<meta name="theme-color" content="#070a12">
 	<title>CBS — 3D Şehir Modeli</title>
 	<meta name="description" content="Bursa Büyükşehir Belediyesi 3D Şehir Modeli — Ölçüm ve Dijitalleştirme Platformu">
@@ -49,6 +50,7 @@
 		})();
 	</script>
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.15.0/proj4.js"></script>
+	<script src="messages.js"></script>
 	<style>
 		@import url('https://cesium.com/downloads/cesiumjs/releases/1.105/Build/Cesium/Widgets/widgets.css');
 
@@ -201,6 +203,70 @@
 			font-family: 'JetBrains Mono', monospace !important;
 		}
 
+		/* Alan Alt Menüsü (Floating Popup) */
+		#areaSubMenu {
+			position: absolute;
+			left: calc(100% + 6px);
+			top: 50%;
+			transform: translateY(-50%);
+			display: flex;
+			gap: 2px;
+			padding: 3px;
+			background: var(--glass-bg);
+			backdrop-filter: blur(12px);
+			-webkit-backdrop-filter: blur(12px);
+			border: 1px solid var(--glass-border);
+			border-radius: 8px;
+			box-shadow: 0 4px 12px var(--shadow);
+			opacity: 0;
+			visibility: hidden;
+			transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+			z-index: 100;
+			pointer-events: none;
+			/* Added pointer-events: none; back */
+		}
+
+		#areaSubMenu.show,
+		.group:hover>#areaSubMenu {
+			opacity: 1;
+			visibility: visible;
+			pointer-events: auto;
+			/* Added pointer-events: auto; */
+		}
+
+		#areaSubMenu.visible,
+		#areaToolContainer.group:hover #areaSubMenu {
+			/* Updated selector */
+			opacity: 1;
+			visibility: visible;
+			pointer-events: auto;
+		}
+
+		.area-mode-btn {
+			width: 30px;
+			height: 30px;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			border-radius: 6px;
+			background: transparent;
+			color: #94a3b8;
+			transition: all 0.15s;
+			border: none;
+			cursor: pointer;
+			padding: 0;
+		}
+
+		.area-mode-btn:hover {
+			background: rgba(20, 184, 166, 0.15);
+			color: #14B8A6;
+		}
+
+		.area-mode-btn.active {
+			background: rgba(20, 184, 166, 0.2);
+			color: #14B8A6;
+		}
+
 		/* ── GLASS EFFECT ── */
 		.glass-panel {
 			background: var(--glass-bg);
@@ -208,6 +274,16 @@
 			-webkit-backdrop-filter: blur(12px);
 			border: 1px solid var(--glass-border);
 			box-shadow: 0 8px 32px var(--shadow);
+		}
+
+		/* Koyu Temada Araçlar ve Ölçümler Paneli Şeffaflığını Kaldır */
+		html.dark #toolPanel .glass-panel,
+		html.dark #dataPanel .glass-panel,
+		html.dark #areaSubMenu,
+		html.dark #btnToolToggle {
+			background: var(--bg-surface);
+			backdrop-filter: none;
+			-webkit-backdrop-filter: none;
 		}
 
 		/* ─── CESIUM WIDGETS (HOME BUTTON) ─── */
@@ -649,6 +725,56 @@
 			color: #64748b !important;
 		}
 
+		/* Light: Help Modal */
+		html.light #helpModalInner {
+			background-color: #ffffff !important;
+			border-color: #e2e8f0 !important;
+		}
+
+		html.light #helpModalInner h2,
+		html.light #helpModalInner h3 {
+			color: #1e293b !important;
+		}
+
+		html.light #helpModalInner .text-white {
+			color: #1e293b !important;
+		}
+
+		html.light #helpModalInner .text-slate-300 {
+			color: #475569 !important;
+		}
+
+		html.light #helpModalInner .text-slate-400 {
+			color: #64748b !important;
+		}
+
+		html.light #helpModalInner .text-slate-200 {
+			color: #334155 !important;
+		}
+
+		html.light #helpModalInner kbd {
+			background-color: #f1f5f9 !important;
+			border-color: #cbd5e1 !important;
+			color: var(--primary) !important;
+		}
+
+		html.light #helpModalInner .border-slate-700\/50,
+		html.light #helpModalInner .border-t {
+			border-color: #e2e8f0 !important;
+		}
+
+		html.light #helpModalInner .bg-slate-800 {
+			background-color: #f1f5f9 !important;
+		}
+
+		html.light #helpModalInner .hover\:bg-slate-700:hover {
+			background-color: #e2e8f0 !important;
+		}
+
+		html.light #helpModalInner .text-slate-500 {
+			color: #94a3b8 !important;
+		}
+
 		/* Light: Result display */
 		html.light #resultDisplay .text-slate-300 {
 			color: var(--text-secondary) !important;
@@ -692,18 +818,16 @@
 	<header
 		class="h-12 bg-slate-900 dark:bg-[#0b0f19] border-b border-border-dark/50 flex items-center px-4 shrink-0 z-50 transition-colors">
 		<div class="flex items-center gap-3">
-			<div class="size-8 flex items-center justify-center">
-				<img src="cbs-logo.png" alt="CBS Logo" width="28" height="28" style="object-fit:contain">
+			<div class="size-10 flex items-center justify-center">
+				<img src="cbs-logo.png" alt="CBS Logo" width="36" height="36" style="object-fit:contain">
 			</div>
 			<div class="flex flex-col">
 				<div class="flex items-center gap-2">
 					<h1 class="text-xs font-extrabold text-slate-100 uppercase tracking-wider leading-none">CBS</h1>
-					<span
-						class="px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 leading-none">Demo</span>
-					<span class="text-[8px] font-mono text-slate-600 leading-none">v1.0.0</span>
+
 				</div>
-				<p class="text-[10px] text-primary font-medium tracking-tight mt-0.5">3D Şehir Modeli — Ölçüm ve
-					Dijitalleştirme</p>
+				<p class="text-xs text-slate-300 font-semibold tracking-tight mt-0.5">3D Sayısal Veri Üretim ve Analiz
+					Portalı</p>
 			</div>
 		</div>
 		<div class="ml-auto flex items-center gap-1">
@@ -711,9 +835,9 @@
 			<div class="relative mr-1" id="globeDropdownContainer">
 				<button id="btnGlobeToggle"
 					class="flex items-center gap-1 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-md text-xs font-medium text-slate-300 transition-colors focus:outline-none z-50"
-					title="3D Dünya Haritası Aç/Kapat">
-					<span class="text-base">🌍</span>
-					<span class="hidden sm:inline">Dünya</span>
+					title="Harita Katmanları Aç/Kapat">
+					<span class="text-base">🗺️</span>
+					<span class="hidden sm:inline">Harita</span>
 					<span class="material-symbols-outlined text-[16px] text-slate-500">expand_more</span>
 				</button>
 				<!-- Dropdown Panel (JS ile açılır/kapanır, sabit kalır) -->
@@ -724,7 +848,7 @@
 					<div class="flex items-center gap-2">
 						<span class="text-[10px] font-bold text-slate-500 tracking-wider w-14">KATMAN</span>
 						<button id="btnLayerSatellite"
-							class="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded border border-primary text-primary bg-primary/10 transition-colors text-xs"
+							class="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded border border-slate-600 text-slate-400 hover:text-white transition-colors text-xs"
 							title="Uydu görüntüsü">
 							🛰️ Uydu
 						</button>
@@ -732,6 +856,16 @@
 							class="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded border border-slate-600 text-slate-400 hover:text-white transition-colors text-xs"
 							title="Sokak haritası">
 							🗺️ Sokak
+						</button>
+					</div>
+
+					<!-- Nokta Bulutu Toggle -->
+					<div class="flex items-center gap-2">
+						<span class="text-[10px] font-bold text-slate-500 tracking-wider w-14">VERİ</span>
+						<button id="btnLayerPointCloud"
+							class="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded border border-slate-600 text-slate-400 hover:text-white transition-colors text-xs"
+							title="Nokta Bulutu Aç/Kapat">
+							☁️ Nokta Bulutu
 						</button>
 					</div>
 
@@ -863,6 +997,11 @@
 			</button>
 
 			<!-- Cesium Fullscreen Button will be positioned here automatically by JS -->
+			<button id="btnHelp"
+				class="w-[36px] h-[36px] text-slate-400 hover:text-white transition-colors cursor-pointer focus:outline-none z-50 flex items-center justify-center"
+				title="Yardım & Kısayollar (F1)">
+				<span class="material-symbols-outlined text-[20px]">help_outline</span>
+			</button>
 			<button id="btnHomeView"
 				class="w-[36px] h-[36px] text-slate-400 hover:text-white transition-colors cursor-pointer focus:outline-none z-50 flex items-center justify-center"
 				title="Ana Görünüme Dön">
@@ -883,8 +1022,9 @@
 			style="transform:translateX(calc(-100% + 28px))">
 			<div class="flex items-start">
 				<!-- Icon panels -->
-				<div class="flex flex-col pl-4" style="height:calc(100vh - 80px)">
-					<div class="glass-panel rounded-xl rounded-r-none p-1.5 flex flex-col gap-1 justify-between h-full">
+				<div class="flex flex-col" style="height:calc(100vh - 80px)">
+					<div class="glass-panel rounded-r-xl p-1.5 flex flex-col gap-1 justify-between h-full"
+						style="border-left:none;">
 						<!-- Top: Araçlar -->
 						<div class="flex flex-col gap-1">
 							<button id="btnCoord"
@@ -897,26 +1037,41 @@
 								title="Mesafe Ölçümü">
 								<span class="material-symbols-outlined text-xl">straighten</span>
 							</button>
-							<button id="btnArea"
-								class="tool-btn w-10 h-10 flex items-center justify-center rounded bg-transparent hover:bg-slate-800 text-slate-400 border border-transparent transition-colors"
-								title="Alan Ölçümü">
-								<span class="material-symbols-outlined text-xl">square_foot</span>
-							</button>
+							<div class="relative group" id="areaToolContainer">
+								<button id="btnArea"
+									class="tool-btn w-10 h-10 flex items-center justify-center rounded bg-transparent hover:bg-slate-800 text-slate-400 border border-transparent transition-colors"
+									title="Alan Ölçümü">
+									<span class="material-symbols-outlined text-xl">square_foot</span>
+								</button>
+								<!-- Alan Alt Menüsü (Floating Popup) -->
+								<div id="areaSubMenu">
+									<button
+										class="tool-btn area-mode-btn w-10 h-10 flex items-center justify-center rounded bg-transparent hover:bg-slate-800 text-slate-400 border border-transparent transition-colors"
+										data-mode="free" title="Serbest Çizim">
+										<span class="material-symbols-outlined text-xl">pentagon</span>
+									</button>
+									<button
+										class="tool-btn area-mode-btn w-10 h-10 flex items-center justify-center rounded bg-transparent hover:bg-slate-800 text-slate-400 border border-transparent transition-colors"
+										data-mode="box3p" title="3 Noktalı Kutu">
+										<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960"
+											width="24px" fill="currentColor">
+											<path
+												d="M120-120v-720h720v720H120Zm80-80h560v-560H200v560Zm0 0v-560 560Z" />
+										</svg>
+									</button>
+								</div>
+							</div>
 							<button id="btnHeight"
-								class="tool-btn w-10 h-10 flex items-center justify-center rounded bg-transparent hover:bg-slate-800 text-slate-400 border border-transparent transition-colors"
+								class="tool-btn w-10 h-10 flex flex-col items-center justify-center rounded bg-transparent hover:bg-slate-800 text-slate-400 border border-transparent transition-colors"
 								title="Yükseklik Ölçümü">
-								<span class="material-symbols-outlined text-xl">height</span>
+								<div class="flex items-center justify-center">
+									<span class="text-xl font-normal leading-none">H</span>
+								</div>
 							</button>
 							<div class="h-[1px] w-full bg-border-subtle"></div>
-							<button id="btnClearScreen"
-								class="tool-btn w-10 h-10 flex items-center justify-center rounded bg-transparent hover:bg-red-900/20 text-red-500/70 hover:text-red-500 border border-transparent transition-colors"
-								title="Ekranı Temizle">
-								<span class="material-symbols-outlined text-xl">delete_sweep</span>
-							</button>
 						</div>
 						<!-- Bottom: Performans / Kalite -->
 						<div class="flex flex-col gap-1">
-							<div class="h-[1px] w-full bg-border-subtle"></div>
 							<button id="btnPerformance"
 								class="w-10 h-10 flex items-center justify-center rounded text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
 								title="Performans Modu">
@@ -943,10 +1098,28 @@
 
 		<!-- Bottom Center Floating Panel: Result Display -->
 		<div id="resultDisplay"
-			class="absolute bottom-6 left-1/2 -translate-x-1/2 z-40 glass-panel rounded-full px-6 py-3 flex items-center justify-center min-w-[300px] max-w-[600px] transition-opacity duration-300">
-			<div class="text-[11px] text-slate-300 text-center leading-relaxed">
+			class="absolute bottom-6 left-1/2 -translate-x-1/2 z-40 glass-panel rounded-full px-6 py-3 flex items-center justify-center min-w-[300px] max-w-[600px] transition-opacity duration-300 shadow-xl border border-white/10"
+			style="background-color: var(--bg-surface);">
+			<div
+				class="text-[14px] md:text-[15px] font-medium text-slate-100 text-center leading-relaxed tracking-wide">
 				Araç seçin ve haritaya tıklayın.
 			</div>
+		</div>
+
+		<!-- Bottom Left Floating Panel: Zoom Controls -->
+		<div id="zoomControls"
+			class="absolute bottom-[14px] left-[56px] z-40 flex flex-col pointer-events-auto rounded-lg shadow-xl overflow-hidden glass-panel"
+			style="border:1px solid var(--glass-border);">
+			<button id="btnZoomIn"
+				class="w-9 h-9 flex items-center justify-center bg-transparent hover:bg-slate-800 text-slate-400 hover:text-white transition-colors border-b border-border-subtle"
+				title="Yakınlaş">
+				<span class="material-symbols-outlined text-[20px]">add</span>
+			</button>
+			<button id="btnZoomOut"
+				class="w-9 h-9 flex items-center justify-center bg-transparent hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+				title="Uzaklaş">
+				<span class="material-symbols-outlined text-[20px]">remove</span>
+			</button>
 		</div>
 
 		<!-- Right Drawer: Active Group Label (panel kapalıyken görünür) -->
@@ -974,7 +1147,7 @@
 
 		<!-- Right Floating Panel: Data Management (Drawer) -->
 		<div id="dataPanel"
-			class="absolute top-16 right-4 bottom-4 w-72 z-40 flex flex-col gap-3 pointer-events-auto transition-transform duration-300 ease-in-out"
+			class="absolute top-16 right-4 bottom-4 w-80 z-40 flex flex-col gap-3 pointer-events-auto transition-transform duration-300 ease-in-out"
 			style="transform:translateX(calc(100% + 16px))">
 
 			<div class="glass-panel rounded-xl flex flex-col h-full overflow-hidden">
@@ -995,9 +1168,9 @@
 						</button>
 						<div class="flex-1"></div>
 						<button id="btnDeleteAll"
-							class="w-7 h-7 flex items-center justify-center rounded-md text-slate-400 hover:text-red-400 hover:bg-red-400/10 transition-all"
+							class="w-7 h-7 flex items-center justify-center rounded-md text-red-500/80 hover:text-white hover:bg-red-500 hover:shadow-md hover:shadow-red-500/20 transition-all"
 							title="Tümünü Sil">
-							<span class="material-symbols-outlined text-[16px]">delete_forever</span>
+							<span class="material-symbols-outlined text-[16px]">delete_sweep</span>
 						</button>
 						<button id="btnClearStorage"
 							class="w-7 h-7 flex items-center justify-center rounded-md text-slate-400 hover:text-orange-400 hover:bg-orange-400/10 transition-all"
@@ -1012,101 +1185,138 @@
 					<!-- Populated by JS -->
 				</div>
 
-				<!-- Data Transfer Controls -->
-				<div class="p-3 border-t border-border-subtle/50 shrink-0" style="background:var(--bg-elevated)">
-					<div
-						class="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-1">
-						<span class="material-symbols-outlined text-[14px]">swap_vert</span> Veri Aktarımı
+				<!-- ═══ VERİ AKTARIMI BÖLÜMÜ (Çekmece) ═══ -->
+				<div id="dataTransferSheet" class="border-t border-border-subtle/30 shrink-0"
+					style="background:var(--bg-elevated)">
+					<!-- Handle -->
+					<div id="dataTransferHandle"
+						class="flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-white/5 transition-colors">
+						<div class="flex items-center gap-2">
+							<span class="material-symbols-outlined text-[16px] text-primary">swap_vert</span>
+							<span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Veri
+								Aktarımı</span>
+						</div>
+						<span
+							class="material-symbols-outlined text-[18px] text-slate-500 transition-transform duration-300"
+							id="dataTransferArrow">expand_less</span>
 					</div>
-					<div class="flex flex-col gap-3">
-						<!-- Projection Selection -->
-						<div class="relative">
-							<select id="exportCrs"
-								class="w-full appearance-none bg-black/40 border border-border-dark text-slate-300 text-[11px] rounded-md py-[7px] px-3 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all pr-8">
-								<option value="" selected disabled hidden>Sistem Seçiniz (TM30/WGS84)</option>
-								<option value="5254">EPSG:5254 (TM30)</option>
-								<option value="4326">WGS84 (Coğrafi)</option>
-							</select>
-							<span
-								class="material-symbols-outlined text-slate-500 text-[18px] absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">arrow_drop_down</span>
-						</div>
 
-						<!-- Export Scope Selection -->
-						<div class="relative">
-							<select id="exportScope"
-								class="w-full appearance-none bg-black/40 border border-border-dark text-slate-300 text-[11px] rounded-md py-[7px] px-3 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all pr-8">
-								<option value="" selected disabled hidden>Aktarım Kapsamı Seçiniz</option>
-								<option value="all">Tüm Seçili Ölçümler</option>
-								<option value="active">Sadece Aktif Grup</option>
-							</select>
-							<span
-								class="material-symbols-outlined text-slate-500 text-[18px] absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">arrow_drop_down</span>
-						</div>
-
-						<!-- Import Group -->
-						<div class="flex flex-col gap-1.5">
-							<div class="text-[8px] font-bold text-slate-600 uppercase tracking-tighter ml-1">İçe Aktar
-								(Import)</div>
-							<div class="flex gap-2">
-								<label
-									class="flex-1 px-2 py-1.5 bg-slate-800/40 border border-slate-700/50 rounded-md text-[10px] font-bold text-slate-400 hover:bg-slate-700 hover:text-white cursor-pointer transition-all flex items-center justify-center gap-1"
-									title="CSV İçe Aktar">
-									<span class="material-symbols-outlined text-[14px]">grid_on</span>
-									<span>CSV</span>
-									<input type="file" id="btnImportCSV" accept=".csv" class="hidden">
-								</label>
-								<label
-									class="flex-1 px-2 py-1.5 bg-slate-800/40 border border-slate-700/50 rounded-md text-[10px] font-bold text-slate-400 hover:bg-slate-700 hover:text-white cursor-pointer transition-all flex items-center justify-center gap-1"
-									title="GeoJSON İçe Aktar">
-									<span class="material-symbols-outlined text-[14px]">public</span>
-									<span>JSON</span>
-									<input type="file" id="btnImportGeoJSON" accept=".geojson,.json" class="hidden">
-								</label>
-								<label
-									class="flex-1 px-2 py-1.5 bg-slate-800/40 border border-slate-700/50 rounded-md text-[10px] font-bold text-slate-400 hover:bg-slate-700 hover:text-white cursor-pointer transition-all flex items-center justify-center gap-1"
-									title="DXF İçe Aktar">
-									<span class="material-symbols-outlined text-[14px]">architecture</span>
-									<span>DXF</span>
-									<input type="file" id="btnImportDXF" accept=".dxf" class="hidden">
-								</label>
+					<!-- Content -->
+					<div id="dataTransferContent" class="overflow-hidden transition-all duration-350 ease-in-out"
+						style="max-height:0">
+						<div class="p-3 pt-1 flex flex-col gap-3">
+							<!-- Projection Selection -->
+							<div class="relative">
+								<select id="exportCrs"
+									class="w-full appearance-none bg-black/40 border border-border-dark text-slate-300 text-[11px] rounded-md py-[7px] px-3 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all pr-8">
+									<option value="" selected disabled hidden>Sistem Seçiniz (TM30/WGS84)</option>
+									<option value="5254">EPSG:5254 (TM30)</option>
+									<option value="4326">WGS84 (Coğrafi)</option>
+								</select>
+								<span
+									class="material-symbols-outlined text-slate-500 text-[18px] absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">arrow_drop_down</span>
 							</div>
-						</div>
 
-						<!-- Export Group -->
-						<div class="flex flex-col gap-1.5">
-							<div class="text-[8px] font-bold text-slate-600 uppercase tracking-tighter ml-1">Dışa Aktar
-								(Export)</div>
-							<div class="flex gap-2">
-								<button id="btnExportCSV"
-									class="flex-1 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md text-[10px] font-bold text-slate-300 hover:bg-slate-700 hover:text-white transition-colors flex items-center justify-center gap-1">
-									<span class="material-symbols-outlined text-[14px]">grid_on</span>
-									<span>CSV</span>
-								</button>
-								<button id="btnExportGeoJSON"
-									class="flex-1 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md text-[10px] font-bold text-slate-300 hover:bg-slate-700 hover:text-white transition-colors flex items-center justify-center gap-1">
-									<span class="material-symbols-outlined text-[14px]">public</span>
-									<span>JSON</span>
-								</button>
-								<button id="btnExportDXF"
-									class="flex-1 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md text-[10px] font-bold text-slate-300 hover:bg-slate-700 hover:text-white transition-colors flex items-center justify-center gap-1">
-									<span class="material-symbols-outlined text-[14px]">architecture</span>
-									<span>DXF</span>
-								</button>
+							<!-- Export Scope Selection -->
+							<div class="relative">
+								<select id="exportScope"
+									class="w-full appearance-none bg-black/40 border border-border-dark text-slate-300 text-[11px] rounded-md py-[7px] px-3 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all pr-8">
+									<option value="" selected disabled hidden>Aktarım Kapsamı Seçiniz</option>
+									<option value="all">Tüm Seçili Ölçümler</option>
+									<option value="active">Sadece Aktif Grup</option>
+								</select>
+								<span
+									class="material-symbols-outlined text-slate-500 text-[18px] absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">arrow_drop_down</span>
+							</div>
+
+							<!-- Import Group -->
+							<div class="flex flex-col gap-1.5">
+								<div class="text-[8px] font-bold text-slate-600 uppercase tracking-tighter ml-1">İçe
+									Aktar (Import)</div>
+								<div class="flex gap-2">
+									<label
+										class="flex-1 px-2 py-1.5 bg-slate-800/40 border border-slate-700/50 rounded-md text-[10px] font-bold text-slate-400 hover:bg-slate-700 hover:text-white cursor-pointer transition-all flex items-center justify-center gap-1"
+										title="CSV İçe Aktar">
+										<span class="material-symbols-outlined text-[14px]">grid_on</span>
+										<span>CSV</span>
+										<input type="file" id="btnImportCSV" accept=".csv" class="hidden">
+									</label>
+									<label
+										class="flex-1 px-2 py-1.5 bg-slate-800/40 border border-slate-700/50 rounded-md text-[10px] font-bold text-slate-400 hover:bg-slate-700 hover:text-white cursor-pointer transition-all flex items-center justify-center gap-1"
+										title="GeoJSON İçe Aktar">
+										<span class="material-symbols-outlined text-[14px]">public</span>
+										<span>JSON</span>
+										<input type="file" id="btnImportGeoJSON" accept=".geojson,.json" class="hidden">
+									</label>
+									<label
+										class="flex-1 px-2 py-1.5 bg-slate-800/40 border border-slate-700/50 rounded-md text-[10px] font-bold text-slate-400 hover:bg-slate-700 hover:text-white cursor-pointer transition-all flex items-center justify-center gap-1"
+										title="DXF İçe Aktar">
+										<span class="material-symbols-outlined text-[14px]">architecture</span>
+										<span>DXF</span>
+										<input type="file" id="btnImportDXF" accept=".dxf" class="hidden">
+									</label>
+								</div>
+							</div>
+
+							<!-- Export Group -->
+							<div class="flex flex-col gap-1.5">
+								<div class="text-[8px] font-bold text-slate-600 uppercase tracking-tighter ml-1">Dışa
+									Aktar (Export)</div>
+								<div class="flex gap-2">
+									<button id="btnExportCSV"
+										class="flex-1 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md text-[10px] font-bold text-slate-300 hover:bg-slate-700 hover:text-white transition-colors flex items-center justify-center gap-1">
+										<span class="material-symbols-outlined text-[14px]">grid_on</span>
+										<span>CSV</span>
+									</button>
+									<button id="btnExportGeoJSON"
+										class="flex-1 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md text-[10px] font-bold text-slate-300 hover:bg-slate-700 hover:text-white transition-colors flex items-center justify-center gap-1">
+										<span class="material-symbols-outlined text-[14px]">public</span>
+										<span>JSON</span>
+									</button>
+									<button id="btnExportDXF"
+										class="flex-1 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md text-[10px] font-bold text-slate-300 hover:bg-slate-700 hover:text-white transition-colors flex items-center justify-center gap-1">
+										<span class="material-symbols-outlined text-[14px]">architecture</span>
+										<span>DXF</span>
+									</button>
+								</div>
 							</div>
 						</div>
 					</div>
 				</div>
+
 			</div>
 		</div>
-
 	</main>
+
+	<script>
+			// Data Transfer Toggle Inside Drawer
+			(function () {
+				var handle = document.getElementById('dataTransferHandle');
+				var content = document.getElementById('dataTransferContent');
+				var arrow = document.getElementById('dataTransferArrow');
+				var isOpen = false;
+
+				if (!handle || !content || !arrow) return;
+
+				handle.addEventListener('click', function () {
+					isOpen = !isOpen;
+					if (isOpen) {
+						content.style.maxHeight = '500px';
+						arrow.style.transform = 'rotate(180deg)';
+					} else {
+						content.style.maxHeight = '0';
+						arrow.style.transform = 'rotate(0deg)';
+					}
+				});
+			})();
+	</script>
 
 	<!-- main.js dynamic olarak yukardaki script ile yüklenir -->
 
 	<!-- JS overrides for list rendering to use Tailwind classes -->
 	<script>
-			// Store original renderList function if needed, or override it here
-			// Actually, main.js has `measureList.innerHTML = ...`. I will edit main.js to use tailwind classes for the generated rows.
+		// Store original renderList function if needed, or override it here
+		// Actually, main.js has `measureList.innerHTML = ...`. I will edit main.js to use tailwind classes for the generated rows.
 	</script>
 	<!-- Import Z-Offset Diyaloğu -->
 	<div id="importZDialog" class="hidden fixed inset-0 z-[9999] flex items-center justify-center">
@@ -1150,7 +1360,8 @@
 	<!-- ═══ WATERMARK (Sahne üzeri) ═══ -->
 	<div id="watermark" class="fixed bottom-16 right-4 z-30 pointer-events-none select-none opacity-20">
 		<div class="text-right">
-			<div class="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">CBS Platform</div>
+			<div class="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">3D SAYISAL VERİ ÜRETİM VE
+				ANALİZ PORTALI</div>
 			<div class="text-[9px] font-mono text-slate-500">DEMO — Ticari Kullanım İçin Lisans Gereklidir</div>
 			<div class="text-[8px] font-mono text-slate-600">© 2026 Tüm Hakları Saklıdır</div>
 		</div>
@@ -1223,9 +1434,9 @@
 				</div>
 			</div>
 			<!-- Başlık -->
-			<h1 class="text-3xl font-black text-white tracking-wider uppercase mb-4">CBS Platform</h1>
-			<!-- Slogan -->
-			<p class="text-lg text-white/80 italic font-medium mb-8 tracking-wide">Şehrimizi dijitalleştiriyoruz.</p>
+			<h1 id="splashTitleMsg" class="text-xl font-black text-white tracking-wider uppercase mb-4">3D SAYISAL VERİ
+				ÜRETİM VE ANALİZ PORTALI
+			</h1>
 
 			<!-- Loading + Progress -->
 			<div class="mb-6">
@@ -1241,18 +1452,30 @@
 						style="width:5%"></div>
 				</div>
 				<span id="splashPercent" class="text-[10px] font-mono text-slate-500 mt-1 inline-block">5%</span>
+				<!-- Slogan -->
+				<p id="splashSloganMsg" class="text-sm text-white/60 italic font-medium mt-4 tracking-wide">Şehrimizi
+					dijitalleştiriyoruz.</p>
 			</div>
+			<script>
+				// Load texts immediately from messages.js if available
+				if (window.AppMessages) {
+					document.getElementById('splashTitleMsg').textContent = window.AppMessages.SPLASH_TITLE;
+					document.getElementById('splashSloganMsg').textContent = window.AppMessages.SPLASH_SLOGAN;
+					document.getElementById('splashStatusText').textContent = window.AppMessages.SPLASH_LOAD_3D;
+				}
+			</script>
 
 			<!-- Kısayol İpuçları (Dönen) -->
-			<div id="splashTips" class="flex justify-center gap-5 mb-8 text-[9px] text-slate-500">
+			<div id="splashTips"
+				class="flex flex-col md:flex-row items-center justify-center gap-3 md:gap-5 mb-10 text-[13px] md:text-[14px] text-slate-400 font-medium">
 				<!-- JS ile doldurulacak -->
 			</div>
 
 			<!-- Telif + Demo -->
-			<div class="flex items-center justify-center gap-3">
-				<span class="text-[9px] text-slate-600 font-mono">© 2026 CBS Platform</span>
+			<div class="absolute bottom-6 left-0 w-full flex items-center justify-center gap-3">
+				<span class="text-[11px] text-slate-400 font-mono">© 2026 Coğrafi Bilgi Sistemleri</span>
 				<span class="text-slate-700">·</span>
-				<span class="text-[9px] font-bold uppercase tracking-wider text-amber-500/60">Demo v1.0.0</span>
+				<span class="text-[11px] font-bold uppercase tracking-wider text-amber-500/60">Demo v0.9.1-beta</span>
 			</div>
 		</div>
 	</div>
@@ -1280,8 +1503,9 @@
 					style="animation: pulse 2s ease-in-out infinite">
 					<img src="cbs-logo.png" alt="CBS" width="52" height="52" style="object-fit:contain">
 				</div>
-				<h1 class="text-2xl font-black text-white tracking-wider uppercase mb-1">CBS Platform</h1>
-				<p class="text-sm text-slate-400">3D Şehir Modeli — Giriş Yap</p>
+				<h1 class="text-lg font-black text-white tracking-wider uppercase mb-1">3D SAYISAL VERİ ÜRETİM VE ANALİZ
+					PORTALI</h1>
+				<p class="text-sm text-slate-400">3D Sayısal Veri Üretim ve Analiz Portali</p>
 			</div>
 
 			<!-- Login Form -->
@@ -1325,56 +1549,277 @@
 
 			<!-- Alt bilgi -->
 			<div class="text-center mt-8">
-				<span class="text-[9px] text-slate-600 font-mono">© 2026 CBS Platform</span>
+				<span class="text-[9px] text-slate-400 font-mono">© 2026 Coğrafi Bilgi Sistemleri</span>
 				<span class="text-slate-700 mx-1">·</span>
-				<span class="text-[9px] font-bold uppercase tracking-wider text-amber-500/60">Demo v1.0.0</span>
+				<span class="text-[9px] font-bold uppercase tracking-wider text-amber-500/60">Demo v0.9.1-beta</span>
 			</div>
 		</div>
 	</div>
 
 	<!-- ═══ LOGIN SCRIPT ═══ -->
 	<script>
-			(function () {
-				var loginScreen = document.getElementById('loginScreen');
-				var loginForm = document.getElementById('loginForm');
-				var loginError = document.getElementById('loginError');
-				var loginUser = document.getElementById('loginUser');
-				var loginPass = document.getElementById('loginPass');
-				var togglePass = document.getElementById('loginTogglePass');
+		(function () {
+			var loginScreen = document.getElementById('loginScreen');
+			var loginForm = document.getElementById('loginForm');
+			var loginError = document.getElementById('loginError');
+			var loginUser = document.getElementById('loginUser');
+			var loginPass = document.getElementById('loginPass');
+			var togglePass = document.getElementById('loginTogglePass');
 
-				// Şifre göster/gizle
-				togglePass.addEventListener('click', function () {
-					var isPass = loginPass.type === 'password';
-					loginPass.type = isPass ? 'text' : 'password';
-					togglePass.querySelector('span').textContent = isPass ? 'visibility_off' : 'visibility';
+			// Şifre göster/gizle
+			togglePass.addEventListener('click', function () {
+				var isPass = loginPass.type === 'password';
+				loginPass.type = isPass ? 'text' : 'password';
+				togglePass.querySelector('span').textContent = isPass ? 'visibility_off' : 'visibility';
+			});
+
+			// Form gönderimi
+			loginForm.addEventListener('submit', function (e) {
+				e.preventDefault();
+				var user = loginUser.value.trim().toLowerCase();
+				var pass = loginPass.value;
+
+				if (user === 'cbs' && pass === 'demo') {
+					// Başarılı giriş
+					loginScreen.style.opacity = '0';
+					setTimeout(function () { loginScreen.remove(); }, 500);
+				} else {
+					// Hatalı giriş
+					loginError.classList.remove('hidden');
+					loginForm.classList.add('animate-shake');
+					loginUser.classList.add('border-red-500/50');
+					loginPass.classList.add('border-red-500/50');
+					setTimeout(function () {
+						loginForm.classList.remove('animate-shake');
+					}, 400);
+					setTimeout(function () {
+						loginUser.classList.remove('border-red-500/50');
+						loginPass.classList.remove('border-red-500/50');
+					}, 2000);
+				}
+			});
+		})();
+	</script>
+	<!-- ═══ YARDIM & KISAYOLLAR MODALI ═══ -->
+	<div id="helpModal" class="fixed inset-0 z-[10000] flex items-center justify-center opacity-0 invisible"
+		style="pointer-events:none;transition:opacity 0.3s ease,visibility 0.3s ease;background:rgba(0,0,0,0.5);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)">
+		<div id="helpModalInner"
+			class="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-[520px] max-w-[90vw] max-h-[90vh] overflow-hidden flex flex-col"
+			style="pointer-events:auto">
+			<!-- Header -->
+			<div class="flex items-center justify-between px-5 py-4 border-b border-slate-700/50">
+				<div class="flex items-center gap-3">
+					<span class="material-symbols-outlined text-[22px] text-primary">help_outline</span>
+					<h2 class="text-sm font-bold text-white uppercase tracking-wider">
+						Yardım & Kısayollar</h2>
+				</div>
+				<button id="helpModalClose"
+					class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-700 transition-colors">
+					<span class="material-symbols-outlined text-[20px]">close</span>
+				</button>
+			</div>
+			<!-- Content -->
+			<div class="overflow-y-auto p-5 space-y-5 hide-scrollbar">
+				<!-- Klavye Kısayolları -->
+				<div>
+					<h3 class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-3">⌨️ Klavye
+						Kısayolları</h3>
+					<div class="grid grid-cols-2 gap-x-6 gap-y-2">
+						<div class="flex items-center justify-between"><span class="text-xs text-slate-300">Nokta
+								At</span><kbd
+								class="px-2 py-0.5 bg-slate-800 border border-slate-600 rounded text-[11px] text-primary font-mono">1</kbd>
+						</div>
+						<div class="flex items-center justify-between"><span class="text-xs text-slate-300">Mesafe
+								Ölç</span><kbd
+								class="px-2 py-0.5 bg-slate-800 border border-slate-600 rounded text-[11px] text-primary font-mono">2</kbd>
+						</div>
+						<div class="flex items-center justify-between"><span class="text-xs text-slate-300">Alan
+								Ölç</span><kbd
+								class="px-2 py-0.5 bg-slate-800 border border-slate-600 rounded text-[11px] text-primary font-mono">3</kbd>
+						</div>
+						<div class="flex items-center justify-between"><span class="text-xs text-slate-300">Yükseklik
+								Ölç</span><kbd
+								class="px-2 py-0.5 bg-slate-800 border border-slate-600 rounded text-[11px] text-primary font-mono">4</kbd>
+						</div>
+						<div class="flex items-center justify-between"><span class="text-xs text-slate-300">Geri
+								Al</span><kbd
+								class="px-2 py-0.5 bg-slate-800 border border-slate-600 rounded text-[11px] text-primary font-mono">Ctrl+Z</kbd>
+						</div>
+						<div class="flex items-center justify-between"><span class="text-xs text-slate-300">Çizimi
+								İptal</span><kbd
+								class="px-2 py-0.5 bg-slate-800 border border-slate-600 rounded text-[11px] text-primary font-mono">Esc</kbd>
+						</div>
+						<div class="flex items-center justify-between"><span class="text-xs text-slate-300">Seçili
+								Ölçümü Sil</span><kbd
+								class="px-2 py-0.5 bg-slate-800 border border-slate-600 rounded text-[11px] text-primary font-mono">Delete</kbd>
+						</div>
+						<div class="flex items-center justify-between"><span class="text-xs text-slate-300">Ölçüm
+								Paneli</span><kbd
+								class="px-2 py-0.5 bg-slate-800 border border-slate-600 rounded text-[11px] text-primary font-mono">L</kbd>
+						</div>
+						<div class="flex items-center justify-between"><span class="text-xs text-slate-300">Ana
+								Görünüm</span><kbd
+								class="px-2 py-0.5 bg-slate-800 border border-slate-600 rounded text-[11px] text-primary font-mono">H</kbd>
+						</div>
+						<div class="flex items-center justify-between"><span class="text-xs text-slate-300">Bu
+								Pencere</span><kbd
+								class="px-2 py-0.5 bg-slate-800 border border-slate-600 rounded text-[11px] text-primary font-mono">F1</kbd>
+						</div>
+					</div>
+				</div>
+				<!-- Fare Kontrolleri -->
+				<div>
+					<h3 class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-3">🖱️ Fare Kontrolleri
+					</h3>
+					<div class="space-y-2">
+						<div class="flex items-start gap-3"><span
+								class="text-xs text-primary font-bold shrink-0 w-24">Sol Tık</span><span
+								class="text-xs text-slate-400">Nokta koy / Ölçüm yap</span></div>
+						<div class="flex items-start gap-3"><span
+								class="text-xs text-primary font-bold shrink-0 w-24">Sağ Tık</span><span
+								class="text-xs text-slate-400">Çizimi tamamla (poligonu kapat, mesafeyi kaydet)</span>
+						</div>
+						<div class="flex items-start gap-3"><span
+								class="text-xs text-primary font-bold shrink-0 w-24">Fare Tekerleği</span><span
+								class="text-xs text-slate-400">Yakınlaştır / Uzaklaştır</span></div>
+						<div class="flex items-start gap-3"><span
+								class="text-xs text-primary font-bold shrink-0 w-24">Orta Tuş Sürükle</span><span
+								class="text-xs text-slate-400">Haritayı döndür (yaw/pitch)</span></div>
+						<div class="flex items-start gap-3"><span
+								class="text-xs text-primary font-bold shrink-0 w-24">Sağ Tık Sürükle</span><span
+								class="text-xs text-slate-400">Yakınlaştır / Uzaklaştır (alternatif)</span></div>
+					</div>
+				</div>
+				<!-- Snap Sistemi -->
+				<div>
+					<h3 class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-3">🧲 Snap (Yakalama)
+					</h3>
+					<div class="space-y-2">
+						<div class="flex items-start gap-3"><span
+								class="w-3 h-3 rounded-full bg-red-500 shrink-0 mt-0.5"></span><span
+								class="text-xs text-slate-400"><b class="text-slate-200">Kırmızı gösterge</b> — Köşe
+								noktasına snap (öncelikli)</span></div>
+						<div class="flex items-start gap-3"><span
+								class="w-3 h-3 rounded-full bg-blue-500 shrink-0 mt-0.5"></span><span
+								class="text-xs text-slate-400"><b class="text-slate-200">Mavi gösterge</b> — Kenar
+								çizgisine snap</span></div>
+						<p class="text-[11px] text-slate-500 italic">Snap, mevcut ve aktif çizim noktalarına/kenarlarına
+							otomatik yapışır.</p>
+					</div>
+				</div>
+				<!-- İpuçları -->
+				<div>
+					<h3 class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-3">💡 İpuçları</h3>
+					<ul class="space-y-1.5 text-xs text-slate-400 list-disc list-inside">
+						<li>Ölçümleri <b class="text-slate-200">gruplayın</b> — her
+							grubun kendi rengi ve görünürlüğü vardır</li>
+						<li>Ölçüm adını değiştirmek için listedeki isme <b class="text-slate-200">çift tıklayın</b></li>
+						<li>CSV, GeoJSON ve DXF formatında <b class="text-slate-200">veri aktarımı</b>
+							yapabilirsiniz</li>
+						<li>DXF/GeoJSON dosyası <b class="text-slate-200">içe
+								aktararak</b> haritaya çizim ekleyebilirsiniz</li>
+						<li>Performans düşerse <b class="text-slate-200">Görünüm →
+								Performans</b> moduna geçin</li>
+						<li><b class="text-slate-200">Harita</b> butonundan
+							uydu/sokak katmanı seçebilirsiniz</li>
+						<li>Koordinat sistemi olarak <b class="text-slate-200">TM30
+								(EPSG:5254)</b> veya WGS84 seçebilirsiniz</li>
+					</ul>
+				</div>
+			</div>
+			<!-- Footer -->
+			<div class="px-5 py-3 border-t border-slate-700/50 flex items-center justify-between">
+				<label class="flex items-center gap-2 cursor-pointer select-none">
+					<input type="checkbox" id="helpDontShow"
+						class="w-3.5 h-3.5 rounded border-slate-600 bg-slate-800 text-primary focus:ring-primary/30 cursor-pointer">
+					<span class="text-[11px] text-slate-400">Bir daha gösterme</span>
+				</label>
+				<button id="helpOkBtn"
+					class="px-5 py-1.5 bg-primary hover:bg-primary/80 text-white text-xs font-bold rounded-lg transition-colors tracking-wide">Tamam</button>
+			</div>
+		</div>
+	</div>
+	<script>
+		(function () {
+			var STORAGE_KEY = 'cbs_help_dismissed';
+			var modal = document.getElementById('helpModal');
+			var inner = document.getElementById('helpModalInner');
+			var btnOpen = document.getElementById('btnHelp');
+			var btnClose = document.getElementById('helpModalClose');
+			var btnOk = document.getElementById('helpOkBtn');
+			var chkDontShow = document.getElementById('helpDontShow');
+			var isOpen = false;
+			var isAnimating = false;
+
+			function openHelp() {
+				if (isOpen || isAnimating) return;
+				isAnimating = true;
+				isOpen = true;
+				// Transform-origin: ? buton pozisyonu
+				var r = btnOpen.getBoundingClientRect();
+				var ox = r.left + r.width / 2;
+				var oy = r.top + r.height / 2;
+				inner.style.transformOrigin = ox + 'px ' + oy + 'px';
+				inner.style.transform = 'scale(0)';
+				inner.style.opacity = '0';
+				inner.style.transition = 'none';
+				modal.style.pointerEvents = 'auto';
+				modal.classList.remove('opacity-0', 'invisible');
+				modal.classList.add('opacity-100');
+				requestAnimationFrame(function () {
+					inner.style.transition = 'transform 0.35s cubic-bezier(0.34,1.56,0.64,1), opacity 0.2s ease';
+					inner.style.transform = 'scale(1)';
+					inner.style.opacity = '1';
+					setTimeout(function () { isAnimating = false; }, 380);
 				});
+			}
 
-				// Form gönderimi
-				loginForm.addEventListener('submit', function (e) {
-					e.preventDefault();
-					var user = loginUser.value.trim().toLowerCase();
-					var pass = loginPass.value;
+			function closeHelp() {
+				if (!isOpen || isAnimating) return;
+				isAnimating = true;
+				// Transform-origin: ? buton pozisyonu
+				var r = btnOpen.getBoundingClientRect();
+				var ox = r.left + r.width / 2;
+				var oy = r.top + r.height / 2;
+				inner.style.transformOrigin = ox + 'px ' + oy + 'px';
+				inner.style.transition = 'transform 0.3s cubic-bezier(0.4,0,1,1), opacity 0.2s ease 0.1s';
+				inner.style.transform = 'scale(0)';
+				inner.style.opacity = '0';
+				modal.classList.remove('opacity-100');
+				modal.classList.add('opacity-0');
+				setTimeout(function () {
+					modal.style.pointerEvents = 'none';
+					modal.classList.add('invisible');
+					inner.style.transition = '';
+					inner.style.transform = '';
+					inner.style.opacity = '';
+					inner.style.transformOrigin = '';
+					isOpen = false;
+					isAnimating = false;
+				}, 350);
+				if (chkDontShow.checked) {
+					try { localStorage.setItem(STORAGE_KEY, '1'); } catch (e) { }
+				}
+			}
 
-					if (user === 'cbs' && pass === 'demo') {
-						// Başarılı giriş
-						loginScreen.style.opacity = '0';
-						setTimeout(function () { loginScreen.remove(); }, 500);
-					} else {
-						// Hatalı giriş
-						loginError.classList.remove('hidden');
-						loginForm.classList.add('animate-shake');
-						loginUser.classList.add('border-red-500/50');
-						loginPass.classList.add('border-red-500/50');
-						setTimeout(function () {
-							loginForm.classList.remove('animate-shake');
-						}, 400);
-						setTimeout(function () {
-							loginUser.classList.remove('border-red-500/50');
-							loginPass.classList.remove('border-red-500/50');
-						}, 2000);
-					}
-				});
-			})();
+			btnOpen.addEventListener('click', openHelp);
+			btnClose.addEventListener('click', closeHelp);
+			btnOk.addEventListener('click', closeHelp);
+			modal.addEventListener('click', function (e) { if (e.target === modal) closeHelp(); });
+			document.addEventListener('keydown', function (e) {
+				if (e.key === 'F1') { e.preventDefault(); openHelp(); }
+				if (e.key === 'Escape' && isOpen && !isAnimating) closeHelp();
+			});
+
+			// Splash bittikten sonra otomatik göster (localStorage'da kapatılmadıysa)
+			try {
+				if (!localStorage.getItem(STORAGE_KEY)) {
+					document.addEventListener('splashDismissed', function () {
+						setTimeout(openHelp, 500); // Splash kapandıktan 0.5sn sonra
+					}, { once: true });
+				}
+			} catch (e) { }
+		})();
 	</script>
 </body>
 
