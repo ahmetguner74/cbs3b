@@ -2951,6 +2951,12 @@ handler.setInputAction(function (click) {
 				// Noktaları Array'a yaz
 				clickPoints = boxPts3.slice(); // 4 köşeye dönüştür
 
+				// Eksik kenar çizgilerini ekle (P2→P3 ve P3→P4)
+				var edgeP2P3 = createStablePolyline([boxPts3[1], boxPts3[2]], VEC_STYLE.polygon.edgeWidth, _gc);
+				if (edgeP2P3) tempEntities.push(edgeP2P3);
+				var edgeP3P4 = createStablePolyline([boxPts3[2], boxPts3[3]], VEC_STYLE.polygon.edgeWidth, _gc);
+				if (edgeP3P4) tempEntities.push(edgeP3P4);
+
 				// Çizimi bitirme işlemini tetikle (Sağ tık simülasyonu)
 				handler.getInputAction(Cesium.ScreenSpaceEventType.RIGHT_CLICK)();
 			} else {
