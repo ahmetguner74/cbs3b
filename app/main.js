@@ -978,19 +978,22 @@ viewModeBtns.forEach(function (btn) {
 			tileset.customShader = undefined;
 			tileset.style = undefined;
 			tileset.debugWireframe = false;
+			tileset.shadows = Cesium.ShadowMode.DISABLED;
 		}
+		viewer.shadows = false;
 		if (viewer.scene.postProcessStages.ambientOcclusion) {
 			viewer.scene.postProcessStages.ambientOcclusion.enabled = false;
 		}
 
-		// Sahne ortamını varsayılana döndür (Solid mod bunları değiştirir)
-		if (viewer.scene.skyBox) viewer.scene.skyBox.show = true;
+		// Sahne ortamını başlangıç durumuna döndür (Solid mod bunları değiştirir)
+		// NOT: skyAtmosphere başlangıçta kapalı (satır 138), tekrar açmıyoruz
+		// NOT: globe.show başlangıçta kapalı (satır 143), tekrar açmıyoruz
+		// NOT: skyBox file:// modunda başlangıçta kapalı (satır 141)
+		if (viewer.scene.skyBox) viewer.scene.skyBox.show = !isLocalFile;
 		if (viewer.scene.sun) viewer.scene.sun.show = true;
 		if (viewer.scene.moon) viewer.scene.moon.show = true;
-		// NOT: skyAtmosphere başlangıçta kapalı (satır 18), tekrar açmıyoruz
-		// NOT: globe.show başlangıçta kapalı (satır 22), tekrar açmıyoruz
 		viewer.scene.backgroundColor = new Cesium.Color(0, 0, 0, 1); // Varsayılan siyah
-		viewer.scene.highDynamicRange = true; // HDR varsayılan
+		viewer.scene.highDynamicRange = false; // Başlangıçta kapalı — açık olursa kontrast artar
 
 		switch (mode) {
 			case 'rgb':
@@ -1028,7 +1031,7 @@ viewModeBtns.forEach(function (btn) {
 				// arka plan ile kontrast yaratıyordu (sızma görünmesine sebep oluyordu).
 				if (tileset) tileset.customShader = new Cesium.CustomShader({
 					lightingModel: Cesium.LightingModel.UNLIT,
-					translucencyMode: Cesium.CustomShaderTranslucencyMode.OPAQUE,
+					translucencyMode: Cesium.CustomShaderTranslucencyMode.TRANSLUCENT,
 					fragmentShaderText: `
                         void fragmentMain(FragmentInput fsInput, inout czm_modelMaterial material) {
                             // Yüzey normalini al ve kameraya göre basit gölgeleme yap
@@ -1052,9 +1055,15 @@ viewModeBtns.forEach(function (btn) {
 					viewer.scene.postProcessStages.ambientOcclusion.uniforms.lengthCap = 0.3;
 					viewer.scene.postProcessStages.ambientOcclusion.uniforms.stepSize = 1.0;
 				}
+
+				// Gölge haritalarını etkinleştir
+				viewer.shadows = true;
+				if (tileset) tileset.shadows = Cesium.ShadowMode.ENABLED;
 				break;
 
 		}
+		// requestRenderMode açık — mod geçişini anında yansıt
+		viewer.scene.requestRender();
 	});
 });
 
@@ -1942,6 +1951,40 @@ function renderList() {
 	var container = document.getElementById('measureList');
 	container.innerHTML = '';
 
+	// ─── Sabit 3D Model Katman Satırı (salt okunur, ince) ───
+	if (typeof tileset !== 'undefined' && tileset) {
+		var modelRow = document.createElement('div');
+		modelRow.className = 'flex items-center gap-1.5 px-2 py-0.5 rounded-md cursor-default select-none';
+		modelRow.style.cssText = 'min-height:22px;background:var(--bg-surface, rgba(30,41,59,0.35));border:1px solid var(--border-subtle, rgba(71,85,105,0.25));margin-bottom:6px;';
+
+		var modelIcon = document.createElement('span');
+		modelIcon.className = 'material-symbols-outlined';
+		modelIcon.style.cssText = 'font-size:13px;color:var(--text-muted, #64748b);';
+		modelIcon.innerText = 'location_city';
+
+		var modelName = document.createElement('span');
+		modelName.style.cssText = 'font-size:9px;color:var(--text-primary, #cbd5e1);font-weight:600;flex:1;letter-spacing:0.3px;';
+		modelName.innerText = '3D Model \u2014 Merinos 1. Etap';
+
+		var modelCheck = document.createElement('input');
+		modelCheck.type = 'checkbox';
+		modelCheck.checked = tileset.show !== false;
+		modelCheck.className = 'rounded border-slate-600 bg-slate-800 text-primary cursor-pointer shrink-0';
+		modelCheck.style.cssText = 'width:11px;height:11px;';
+		modelCheck.title = tileset.show !== false ? 'Modeli gizle' : 'Modeli göster';
+		modelCheck.onclick = function (e) {
+			e.stopPropagation();
+			tileset.show = modelCheck.checked;
+			modelCheck.title = modelCheck.checked ? 'Modeli gizle' : 'Modeli göster';
+			viewer.scene.requestRender();
+		};
+
+		modelRow.appendChild(modelIcon);
+		modelRow.appendChild(modelName);
+		modelRow.appendChild(modelCheck);
+		container.appendChild(modelRow);
+	}
+
 	// Referans grupları (📌) önce, standart gruplar sonra
 	var refGroups = groups.filter(function (g) { return g.name.indexOf('📌') === 0; });
 	var stdGroups = groups.filter(function (g) { return g.name.indexOf('📌') !== 0; });
@@ -2106,7 +2149,7 @@ function renderGroupItem(container, group) {
 	var content = document.createElement('div');
 	content.className = 'folder-content';
 
-	var groupMeasures = measurements.filter(function (m) { return m.groupId === group.id; });
+	var groupMeasures = measurements.filter(function (m) { return m.groupId === group.id; }).reverse();
 	if (groupMeasures.length === 0) {
 		var empty = document.createElement('div');
 		empty.className = 'text-[9px] text-slate-600 italic py-1';
@@ -2117,7 +2160,8 @@ function renderGroupItem(container, group) {
 	groupMeasures.forEach(function (m) {
 		var row = document.createElement('div');
 		var selectedClass = activeHighlightId === m.id ? ' border-primary bg-primary/10' : ' border-slate-700/50 bg-slate-800/50 hover:bg-slate-700/50';
-		row.className = 'flex items-center justify-between p-1.5 rounded border transition-colors mb-1' + selectedClass;
+		row.className = 'flex items-center justify-between py-0.5 px-1.5 rounded border transition-colors mb-1' + selectedClass;
+		row.style.minHeight = '28px';
 
 		var leftDiv = document.createElement('div');
 		leftDiv.className = 'flex items-center gap-2 overflow-hidden';
@@ -2194,7 +2238,8 @@ function startEditing(e, m) {
 	var input = document.createElement('input');
 	input.type = 'text';
 	input.value = oldName;
-	input.className = 'text-[10px] bg-slate-900 text-white border-b border-primary/50 px-1 py-0 h-[15px] w-[100px] outline-none';
+	input.className = 'text-[10px] border-b border-primary/50 px-1 py-0 w-[100px] outline-none';
+	input.style.cssText = 'background:#0f172a;color:#fff;caret-color:#fff;height:18px;line-height:18px;';
 
 	nameSpan.parentNode.replaceChild(input, nameSpan);
 	input.focus();
@@ -3108,10 +3153,11 @@ handler.setInputAction(function (click) {
 				'<span class="text-green-400 font-bold block mt-1 text-[11px]">Yükseklik Farkı: ' + diff.toFixed(2) + ' m</span>';
 
 			measureCount++;
+			var groupSeq = measurements.filter(function (x) { return x.groupId === activeGroupId; }).length + 1;
 			measurements.push({
 				id: measureCount,
 				groupId: activeGroupId,
-				name: 'Yükseklik ' + measureCount,
+				name: '' + groupSeq,
 				type: 'height',
 				resultText: resultText,
 				points: [clickPoints[0], pMid, clickPoints[1]],
@@ -3140,10 +3186,11 @@ handler.setInputAction(function (click) {
 		}
 
 		measureCount++;
+		var groupSeq = measurements.filter(function (x) { return x.groupId === activeGroupId; }).length + 1;
 		measurements.push({
 			id: measureCount,
 			groupId: activeGroupId,
-			name: 'Nokta ' + measureCount,
+			name: '' + groupSeq,
 			type: 'coord',
 			resultText: resultText,
 			points: [cartesian],
@@ -3204,10 +3251,11 @@ handler.setInputAction(function () {
 		}
 
 		measureCount++;
+		var groupSeq = measurements.filter(function (x) { return x.groupId === activeGroupId; }).length + 1;
 		measurements.push({
 			id: measureCount,
 			groupId: activeGroupId,
-			name: 'Mesafe ' + measureCount,
+			name: '' + groupSeq,
 			type: 'line',
 			resultText: resultText,
 			points: clickPoints.slice(),
@@ -3247,10 +3295,11 @@ handler.setInputAction(function () {
 		document.querySelector('#resultDisplay > div').innerHTML = '<b>Alan:</b> ' + resultText + ' (' + clickPoints.length + ' köşe)' + warningMsg;
 
 		measureCount++;
+		var groupSeq = measurements.filter(function (x) { return x.groupId === activeGroupId; }).length + 1;
 		measurements.push({
 			id: measureCount,
 			groupId: activeGroupId,
-			name: 'Alan ' + measureCount,
+			name: '' + groupSeq,
 			type: 'polygon',
 			resultText: resultText,
 			points: clickPoints.slice(),

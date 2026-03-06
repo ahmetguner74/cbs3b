@@ -387,7 +387,8 @@
 			display: flex;
 			align-items: center;
 			gap: 0.5rem;
-			padding: 0.5rem;
+			padding: 0 0.5rem;
+			min-height: 32px;
 			background-color: var(--bg-elevated);
 			border: 1px solid var(--border-subtle);
 			border-radius: 8px;
@@ -2611,6 +2612,8 @@
 			}
 		})();
 	</script>
+	<!-- Dev Panel: localhost/file:// ortamında Ctrl+Shift+D ile açılır, üretimde otomatik gizlenir -->
+	<script src="dev-panel.js"></script>
 </body>
 
 </html>
