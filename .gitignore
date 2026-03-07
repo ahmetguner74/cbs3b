@@ -1,9 +1,6 @@
 # Logo tasarım dosyaları
 logo/
 
-# İçe aktarma test verileri (büyük dosyalar)
-import/
-
 # Lokal çalıştırma scripti
 serve.bat
 

@@ -943,6 +943,23 @@ var ClipBoxManager = {
 		});
 	});
 
+	// ── ± Buton Handler'ları ──
+	var pmBtns = document.querySelectorAll('.clip-pm-btn');
+	pmBtns.forEach(function (btn) {
+		btn.addEventListener('click', function () {
+			var axis = btn.getAttribute('data-axis');
+			var dir = parseInt(btn.getAttribute('data-dir'));
+			var slider = document.getElementById('clipMini' + axis);
+			var valLabel = document.getElementById('clipMini' + axis + 'Val');
+			if (!slider || !valLabel) return;
+
+			var newVal = Math.max(5, Math.min(100, parseInt(slider.value) + dir * 5));
+			slider.value = newVal;
+			valLabel.textContent = newVal + 'm';
+			ClipBoxManager._updateSize(axis.toLowerCase(), newVal, true);
+		});
+	});
+
 	// Sıfırla butonu
 	var resetBtn = document.getElementById('clipMiniReset');
 	if (resetBtn) {
