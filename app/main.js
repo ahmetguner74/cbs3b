@@ -366,7 +366,7 @@ Cesium.Cesium3DTileset.fromUrl("../Scene/merinos1.json", {
 }).then(function (loadedTileset) {
 	tileset = loadedTileset;
 	viewer.scene.primitives.add(tileset);
-	viewer.zoomTo(tileset);
+	// zoomTo artık initSplashProgress içinde yönetiliyor (splash kapanma kontrolü için)
 	// Mobilde performans ayarı — tile kalitesini düşür
 	if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
 		tileset.maximumScreenSpaceError = 6;
@@ -1016,10 +1016,11 @@ function initSplashProgress(ts) {
 	var statusText = document.getElementById('splashStatusText');
 	var startTime = Date.now();
 	var MIN_SHOW = 3000;   // Min 3sn göster (fontlar + ikonlar yüklensin)
-	var MAX_SHOW = 15000;  // Max 15sn (yüklenmese bile kapat)
+	var MAX_SHOW = 20000;  // Max 20sn (yüklenmese bile kapat)
 	var dismissed = false;
 	var modelReady = false;
 	var fontsReady = false;
+	var zoomReady = false;  // zoomTo tamamlandı mı?
 	var currentPercent = 5;
 
 	function updateProgress(pct) {
@@ -1046,12 +1047,12 @@ function initSplashProgress(ts) {
 	function tryDismiss() {
 		if (dismissed) return;
 		var elapsed = Date.now() - startTime;
-		if (modelReady && fontsReady && elapsed >= MIN_SHOW) dismiss();
+		// Tüm 3 koşul: model hazır + fontlar hazır + kamera uçuşu bitti
+		if (modelReady && fontsReady && zoomReady && elapsed >= MIN_SHOW) dismiss();
 	}
 
 	// ─── Site tam hazırlık kontrolü (fontlar + ikonlar + CSS) ───
 	var _windowLoaded = false;
-	var _iconsRendered = false;
 
 	// 1) window.onload → Tüm harici kaynaklar (CSS, fontlar, resimler) indirildi
 	window.addEventListener('load', function () {
@@ -1062,13 +1063,12 @@ function initSplashProgress(ts) {
 	// 2) Material Symbols ikonlarının gerçekten renderlanıp renderlanmadığını kontrol et
 	function checkIconFont() {
 		try {
-			// 48px boyutunda ikon fontunun yüklenip yüklenmediğini sorgula
 			return document.fonts.check('48px "Material Symbols Outlined"');
 		} catch (e) { return false; }
 	}
 
 	function checkAllReady() {
-		if (fontsReady) return; // Zaten hazır
+		if (fontsReady) return;
 		if (_windowLoaded && checkIconFont()) {
 			fontsReady = true;
 			if (statusText && !modelReady) statusText.textContent = window.AppMessages.SPLASH_LOAD_UI_READY || 'Arayüz hazır, model bekleniyor...';
@@ -1076,13 +1076,13 @@ function initSplashProgress(ts) {
 		}
 	}
 
-	// Her 200ms'de ikon fontunu kontrol et (window.load yetersiz kalabilir)
+	// Her 200ms'de ikon fontunu kontrol et
 	var _fontPollTimer = setInterval(function () {
 		checkAllReady();
 		if (fontsReady) clearInterval(_fontPollTimer);
 	}, 200);
 
-	// Fallback: 8sn içinde yüklenmezse hazır say (takılmayı önle)
+	// Fallback: 8sn içinde yüklenmezse hazır say
 	setTimeout(function () {
 		if (!fontsReady) {
 			fontsReady = true;
@@ -1095,27 +1095,54 @@ function initSplashProgress(ts) {
 	updateProgress(50);
 	if (statusText) statusText.textContent = window.AppMessages.SPLASH_LOAD_DETAILS || 'Detaylar yükleniyor...';
 
-	// Tileset yüklenme durumunu izle
+	// ─── Tileset yüklenme durumunu izle ───
 	var tilesLoaded = 0;
 	var tilesTotal = 0;
 
 	ts.tileLoad.addEventListener(function () {
 		tilesLoaded++;
 		if (tilesTotal > 0) {
-			updateProgress(50 + (tilesLoaded / tilesTotal) * 40); // %50-%90 arası
+			updateProgress(50 + (tilesLoaded / tilesTotal) * 35); // %50-%85 arası
 		} else {
-			updateProgress(Math.min(50 + tilesLoaded * 5, 85));
+			updateProgress(Math.min(50 + tilesLoaded * 3, 80));
 		}
 	});
 
+	// loadProgress: tile indirme/işleme takibi
 	ts.loadProgress.addEventListener(function (pending, processing) {
 		tilesTotal = Math.max(tilesTotal, tilesLoaded + pending + processing);
-		if (pending === 0 && processing === 0 && tilesLoaded > 0) {
+		if (statusText && !modelReady) {
+			if (pending > 0 || processing > 0) {
+				statusText.textContent = (window.AppMessages.SPLASH_LOAD_DETAILS || 'Detaylar yükleniyor...') + ' (' + tilesLoaded + '/' + tilesTotal + ')';
+			}
+		}
+	});
+
+	// ─── initialTilesLoaded: Görünür tüm tile'lar yüklendi ───
+	// loadProgress pending=0'dan daha güvenilir — kamera uçuşu sonrası
+	// yeni tile'ların da yüklenmesini bekler
+	ts.initialTilesLoaded.addEventListener(function () {
+		if (!modelReady) {
 			modelReady = true;
-			updateProgress(95);
-			if (statusText) statusText.textContent = fontsReady ? (window.AppMessages.SPLASH_LOAD_MODEL_READY || 'Model hazır, açılıyor...') : (window.AppMessages.SPLASH_LOAD_MODEL_WAIT_UI || 'Model hazır, arayüz hazırlanıyor...');
+			updateProgress(90);
+			if (statusText) statusText.textContent = fontsReady
+				? (window.AppMessages.SPLASH_LOAD_MODEL_READY || 'Model hazır, açılıyor...')
+				: (window.AppMessages.SPLASH_LOAD_MODEL_WAIT_UI || 'Model hazır, arayüz hazırlanıyor...');
 			tryDismiss();
 		}
+	});
+
+	// ─── zoomTo tamamlanmasını bekle ───
+	// Bu sayede kamera hedef konumuna ulaşmadan splash kapanmaz
+	viewer.zoomTo(ts).then(function () {
+		zoomReady = true;
+		updateProgress(Math.max(currentPercent, 85));
+		if (statusText && !modelReady) statusText.textContent = window.AppMessages.SPLASH_LOAD_DETAILS || 'Detaylar yükleniyor...';
+		tryDismiss();
+	}).catch(function () {
+		// zoomTo başarısız olursa bile devam et
+		zoomReady = true;
+		tryDismiss();
 	});
 
 	// Min süre geçtikten sonra tekrar kontrol
