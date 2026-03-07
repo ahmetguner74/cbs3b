@@ -93,17 +93,23 @@
         let logs = [];
         let selectedSession = null;
 
-        window.checkAccess = function () {
-            const key = document.getElementById('admin-key').value;
-            // Şimdilik basit bir anahtar, canlıda Supabase Auth ile değiştirilmeli
+        window.checkAccess = function (manualKey) {
+            const key = manualKey || document.getElementById('admin-key').value;
             if (key === 'bursa16') {
+                localStorage.setItem('adminKey', key);
                 document.getElementById('access-overlay').style.display = 'none';
                 document.getElementById('admin-content').style.display = 'flex';
                 init();
-            } else {
+            } else if (!manualKey) {
                 document.getElementById('access-error').style.display = 'block';
             }
         };
+
+        // Otomatik giriş kontrolü
+        document.addEventListener('DOMContentLoaded', () => {
+            const savedKey = localStorage.getItem('adminKey');
+            if (savedKey) checkAccess(savedKey);
+        });
 
         async function init() {
             // Mevcut verileri çek
@@ -164,8 +170,11 @@
             document.getElementById('current-session-title').innerText = sid ? `Oturum: ${sid}` : 'Genel Akış (Tüm Oturumlar)';
             document.getElementById('log-body').innerHTML = '';
 
-            // Mevcut logları temizle ve filtreye göre yeniden ekle
-            const filteredLogs = logs.filter(l => !sid || l.session_id === sid);
+            // Mevcut logları temizle ve filtreye göre yeniden ekle (En yeni en üstte)
+            const filteredLogs = logs
+                .filter(l => !sid || l.session_id === sid)
+                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
             filteredLogs.forEach(l => {
                 const tbody = document.getElementById('log-body');
                 const tr = document.createElement('tr');
