@@ -84,6 +84,11 @@ var viewer = new Cesium.Viewer('cesiumContainer', {
 	terrainProvider: new Cesium.EllipsoidTerrainProvider()  // Başlangıçta düz elipsoid
 });
 
+// Monitoring Service Entegrasyonu
+if (window.MonitoringService) {
+	window.MonitoringService.setViewer(viewer);
+}
+
 // Mobil tespiti (tarayıcı tabanlı — Cesium API'ye bağımlı değil)
 var _isMob = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1);
 var isMobile = _isMob; // Geriye dönük uyumluluk için

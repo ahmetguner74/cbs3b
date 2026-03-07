@@ -174,7 +174,7 @@
                 <td class="session-cell" title="${log.session_id}">${log.session_id.substring(8, 16)}...</td>
                 <td><strong>${log.action}</strong></td>
                 <td><span style="color:${fpsColor}">${log.fps} FPS</span> | ${log.system_info?.gpu?.split('(')[0] || 'N/A'}</td>
-                <td><button class="btn-info" onclick='showDetails(${JSON.stringify(log)})'>🔍 İncele</button></td>
+                <td><button class="btn-info" onclick='showLogDetails(${JSON.stringify(log)})'>🔍 İncele</button></td>
             `;
 
             tbody.insertBefore(tr, tbody.firstChild);
@@ -192,14 +192,19 @@
 
             const loc = log.system_info.location;
             const sid = log.session_id;
+            const cam = log.system_info.camera;
 
             // Son aktiflik zamanını kontrol et (1 dakika pasifse gri yap)
             const isPassive = (new Date() - new Date(log.created_at)) > 60000;
-            const color = log.is_error ? '#ef4444' : (isPassive ? '#94a3b8' : '#22c55e');
+            const lowPerf = log.fps < 20;
+            const color = log.is_error ? '#ef4444' : (lowPerf ? '#f59e0b' : (isPassive ? '#94a3b8' : '#22c55e'));
 
             if (markers[sid]) {
                 markers[sid].setLatLng([loc.lat, loc.lng]);
                 markers[sid].setStyle({ color: color, fillColor: color });
+                if (cam && markers[sid].headingLine) {
+                    updateHeadingLine(markers[sid], loc, cam.heading);
+                }
             } else {
                 markers[sid] = L.circleMarker([loc.lat, loc.lng], {
                     radius: 8,
@@ -210,9 +215,22 @@
                     fillOpacity: 0.8
                 }).addTo(map);
 
+                if (cam) {
+                    markers[sid].headingLine = L.polyline([], { color: '#38bdf8', weight: 3, opacity: 0.6 }).addTo(map);
+                    updateHeadingLine(markers[sid], loc, cam.heading);
+                }
+
                 markers[sid].bindPopup(`<b>Oturum:</b> ${sid.substring(8, 16)}...<br><b>Eylem:</b> ${log.action}`);
                 markers[sid].on('click', () => filterSession(sid));
             }
+        }
+
+        function updateHeadingLine(marker, loc, heading) {
+            const angle = (heading - 90) * (Math.PI / 180);
+            const length = 0.002; // Yaklaşık uzunluk
+            const endLat = parseFloat(loc.lat) + length * Math.sin(-angle);
+            const endLng = parseFloat(loc.lng) + length * Math.cos(-angle);
+            marker.headingLine.setLatLngs([[loc.lat, loc.lng], [endLat, endLng]]);
         }
 
         function filterSession(sid) {

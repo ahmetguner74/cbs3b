@@ -10,6 +10,9 @@
     let sessionId = 'session_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
     let currentFps = 60;
     let userLocation = null;
+    let cesiumViewer = null;
+    let logBuffer = [];
+    let isOffline = !navigator.onLine;
 
     const MonitoringService = {
         init: function () {
@@ -31,6 +34,12 @@
                     stack: error ? error.stack : 'N/A'
                 }, true);
             };
+
+            window.addEventListener('online', () => {
+                isOffline = false;
+                this.flushBuffer();
+            });
+            window.addEventListener('offline', () => isOffline = true);
 
             // Konum yakalama (İzin istenirse)
             try {
@@ -58,7 +67,7 @@
 
         getSystemInfoSync: function () {
             const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.protocol === 'file:';
-            return {
+            const info = {
                 source: isLocal ? 'Local' : 'Live',
                 host: window.location.host || 'File System',
                 userAgent: navigator.userAgent,
@@ -66,8 +75,35 @@
                 screen: `${window.screen.width}x${window.screen.height}`,
                 memory: navigator.deviceMemory ? `${navigator.deviceMemory}GB` : 'N/A',
                 gpu: this.getGPUInfo(),
-                location: userLocation
+                location: userLocation,
+                connection: isOffline ? 'Offline' : 'Online'
             };
+
+            // 3D Kamera Bağlamı (Cesium varsa)
+            if (cesiumViewer) {
+                const cam = cesiumViewer.camera;
+                const carto = cam.positionCartographic;
+                info.camera = {
+                    lat: (carto.latitude * 180 / Math.PI).toFixed(6),
+                    lng: (carto.longitude * 180 / Math.PI).toFixed(6),
+                    height: carto.height.toFixed(2),
+                    heading: (cam.heading * 180 / Math.PI).toFixed(2),
+                    pitch: (cam.pitch * 180 / Math.PI).toFixed(2)
+                };
+
+                // Sahne Karmaşıklığı (Basitçe primitive sayısı)
+                info.scene = {
+                    primitives: cesiumViewer.scene.primitives.length,
+                    groundPrimitives: cesiumViewer.scene.groundPrimitives.length
+                };
+            }
+
+            return info;
+        },
+
+        setViewer: function (viewer) {
+            cesiumViewer = viewer;
+            this.log('VIEWER_READY');
         },
 
         getGPUInfo: function () {
@@ -86,22 +122,56 @@
         log: async function (action, details = {}, isError = false) {
             if (!supabaseClient) return;
 
+            const payload = {
+                session_id: sessionId,
+                user_id: 'guest',
+                action: action,
+                details: details,
+                system_info: this.getSystemInfoSync(),
+                fps: currentFps,
+                is_error: isError,
+                created_at: new Date().toISOString()
+            };
+
+            if (isOffline) {
+                logBuffer.push(payload);
+                if (logBuffer.length > 50) logBuffer.shift(); // Limit buffer
+                return;
+            }
+
+            this.sendToCloud(payload);
+        },
+
+        sendToCloud: async function (payload) {
             try {
                 const { error } = await supabaseClient
                     .from('telemetry_logs')
-                    .insert([{
-                        session_id: sessionId,
-                        user_id: 'guest',
-                        action: action,
-                        details: details,
-                        system_info: this.getSystemInfoSync(),
-                        fps: currentFps,
-                        is_error: isError
-                    }]);
+                    .insert([payload]);
 
                 if (error) console.error('Monitoring Error:', error);
             } catch (e) {
                 console.error('Failed to send log:', e);
+                logBuffer.push(payload);
+            }
+        },
+
+        flushBuffer: async function () {
+            if (logBuffer.length === 0) return;
+            console.log(`[Monitoring] Flushing ${logBuffer.length} buffered logs...`);
+
+            const toSend = [...logBuffer];
+            logBuffer = [];
+
+            try {
+                const { error } = await supabaseClient
+                    .from('telemetry_logs')
+                    .insert(toSend);
+                if (error) {
+                    console.error('Flush Error:', error);
+                    logBuffer = [...toSend, ...logBuffer];
+                }
+            } catch (e) {
+                logBuffer = [...toSend, ...logBuffer];
             }
         },
 
