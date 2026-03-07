@@ -578,10 +578,24 @@ var ClipBoxManager = {
 
 		var hx = this._halfSize.x, hy = this._halfSize.y, hz = this._halfSize.z;
 
-		// Plane'ler orijin merkezli — modelMatrix zaten doğru noktaya taşıyor
-		// Her plane: normal dışarı bakıyor, distance = halfSize
-		// unionClippingRegions=true → herhangi bir plane'in dışındaki her şey kesilir
-		// Sonuç: sadece kutu İÇİ görünür
+		// Mevcut collection varsa — plane distance'ları IN-PLACE güncelle (GPU yeniden tahsis YOK)
+		// Bu sayede +/- butonları render döngüsünü bozmadan çalışır
+		try {
+			var existing = tileset.clippingPlanes;
+			if (existing && !existing.isDestroyed() && existing.length === 6) {
+				// Sıra: +X, -X, +Y, -Y, +Z, -Z
+				existing.get(0).distance = hx;
+				existing.get(1).distance = hx;
+				existing.get(2).distance = hy;
+				existing.get(3).distance = hy;
+				existing.get(4).distance = hz;
+				existing.get(5).distance = hz;
+				existing.enabled = true;
+				return; // Erken çık — yeni collection oluşturma
+			}
+		} catch (e) { /* collection bozuksa, aşağıda yeniden oluştur */ }
+
+		// İlk yerleştirme veya collection yoksa — bir kez oluştur
 		var planes = [
 			new Cesium.ClippingPlane(new Cesium.Cartesian3(1, 0, 0), hx),
 			new Cesium.ClippingPlane(new Cesium.Cartesian3(-1, 0, 0), hx),
@@ -591,14 +605,6 @@ var ClipBoxManager = {
 			new Cesium.ClippingPlane(new Cesium.Cartesian3(0, 0, -1), hz),
 		];
 
-		// Önceki collection'ı güvenli şekilde temizle
-		try {
-			if (tileset.clippingPlanes && !tileset.clippingPlanes.isDestroyed()) {
-				tileset.clippingPlanes.enabled = false;
-			}
-		} catch (e) { /* ignore */ }
-
-		// Yeni collection oluştur
 		tileset.clippingPlanes = new Cesium.ClippingPlaneCollection({
 			planes: planes,
 			unionClippingRegions: true,

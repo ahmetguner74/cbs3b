@@ -896,6 +896,83 @@
 				/* Mobilde çok solda kalmaması için sağa yaklaştırıldı */
 			}
 		}
+
+		/* ─── MOBİL: Header alt yazısı taşmasın ─── */
+		@media (max-width: 480px) {
+
+			/* "3D Sayısal Veri Üretim ve Analiz Portalı" alt yazısını gizle (yer açmak için) */
+			header .flex.flex-col>p {
+				display: none !important;
+			}
+
+			/* CBS başlığını biraz küçült */
+			header h1 {
+				font-size: 9px !important;
+			}
+
+			/* Tüm header sağ butonları küçült — gizlemiyoruz, küçültüyoruz */
+			#btnCameraMode,
+			#btnViewMode,
+			#btnThemeToggle,
+			#btnFullscreen,
+			#btnHelp,
+			#btnHomeView {
+				width: 28px !important;
+				height: 28px !important;
+				padding: 0 !important;
+			}
+
+			/* İkon boyutlarını küçült */
+			#btnCameraMode .material-symbols-outlined,
+			#btnViewMode .material-symbols-outlined,
+			#btnThemeToggle .material-symbols-outlined,
+			#btnFullscreen svg,
+			#btnHelp .material-symbols-outlined,
+			#btnHomeView .material-symbols-outlined {
+				font-size: 16px !important;
+				width: 16px !important;
+				height: 16px !important;
+			}
+
+			/* Changelog badge metnini küçült */
+			#btnOpenChangelog {
+				padding: 2px 4px !important;
+				gap: 3px !important;
+			}
+
+			#btnOpenChangelog .text-\[10px\] {
+				font-size: 8px !important;
+			}
+
+			/* Kamera ve görünüm dropdown metin etiketlerini gizle, ikon kalıyor */
+			#btnCameraMode span.hidden,
+			#btnViewMode span.hidden,
+			#btnCameraMode .material-symbols-outlined:last-child,
+			#btnViewMode .material-symbols-outlined:last-child {
+				display: none !important;
+			}
+
+			/* X-Ray metnini gizle, sadece ikon kalsın */
+			#btnXRayToggle .text-\[10px\] {
+				display: none !important;
+			}
+
+			/* Header sağ gap'i azalt */
+			header .ml-auto.flex {
+				gap: 1px !important;
+			}
+
+			/* ─── MOBİL: Yardım modalında klavye/fare bölümlerini gizle ─── */
+			#helpKbSection,
+			#helpMouseSection {
+				display: none !important;
+			}
+
+			/* Mobil dokunma rehberini göster */
+			#helpTouchSection {
+				display: block !important;
+			}
+		}
 	</style>
 </head>
 
@@ -2001,8 +2078,90 @@
 			</div>
 			<!-- Content -->
 			<div class="overflow-y-auto p-5 space-y-5 hide-scrollbar">
+
+				<!-- ═══ MOBİL DOKUNMA REHBERİ (sadece mobilde görünür) ═══ -->
+				<div id="helpTouchSection" style="display:none">
+					<h3 class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-3">📱 Dokunma
+						Hareketleri</h3>
+					<div class="space-y-3">
+						<div class="flex items-start gap-3">
+							<span class="text-lg shrink-0">☝️</span>
+							<div><span class="text-xs font-bold text-primary">Tek Parmak Dokunma</span><br><span
+									class="text-xs text-slate-400">Haritayı kaydır (sola/sağa/yukarı/aşağı)</span></div>
+						</div>
+						<div class="flex items-start gap-3">
+							<span class="text-lg shrink-0">🤏</span>
+							<div><span class="text-xs font-bold text-primary">İki Parmak Sıkıştır / Aç</span><br><span
+									class="text-xs text-slate-400">Yakınlaştır / Uzaklaştır</span></div>
+						</div>
+						<div class="flex items-start gap-3">
+							<span class="text-lg shrink-0">🔄</span>
+							<div><span class="text-xs font-bold text-primary">İki Parmak Döndür</span><br><span
+									class="text-xs text-slate-400">Haritayı saat yönünde / tersine döndür</span></div>
+						</div>
+						<div class="flex items-start gap-3">
+							<span class="text-lg shrink-0">↕️</span>
+							<div><span class="text-xs font-bold text-primary">İki Parmak Yukarı/Aşağı
+									Sürükle</span><br><span class="text-xs text-slate-400">Kamera eğimini değiştir (kuş
+									bakışı ↔ yatay)</span></div>
+						</div>
+						<div class="flex items-start gap-3">
+							<span class="text-lg shrink-0">👆</span>
+							<div><span class="text-xs font-bold text-primary">Aktif Araçla Dokunma</span><br><span
+									class="text-xs text-slate-400">Araç seçiliyken haritaya dokununca ölçüm noktası
+									koyar</span></div>
+						</div>
+						<div class="flex items-start gap-3">
+							<span class="text-lg shrink-0">⏪</span>
+							<div><span class="text-xs font-bold text-primary">Çift Dokunma (harita)</span><br><span
+									class="text-xs text-slate-400">Ana görünüme dön</span></div>
+						</div>
+					</div>
+
+					<h3 class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mt-5 mb-3">🧰 Panel
+						Kullanımı</h3>
+					<div class="space-y-3">
+						<div class="flex items-start gap-3">
+							<span class="text-lg shrink-0">◀</span>
+							<div><span class="text-xs font-bold text-primary">Sol Panel Oku</span><br><span
+									class="text-xs text-slate-400">Araçlar panelini aç/kapat</span></div>
+						</div>
+						<div class="flex items-start gap-3">
+							<span class="text-lg shrink-0">✂️</span>
+							<div><span class="text-xs font-bold text-primary">ClipBox (Kırpma Kutusu)</span><br><span
+									class="text-xs text-slate-400">Araçlar panelinde en alttaki kırpma simgesine dokun.
+									X/Y/Z boyutlarını +/− ile ayarla.</span></div>
+						</div>
+						<div class="flex items-start gap-3">
+							<span class="text-lg shrink-0">📋</span>
+							<div><span class="text-xs font-bold text-primary">Ölçümler Listesi</span><br><span
+									class="text-xs text-slate-400">Sağdan kaydırarak çekip Ölçümler listesini
+									görüntüle</span></div>
+						</div>
+						<div class="flex items-start gap-3">
+							<span class="text-lg shrink-0">📁</span>
+							<div><span class="text-xs font-bold text-primary">Veri Aktarımı</span><br><span
+									class="text-xs text-slate-400">Alt menü → Veri → CSV / JSON / DXF / KML butonu ile
+									içe/dışa aktar</span></div>
+						</div>
+					</div>
+
+					<h3 class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mt-5 mb-3">💡 İpuçları
+					</h3>
+					<ul class="space-y-1.5 text-xs text-slate-400 list-disc list-inside">
+						<li>Araç seçince harita görünümüne otomatik geçer</li>
+						<li>Aktif araç butonuna <b class="text-slate-200">tekrar basarak</b> aracı kapat</li>
+						<li><b class="text-slate-200">Alan → Serbest:</b> her dokunuşta köşe ekler, son noktaya tekrar
+							dokununca kapatır</li>
+						<li><b class="text-slate-200">Kırmızı nokta</b> köşeye snap, <b class="text-slate-200">mavi
+								nokta</b> kenara snap yapar</li>
+						<li>Tam ekran modu mobil tarayıcıda çalışmayabilir</li>
+					</ul>
+				</div>
+				<!-- ═══ MOBİL DOKUNMA REHBERİ SONU ═══ -->
+
 				<!-- Klavye Kısayolları - Gerçekçi Klavye Görseli -->
-				<div>
+				<div id="helpKbSection">
 					<h3 class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-3">⌨️ Klavye
 						Kısayolları</h3>
 					<style>
@@ -2378,7 +2537,7 @@
 					</div>
 				</div>
 				<!-- Fare Kontrolleri -->
-				<div>
+				<div id="helpMouseSection">
 					<h3 class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-3">🖱️ Fare Kontrolleri
 					</h3>
 					<div class="space-y-2">
@@ -2401,7 +2560,7 @@
 					</div>
 				</div>
 				<!-- Snap Sistemi -->
-				<div>
+				<div id="helpKbSection">
 					<h3 class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-3">🧲 Snap (Yakalama)
 					</h3>
 					<div class="space-y-2">
@@ -2418,7 +2577,7 @@
 					</div>
 				</div>
 				<!-- İpuçları -->
-				<div>
+				<div id="helpKbSection">
 					<h3 class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-3">💡 İpuçları</h3>
 					<ul class="space-y-1.5 text-xs text-slate-400 list-disc list-inside">
 						<li>Ölçümleri <b class="text-slate-200">gruplayın</b> — her
