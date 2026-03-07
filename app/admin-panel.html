@@ -31,77 +31,136 @@
 
     <div class="admin-container" id="admin-content" style="display:none;">
         <header>
-            <div class="logo">
-                <span class="pulse"></span>
-                <h1>Canlı İzleme Paneli</h1>
+            <div class="logo-section">
+                <div class="logo-icon">🛰️</div>
+                <div class="logo-text">
+                    <h1>Yönetim Merkezi</h1>
+                    <p>Canlı İzleme & Sistem Kontrolü</p>
+                </div>
             </div>
-            <div class="stats-bar">
+            <nav class="admin-tabs">
+                <button class="nav-tab active" onclick="switchTab('monitoring')">
+                    <i class="fas fa-desktop"></i> Canlı İzleme
+                </button>
+                <button class="nav-tab" onclick="switchTab('management')">
+                    <i class="fas fa-tools"></i> Sistem Yönetimi
+                </button>
+            </nav>
+            <div class="header-actions">
                 <div class="stat-item">Aktif Oturumlar: <span id="session-count">0</span></div>
                 <div class="stat-item">Hata Oranı: <span id="error-rate">0%</span></div>
             </div>
         </header>
 
-        <section id="map-section" style="height: 300px; border-bottom: 1px solid var(--border); position: relative;">
-            <div id="map" style="height: 100%; width: 100%;"></div>
-            <div class="map-overlay"
-                style="position: absolute; top: 10px; right: 10px; z-index: 1000; background: rgba(0,0,0,0.7); padding: 5px 10px; border-radius: 4px; font-size: 0.7rem; color: #fff; pointer-events: none;">
-                🟢 Aktif &nbsp; ⚪ Pasif &nbsp; ⚠️ Hatalı
-            </div>
-        </section>
-
-        <main>
-            <aside class="sidebar">
-                <h3>Oturumlar</h3>
-                <div class="search-box">
-                    <input type="text" id="session-search" placeholder="Session ID Ara...">
-                </div>
-                <div class="device-filter" style="display:flex; gap:5px; margin-bottom:10px; padding:0 5px;">
-                    <button class="filter-btn active" data-filter="all" onclick="setDeviceFilter('all')"
-                        style="flex:1; font-size:0.7rem; padding:4px; border-radius:4px; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); cursor:pointer;">Hepsi</button>
-                    <button class="filter-btn" data-filter="Desktop" onclick="setDeviceFilter('Desktop')"
-                        style="flex:1; font-size:0.7rem; padding:4px; border-radius:4px; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); cursor:pointer;">💻
-                        Masaüstü</button>
-                    <button class="filter-btn" data-filter="Mobile" onclick="setDeviceFilter('Mobile')"
-                        style="flex:1; font-size:0.7rem; padding:4px; border-radius:4px; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); cursor:pointer;">📱
-                        Mobil</button>
-                </div>
-                <ul id="session-list">
-                    <!-- Session items will be injected here -->
-                </ul>
-            </aside>
-
-            <section class="log-viewer">
-                <div class="viewer-header">
-                    <h2 id="current-session-title">Genel Akış (Tüm Oturumlar)</h2>
-                    <button id="clear-logs" class="btn-secondary">Temizle</button>
-                </div>
-
-                <div class="log-table-container">
-                    <table id="log-table">
-                        <thead>
-                            <tr>
-                                <th>Zaman</th>
-                                <th>Kaynak</th>
-                                <th>Oturum</th>
-                                <th>Eylem</th>
-                                <th>Sistem / FPS</th>
-                                <th>Detay</th>
-                            </tr>
-                        </thead>
-                        <tbody id="log-body">
-                            <!-- Logs will be injected here -->
-                        </tbody>
-                    </table>
+        <div id="monitoring-view" class="tab-view active">
+            <section id="map-section"
+                style="height: 300px; border-bottom: 1px solid var(--border); position: relative;">
+                <div id="map" style="height: 100%; width: 100%;"></div>
+                <div class="map-overlay"
+                    style="position: absolute; top: 10px; right: 10px; z-index: 1000; background: rgba(0,0,0,0.7); padding: 5px 10px; border-radius: 4px; font-size: 0.7rem; color: #fff; pointer-events: none;">
+                    🟢 Aktif &nbsp; ⚪ Pasif &nbsp; ⚠️ Hatalı
                 </div>
             </section>
 
-            <aside class="details-panel" id="details-panel">
-                <h3>Sistem Detayları</h3>
-                <div id="system-details-content">
-                    <p class="placeholder">Bir log seçerek detayları görüntüleyin.</p>
+            <main>
+                <aside class="sidebar">
+                    <h3>Oturumlar</h3>
+                    <div class="search-box">
+                        <input type="text" id="session-search" placeholder="Session ID Ara...">
+                    </div>
+                    <div class="device-filter" style="display:flex; gap:5px; margin-bottom:10px; padding:0 5px;">
+                        <button class="filter-btn active" data-filter="all" onclick="setDeviceFilter('all')"
+                            style="flex:1; font-size:0.7rem; padding:4px; border-radius:4px; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); cursor:pointer;">Hepsi</button>
+                        <button class="filter-btn" data-filter="Desktop" onclick="setDeviceFilter('Desktop')"
+                            style="flex:1; font-size:0.7rem; padding:4px; border-radius:4px; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); cursor:pointer;">💻
+                            Masaüstü</button>
+                        <button class="filter-btn" data-filter="Mobile" onclick="setDeviceFilter('Mobile')"
+                            style="flex:1; font-size:0.7rem; padding:4px; border-radius:4px; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); cursor:pointer;">📱
+                            Mobil</button>
+                    </div>
+                    <ul id="session-list">
+                        <!-- Session items will be injected here -->
+                    </ul>
+                </aside>
+
+                <section class="log-viewer">
+                    <div class="viewer-header">
+                        <h2 id="current-session-title">Genel Akış (Tüm Oturumlar)</h2>
+                        <button id="clear-logs" class="btn-secondary">Temizle</button>
+                    </div>
+
+                    <div class="log-table-container">
+                        <table id="log-table">
+                            <thead>
+                                <tr>
+                                    <th>Zaman</th>
+                                    <th>Kaynak</th>
+                                    <th>Oturum</th>
+                                    <th>Eylem</th>
+                                    <th>Sistem / FPS</th>
+                                    <th>Detay</th>
+                                </tr>
+                            </thead>
+                            <tbody id="log-body">
+                                <!-- Logs will be injected here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <aside class="details-panel" id="details-panel">
+                    <h3>Sistem Detayları</h3>
+                    <div id="system-details-content">
+                        <p class="placeholder">Bir log seçerek detayları görüntüleyin.</p>
+                    </div>
+                </aside>
+            </main>
+        </div>
+
+        <div id="management-view" class="tab-view" style="display: none; flex: 1; padding: 20px; overflow-y: auto;">
+            <div class="management-grid">
+                <!-- Yönetim araçları buraya gelecek -->
+                <div class="management-card">
+                    <h3>✨ Özellik Kontrol Paneli</h3>
+                    <p>Uygulama özelliklerini uzaktan yönetin.</p>
+                    <div class="control-list">
+                        <div class="control-item">
+                            <span>Ölçüm Araçları</span>
+                            <label class="switch"><input type="checkbox" checked
+                                    onchange="toggleFeature('measure')"><span class="slider"></span></label>
+                        </div>
+                        <div class="control-item">
+                            <span>Analiz Araçları</span>
+                            <label class="switch"><input type="checkbox" checked
+                                    onchange="toggleFeature('analysis')"><span class="slider"></span></label>
+                        </div>
+                        <div class="control-item">
+                            <span>Dosya İçe Aktarma</span>
+                            <label class="switch"><input type="checkbox" checked
+                                    onchange="toggleFeature('import')"><span class="slider"></span></label>
+                        </div>
+                    </div>
                 </div>
-            </aside>
-        </main>
+
+                <div class="management-card">
+                    <h3>📢 Sistem Duyurusu</h3>
+                    <p>Tüm aktif kullanıcılara anlık mesaj gönderin.</p>
+                    <textarea id="broadcast-msg" placeholder="Mesajınızı buraya yazın..."
+                        style="width:100%; height:80px; background:rgba(0,0,0,0.3); border:1px solid var(--border); border-radius:4px; color:#fff; padding:10px; margin:10px 0;"></textarea>
+                    <button class="btn-primary" onclick="sendBroadcast()" style="width:100%;">Duyuru Yayınla</button>
+                </div>
+
+                <div class="management-card">
+                    <h3>🧹 Bakım & Temizlik</h3>
+                    <p>Sistem verilerini ve logları yönetin.</p>
+                    <div style="display:flex; flex-direction:column; gap:10px; margin-top:15px;">
+                        <button class="btn-secondary" onclick="clearOldLogs()">30 Günden Eski Logları Sil</button>
+                        <button class="btn-secondary" onclick="reloadAllClients()"
+                            style="color:#ff4d4d; border-color:#ff4d4d;">Tüm İstemcileri Zorla Yenile</button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -137,14 +196,128 @@
                 localStorage.setItem('adminKey', key);
                 document.getElementById('access-overlay').style.display = 'none';
                 document.getElementById('admin-content').style.display = 'flex';
-
-                // Haritayı başlat
-                setTimeout(initMap, 100);
-                init();
-            } else if (!manualKey) {
-                document.getElementById('access-error').style.display = 'block';
+                initMap();
+                fetchInitialSessions();
+                setupRealtime();
+            } else {
+                alert('Geçersiz anahtar!');
             }
         };
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.nav-tab').forEach(tab => {
+                tab.classList.toggle('active', tab.onclick.toString().includes(`'${tabId}'`));
+            });
+
+            if (tabId === 'management') {
+                // Ekstra güvenlik kontrolü istenirse buraya eklenebilir
+                const managementKey = prompt('Yönetim Merkezi için yetki anahtarını girin:');
+                if (managementKey !== 'bursa16') {
+                    alert('Yetkisiz erişim!');
+                    return;
+                }
+            }
+
+            document.querySelectorAll('.tab-view').forEach(view => {
+                view.style.display = view.id === `${tabId}-view` ? (tabId === 'monitoring' ? 'block' : 'flex') : 'none';
+            });
+
+            if (tabId === 'monitoring') {
+                setTimeout(() => map && map.invalidateSize(), 100);
+            }
+        }
+
+        // Özellik Kontrolü (Global)
+        async function fetchFeatureFlags() {
+            const { data, error } = await supabaseAdmin
+                .from('system_controls')
+                .select('value')
+                .eq('key', 'feature_flags')
+                .single();
+
+            if (data && data.value) {
+                const flags = data.value;
+                document.querySelectorAll('.management-card input[type="checkbox"]').forEach(checkbox => {
+                    const feature = checkbox.getAttribute('onchange').match(/'([^']+)'/)[1];
+                    if (flags[feature] !== undefined) {
+                        checkbox.checked = flags[feature];
+                    }
+                });
+            }
+        }
+
+        async function toggleFeature(feature) {
+            const { data: current, error: fetchError } = await supabaseAdmin
+                .from('system_controls')
+                .select('value')
+                .eq('key', 'feature_flags')
+                .single();
+
+            if (current) {
+                const newFlags = { ...current.value, [feature]: !current.value[feature] };
+                const { error: updateError } = await supabaseAdmin
+                    .from('system_controls')
+                    .update({ value: newFlags, updated_at: new Date().toISOString() })
+                    .eq('key', 'feature_flags');
+
+                if (updateError) alert('Hata: ' + updateError.message);
+                else console.log(`${feature} durumu güncellendi:`, newFlags[feature]);
+            }
+        }
+
+        async function sendBroadcast() {
+            const msgInput = document.getElementById('broadcast-msg');
+            const msg = msgInput.value;
+            if (!msg) return;
+
+            const channel = supabaseAdmin.channel('system-commands');
+            await channel.subscribe(async (status) => {
+                if (status === 'SUBSCRIBED') {
+                    await channel.send({
+                        type: 'broadcast',
+                        event: 'message',
+                        payload: { msg: msg }
+                    });
+                    console.log(`Broadcasting: ${msg}`);
+                    msgInput.value = '';
+                    alert('Duyuru tüm istemcilere gönderildi!');
+                }
+            });
+        }
+
+        async function reloadAllClients() {
+            if (confirm('Tüm aktif kullanıcılarda sayfa yenilenecek. Emin misiniz?')) {
+                const channel = supabaseAdmin.channel('system-commands');
+                await channel.subscribe(async (status) => {
+                    if (status === 'SUBSCRIBED') {
+                        await channel.send({
+                            type: 'broadcast',
+                            event: 'reload',
+                            payload: {}
+                        });
+                        alert('Yenileme komutu gönderildi!');
+                    }
+                });
+            }
+        }
+
+        async function clearOldLogs() {
+            if (confirm('30 günden eski tüm telemetri kayıtları silinecek. Emin misiniz?')) {
+                const thirtyDaysAgo = new Date();
+                thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+                const { data, error, count } = await supabaseAdmin
+                    .from('telemetry_logs')
+                    .delete({ count: 'exact' })
+                    .lt('created_at', thirtyDaysAgo.toISOString());
+
+                if (error) {
+                    alert('Hata oluştu: ' + error.message);
+                } else {
+                    alert(`${count || 0} adet eski log başarıyla temizlendi.`);
+                }
+            }
+        }
 
         function initMap() {
             map = L.map('map').setView([40.1885, 29.0610], 12); // Bursa merkez
@@ -157,6 +330,9 @@
         document.addEventListener('DOMContentLoaded', () => {
             const savedKey = localStorage.getItem('adminKey');
             if (savedKey) checkAccess(savedKey);
+
+            // Yönetim Merkezi verilerini çek
+            fetchFeatureFlags();
 
             // Periyodik temizlik ve aktif oturum sayısını güncelle
             setInterval(updateActiveSessionStats, 10000);

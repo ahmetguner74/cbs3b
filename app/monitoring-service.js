@@ -87,6 +87,7 @@
             this.startHeartbeat();
             this.cacheStaticInfo();
             this.setupInteractionTracking();
+            this.setupSystemControls();
         },
 
         cacheStaticInfo: function () {
@@ -125,6 +126,82 @@
                     });
                 }
             }, true);
+        },
+
+        setupSystemControls: function () {
+            if (!supabaseClient) return;
+
+            // 1. Initial Fetch of Feature Flags
+            this.updateFeatureFlags();
+
+            // 2. Realtime Table Subscription (Persistent Changes)
+            const controlsSubscription = supabaseClient
+                .channel('public:system_controls')
+                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'system_controls' }, payload => {
+                    if (payload.new.key === 'feature_flags') {
+                        this.applyFeatureFlags(payload.new.value);
+                    }
+                })
+                .subscribe();
+
+            // 3. Broadcast Channel (Transient Commands: reload, message)
+            const commandChannel = supabaseClient.channel('system-commands');
+
+            commandChannel
+                .on('broadcast', { event: 'reload' }, () => {
+                    console.log('%c[Monitoring] Uzak sunucudan yenileme komutu alındı!', 'color: #ef4444; font-weight: bold;');
+                    location.reload();
+                })
+                .on('broadcast', { event: 'message' }, ({ payload }) => {
+                    this.showBroadcastMessage(payload.msg);
+                })
+                .subscribe();
+        },
+
+        updateFeatureFlags: async function () {
+            const { data, error } = await supabaseClient
+                .from('system_controls')
+                .select('value')
+                .eq('key', 'feature_flags')
+                .single();
+
+            if (data) {
+                this.applyFeatureFlags(data.value);
+            }
+        },
+
+        applyFeatureFlags: function (flags) {
+            console.log('[Monitoring] Uygulanan Özellikler:', flags);
+            // feature-toggle CSS class'ına sahip elemanları yönet
+            // Örn: <div class="feature-toggle" data-feature="measure">...</div>
+            document.querySelectorAll('[data-feature]').forEach(el => {
+                const feature = el.getAttribute('data-feature');
+                if (flags[feature] === false) {
+                    el.style.display = 'none';
+                } else {
+                    el.style.display = '';
+                }
+            });
+        },
+
+        showBroadcastMessage: function (msg) {
+            // Basit bir duyuru barı oluştur veya var olanı güncelle
+            let alertBar = document.getElementById('system-alert-bar');
+            if (!alertBar) {
+                alertBar = document.createElement('div');
+                alertBar.id = 'system-alert-bar';
+                alertBar.style = 'position:fixed; top:0; left:0; width:100%; padding:15px; background:#f59e0b; color:#000; text-align:center; font-weight:bold; z-index:99999; animation: slideDown 0.5s ease-out;';
+                document.body.appendChild(alertBar);
+
+                const closeBtn = document.createElement('span');
+                closeBtn.innerHTML = ' &times;';
+                closeBtn.style = 'margin-left:20px; cursor:pointer; font-size:1.5rem;';
+                closeBtn.onclick = () => alertBar.remove();
+                alertBar.appendChild(closeBtn);
+            }
+            alertBar.innerHTML = `📢 ${msg}`;
+            // 10 saniye sonra kapat (opsiyonel)
+            // setTimeout(() => alertBar.remove(), 10000);
         },
 
         startHeartbeat: function () {
