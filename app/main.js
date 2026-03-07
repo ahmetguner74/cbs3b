@@ -948,33 +948,11 @@ var ClipBoxManager = {
 
 // ── CLIPBOX EVENT BAĞLANTILARI ──────────────────────────────
 (function () {
-	// ── Mini Panel Slider Handler'ları ──
-	var sliderThrottleId = null;
-	['X', 'Y', 'Z'].forEach(function (axis) {
-		var slider = document.getElementById('clipMini' + axis);
-		var valLabel = document.getElementById('clipMini' + axis + 'Val');
-		if (!slider || !valLabel) return;
-
-		// input: sürüklerken — sadece tileset + wireframe güncelle (hızlı)
-		slider.addEventListener('input', function () {
-			var val = parseInt(slider.value);
-			valLabel.textContent = val + 'm';
-			if (sliderThrottleId) return;
-			sliderThrottleId = requestAnimationFrame(function () {
-				sliderThrottleId = null;
-				ClipBoxManager._updateSize(axis.toLowerCase(), val, false);
-			});
-		});
-
-		// change: slider bırakıldığında — entity kırpmayı da güncelle
-		slider.addEventListener('change', function () {
-			var val = parseInt(slider.value);
-			ClipBoxManager._updateSize(axis.toLowerCase(), val, true);
-		});
-	});
+	// ── Slider artık pointer-events:none ile sadece görsel — drag event'leri kaldırıldı
+	// Slider değerleri yalnızca +/- butonlarından güncellenir (requestRender emniyetli)
 
 	// ── ± Buton Handler'ları ──
-	var pmBtns = document.querySelectorAll('.clip-pm-btn');
+	var pmBtns = document.querySelectorAll('.clip-pm-btn-lg');
 	pmBtns.forEach(function (btn) {
 		btn.addEventListener('click', function () {
 			var axis = btn.getAttribute('data-axis');
@@ -1016,6 +994,20 @@ var ClipBoxManager = {
 		flyBtn.addEventListener('click', function () {
 			if (ClipBoxManager._worldCenter) {
 				ClipBoxManager._flyToBox(ClipBoxManager._worldCenter);
+			}
+		});
+	}
+
+	// Küçült butonu
+	var minimizeBtn = document.getElementById('clipMiniMinimize');
+	if (minimizeBtn) {
+		minimizeBtn.addEventListener('click', function () {
+			var panel = document.getElementById('clipMiniPanel');
+			var icon = minimizeBtn.querySelector('.material-symbols-outlined');
+			if (panel.classList.toggle('minimized')) {
+				if (icon) icon.textContent = 'add';
+			} else {
+				if (icon) icon.textContent = 'remove';
 			}
 		});
 	}

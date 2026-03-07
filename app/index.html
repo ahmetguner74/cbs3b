@@ -1252,6 +1252,7 @@
 				flex-shrink: 0;
 			}
 
+			/* Slider: sadece görsel progress bar, sürükleme kapalı */
 			.clip-mini-slider {
 				flex: 1;
 				-webkit-appearance: none;
@@ -1260,28 +1261,63 @@
 				border-radius: 2px;
 				background: var(--bg-elevated);
 				outline: none;
-				cursor: pointer;
+				cursor: default;
+				pointer-events: none;
+				/* Sürüklemeyi tamamen kapat */
 			}
 
 			.clip-mini-slider::-webkit-slider-thumb {
 				-webkit-appearance: none;
-				width: 12px;
-				height: 12px;
+				width: 10px;
+				height: 10px;
 				border-radius: 50%;
 				background: #06b6d4;
 				border: 2px solid var(--bg-surface);
 				box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-				cursor: grab;
+				cursor: default;
 			}
 
 			.clip-mini-slider::-moz-range-thumb {
-				width: 12px;
-				height: 12px;
+				width: 10px;
+				height: 10px;
 				border-radius: 50%;
 				background: #06b6d4;
 				border: 2px solid var(--bg-surface);
 				box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-				cursor: grab;
+				cursor: default;
+			}
+
+			#clipMiniPanel.minimized .clip-mini-body {
+				display: none;
+			}
+
+			#clipMiniPanel.minimized {
+				min-width: auto;
+			}
+
+			.clip-pm-btn-lg {
+				width: 24px;
+				height: 24px;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				border-radius: 5px;
+				border: 1px solid var(--border);
+				background: var(--bg-elevated);
+				color: var(--text-secondary);
+				font-size: 14px;
+				font-weight: 700;
+				cursor: pointer;
+				flex-shrink: 0;
+				transition: all 0.15s;
+				padding: 0;
+				line-height: 1;
+			}
+
+			.clip-pm-btn-lg:hover {
+				background: #06b6d4;
+				color: #fff;
+				border-color: #06b6d4;
 			}
 
 			.clip-mini-val {
@@ -1354,41 +1390,48 @@
 						style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-primary)">Kırpma
 						Kutusu</span>
 				</div>
-				<button id="clipMiniClose" class="clip-mini-btn danger" style="padding:2px 5px">
-					<span class="material-symbols-outlined text-[12px]">close</span>
-				</button>
+				<div style="display:flex;gap:3px">
+					<button id="clipMiniMinimize" class="clip-mini-btn" style="padding:2px 5px" title="Küçült / Büyüt">
+						<span class="material-symbols-outlined text-[12px]">remove</span>
+					</button>
+					<button id="clipMiniClose" class="clip-mini-btn danger" style="padding:2px 5px" title="Kapat">
+						<span class="material-symbols-outlined text-[12px]">close</span>
+					</button>
+				</div>
 			</div>
-			<div
-				style="font-size:7px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:3px">
-				Boyut (metre)</div>
-			<div class="clip-mini-row">
-				<span class="clip-mini-label" style="color:#ef4444">X</span>
-				<button class="clip-pm-btn" data-axis="X" data-dir="-1">−</button>
-				<input type="range" class="clip-mini-slider" id="clipMiniX" min="5" max="100" value="30">
-				<button class="clip-pm-btn" data-axis="X" data-dir="1">+</button>
-				<span class="clip-mini-val" id="clipMiniXVal">30m</span>
-			</div>
-			<div class="clip-mini-row">
-				<span class="clip-mini-label" style="color:#22c55e">Y</span>
-				<button class="clip-pm-btn" data-axis="Y" data-dir="-1">−</button>
-				<input type="range" class="clip-mini-slider" id="clipMiniY" min="5" max="100" value="30">
-				<button class="clip-pm-btn" data-axis="Y" data-dir="1">+</button>
-				<span class="clip-mini-val" id="clipMiniYVal">30m</span>
-			</div>
-			<div class="clip-mini-row">
-				<span class="clip-mini-label" style="color:#3b82f6">Z</span>
-				<button class="clip-pm-btn" data-axis="Z" data-dir="-1">−</button>
-				<input type="range" class="clip-mini-slider" id="clipMiniZ" min="5" max="100" value="30">
-				<button class="clip-pm-btn" data-axis="Z" data-dir="1">+</button>
-				<span class="clip-mini-val" id="clipMiniZVal">30m</span>
-			</div>
-			<div style="display:flex;gap:4px;margin-top:6px">
-				<button id="clipMiniReset" class="clip-mini-btn" style="flex:1">
-					<span class="material-symbols-outlined text-[12px]">restart_alt</span> Sıfırla
-				</button>
-				<button id="clipMiniFlyTo" class="clip-mini-btn" style="flex:1">
-					<span class="material-symbols-outlined text-[12px]">flight</span> Odakla
-				</button>
+			<div class="clip-mini-body">
+				<div
+					style="font-size:7px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:6px">
+					Boyut (metre) — 5m adım</div>
+				<div class="clip-mini-row">
+					<span class="clip-mini-label" style="color:#ef4444">X</span>
+					<button class="clip-pm-btn-lg" data-axis="X" data-dir="-1">−</button>
+					<input type="range" class="clip-mini-slider" id="clipMiniX" min="5" max="100" value="30">
+					<button class="clip-pm-btn-lg" data-axis="X" data-dir="1">+</button>
+					<span class="clip-mini-val" id="clipMiniXVal">30m</span>
+				</div>
+				<div class="clip-mini-row">
+					<span class="clip-mini-label" style="color:#22c55e">Y</span>
+					<button class="clip-pm-btn-lg" data-axis="Y" data-dir="-1">−</button>
+					<input type="range" class="clip-mini-slider" id="clipMiniY" min="5" max="100" value="30">
+					<button class="clip-pm-btn-lg" data-axis="Y" data-dir="1">+</button>
+					<span class="clip-mini-val" id="clipMiniYVal">30m</span>
+				</div>
+				<div class="clip-mini-row">
+					<span class="clip-mini-label" style="color:#3b82f6">Z</span>
+					<button class="clip-pm-btn-lg" data-axis="Z" data-dir="-1">−</button>
+					<input type="range" class="clip-mini-slider" id="clipMiniZ" min="5" max="100" value="30">
+					<button class="clip-pm-btn-lg" data-axis="Z" data-dir="1">+</button>
+					<span class="clip-mini-val" id="clipMiniZVal">30m</span>
+				</div>
+				<div style="display:flex;gap:4px;margin-top:6px">
+					<button id="clipMiniReset" class="clip-mini-btn" style="flex:1">
+						<span class="material-symbols-outlined text-[12px]">restart_alt</span> Sıfırla
+					</button>
+					<button id="clipMiniFlyTo" class="clip-mini-btn" style="flex:1">
+						<span class="material-symbols-outlined text-[12px]">flight</span> Odakla
+					</button>
+				</div>
 			</div>
 		</div>
 
