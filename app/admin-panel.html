@@ -100,6 +100,7 @@
         const supabaseAdmin = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         let sessions = new Set();
+        let sessionActivity = {}; // Track last seen time
         let logs = [];
         let selectedSession = null;
         let map, markers = {};
@@ -130,7 +131,30 @@
         document.addEventListener('DOMContentLoaded', () => {
             const savedKey = localStorage.getItem('adminKey');
             if (savedKey) checkAccess(savedKey);
+
+            // Periyodik temizlik ve aktif oturum sayısını güncelle
+            setInterval(updateActiveSessionStats, 10000);
         });
+
+        function updateActiveSessionStats() {
+            const now = Date.now();
+            let activeCount = 0;
+            const expiryTime = 5 * 60 * 1000; // 5 dakika
+
+            for (const sid in sessionActivity) {
+                if (now - sessionActivity[sid] < expiryTime) {
+                    activeCount++;
+                } else if (now - sessionActivity[sid] > 30 * 60 * 1000) {
+                    // 30 dakikadır ses yoksa marker'ı kaldır (tercihe bağlı)
+                    if (markers[sid]) {
+                        map.removeLayer(markers[sid]);
+                        if (markers[sid].headingLine) map.removeLayer(markers[sid].headingLine);
+                        delete markers[sid];
+                    }
+                }
+            }
+            document.getElementById('session-count').innerText = activeCount;
+        }
 
         async function init() {
             // Mevcut verileri çek
@@ -156,6 +180,7 @@
         function addLogToUI(log) {
             logs.push(log);
             sessions.add(log.session_id);
+            sessionActivity[log.session_id] = new Date(log.created_at).getTime();
             updateSessionList();
 
             if (selectedSession && log.session_id !== selectedSession) return;
@@ -174,7 +199,7 @@
                 <td class="session-cell" title="${log.session_id}">${log.session_id.substring(8, 16)}...</td>
                 <td><strong>${log.action}</strong></td>
                 <td><span style="color:${fpsColor}">${log.fps} FPS</span> | ${log.system_info?.gpu?.split('(')[0] || 'N/A'}</td>
-                <td><button class="btn-info" onclick='showLogDetails(${JSON.stringify(log)})'>🔍 İncele</button></td>
+                <td><button class="btn-info" onclick='showDetails(${JSON.stringify(log)})'>🔍 İncele</button></td>
             `;
 
             tbody.insertBefore(tr, tbody.firstChild);
@@ -182,7 +207,7 @@
             // Limit UI items
             if (tbody.children.length > 200) tbody.removeChild(tbody.lastChild);
 
-            document.getElementById('session-count').innerText = sessions.size;
+            // Limits: do not update session-count here, let updateActiveSessionStats handle it
             updateErrorRate();
             updateMarkers(log);
         }
@@ -195,24 +220,49 @@
             const cam = log.system_info.camera;
 
             // Son aktiflik zamanını kontrol et (1 dakika pasifse gri yap)
-            const isPassive = (new Date() - new Date(log.created_at)) > 60000;
+            const logTime = new Date(log.created_at);
+            const now = new Date();
+            const isPassive = (now - logTime) > 60000;
+            const isVeryOld = (now - logTime) > 300000; // 5 dakika
+
             const lowPerf = log.fps < 20;
-            const color = log.is_error ? '#ef4444' : (lowPerf ? '#f59e0b' : (isPassive ? '#94a3b8' : '#22c55e'));
+            const color = log.is_error ? '#ef4444' : (lowPerf ? '#f59e0b' : (isVeryOld ? '#4b5563' : (isPassive ? '#94a3b8' : '#22c55e')));
+
+            const search = document.getElementById('session-search').value.toLowerCase();
+            const matchesSearch = !search || sid.toLowerCase().includes(search);
 
             if (markers[sid]) {
-                markers[sid].setLatLng([loc.lat, loc.lng]);
-                markers[sid].setStyle({ color: color, fillColor: color });
-                if (cam && markers[sid].headingLine) {
-                    updateHeadingLine(markers[sid], loc, cam.heading);
+                if (!matchesSearch) {
+                    map.removeLayer(markers[sid]);
+                    if (markers[sid].headingLine) map.removeLayer(markers[sid].headingLine);
+                } else {
+                    if (!map.hasLayer(markers[sid])) {
+                        markers[sid].addTo(map);
+                        if (markers[sid].headingLine) markers[sid].headingLine.addTo(map);
+                    }
+                    markers[sid].setLatLng([loc.lat, loc.lng]);
+                    markers[sid].setStyle({
+                        color: color,
+                        fillColor: color,
+                        dashArray: loc.isApprox ? '3, 3' : null
+                    });
+
+                    const locInfo = loc.isApprox ? `<br><b>Konum:</b> ${loc.city || ''} (Yaklaşık)` : '';
+                    markers[sid].setPopupContent(`<b>Oturum:</b> ${sid.substring(8, 16)}...${locInfo}<br><b>Eylem:</b> ${log.action}`);
+
+                    if (cam && markers[sid].headingLine) {
+                        updateHeadingLine(markers[sid], loc, cam.heading);
+                    }
                 }
-            } else {
+            } else if (matchesSearch) {
                 markers[sid] = L.circleMarker([loc.lat, loc.lng], {
                     radius: 8,
                     fillColor: color,
                     color: "#fff",
                     weight: 2,
                     opacity: 1,
-                    fillOpacity: 0.8
+                    fillOpacity: 0.8,
+                    dashArray: loc.isApprox ? '3, 3' : null
                 }).addTo(map);
 
                 if (cam) {
@@ -238,58 +288,94 @@
             document.getElementById('current-session-title').innerText = sid ? `Oturum: ${sid}` : 'Genel Akış (Tüm Oturumlar)';
             document.getElementById('log-body').innerHTML = '';
 
-            // Mevcut logları temizle ve filtreye göre yeniden ekle (En yeni en üstte)
             const filteredLogs = logs
                 .filter(l => !sid || l.session_id === sid)
                 .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
-            filteredLogs.forEach(l => {
-                const tbody = document.getElementById('log-body');
-                const tr = document.createElement('tr');
-                if (l.is_error) tr.classList.add('error-row');
-
-                const time = new Date(l.created_at).toLocaleTimeString();
-                const fpsColor = l.fps < 30 ? '#ff4d4d' : (l.fps < 50 ? '#ffcc00' : '#00ff88');
-                const sourceClass = l.system_info?.source === 'Local' ? 'badge-local' : 'badge-live';
-
-                tr.innerHTML = `
-                    <td>${time}</td>
-                    <td><span class="badge ${sourceClass}">${l.system_info?.source || 'N/A'}</span></td>
-                    <td class="session-cell" title="${l.session_id}">${l.session_id.substring(8, 16)}...</td>
-                    <td><strong>${l.action}</strong></td>
-                    <td><span style="color:${fpsColor}">${l.fps} FPS</span> | ${l.system_info?.gpu?.split('(')[0] || 'N/A'}</td>
-                    <td><button class="btn-info" onclick='showDetails(${JSON.stringify(l)})'>🔍 İncele</button></td>
-                `;
-                tbody.appendChild(tr);
-            });
+            filteredLogs.forEach(l => addLogToTable(l));
             updateSessionList();
+        }
+
+        function addLogToTable(l) {
+            const tbody = document.getElementById('log-body');
+            const tr = document.createElement('tr');
+            if (l.is_error) tr.classList.add('error-row');
+
+            const time = new Date(l.created_at).toLocaleTimeString();
+            const fpsColor = l.fps < 30 ? '#ff4d4d' : (l.fps < 50 ? '#ffcc00' : '#00ff88');
+            const sourceClass = l.system_info?.source === 'Local' ? 'badge-local' : 'badge-live';
+
+            tr.innerHTML = `
+                <td>${time}</td>
+                <td><span class="badge ${sourceClass}">${l.system_info?.source || 'N/A'}</span></td>
+                <td class="session-cell" title="${l.session_id}">${l.session_id.substring(8, 16)}...</td>
+                <td><strong>${l.action}</strong></td>
+                <td><span style="color:${fpsColor}">${l.fps} FPS</span> | ${l.system_info?.gpu?.split('(')[0] || 'N/A'}</td>
+                <td><button class="btn-info" onclick='showDetails(${JSON.stringify(l)})'>🔍 İncele</button></td>
+            `;
+            tbody.appendChild(tr);
         }
 
         function updateSessionList() {
             const list = document.getElementById('session-list');
+            const search = document.getElementById('session-search').value.toLowerCase();
             list.innerHTML = `<li class="${!selectedSession ? 'active' : ''}" onclick="filterSession(null)">🌐 Tüm Akış</li>`;
 
-            // Oturumları haritalandır (son durumu ve hata var mı bilgisini tut)
+            const now = Date.now();
             const sessionMap = {};
             logs.forEach(l => {
                 if (!sessionMap[l.session_id]) {
-                    sessionMap[l.session_id] = { hasError: false, lastSeen: l.created_at };
+                    sessionMap[l.session_id] = { hasError: false, lastSeen: new Date(l.created_at).getTime() };
                 }
                 if (l.is_error) sessionMap[l.session_id].hasError = true;
-                if (new Date(l.created_at) > new Date(sessionMap[l.session_id].lastSeen)) {
-                    sessionMap[l.session_id].lastSeen = l.created_at;
+                const logTime = new Date(l.created_at).getTime();
+                if (logTime > sessionMap[l.session_id].lastSeen) {
+                    sessionMap[l.session_id].lastSeen = logTime;
                 }
             });
 
-            Object.keys(sessionMap).sort((a, b) => new Date(sessionMap[b].lastSeen) - new Date(sessionMap[a].lastSeen)).forEach(sid => {
-                const li = document.createElement('li');
-                li.className = sid === selectedSession ? 'active' : '';
-                const statusIcon = sessionMap[sid].hasError ? '⚠️' : '👤';
-                li.innerHTML = `${statusIcon} ${sid.substring(8, 20)}...`;
-                li.onclick = () => filterSession(sid);
-                list.appendChild(li);
-            });
+            Object.keys(sessionMap)
+                .sort((a, b) => sessionMap[b].lastSeen - sessionMap[a].lastSeen)
+                .forEach(sid => {
+                    if (search && !sid.toLowerCase().includes(search)) {
+                        if (markers[sid]) markers[sid].remove(); // Hide marker if searched
+                        return;
+                    }
+
+                    const li = document.createElement('li');
+                    li.className = sid === selectedSession ? 'active' : '';
+
+                    const timeDiff = now - sessionMap[sid].lastSeen;
+                    const isActive = timeDiff < 60000; // 1 dakika
+                    const isPassive = timeDiff < 300000; // 5 dakika
+                    const statusColor = isActive ? '#22c55e' : (isPassive ? '#94a3b8' : '#4b5563');
+                    const statusDot = `<span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${statusColor}; margin-right:8px;"></span>`;
+
+                    const errorIcon = sessionMap[sid].hasError ? '⚠️ ' : '';
+                    li.innerHTML = `${statusDot}${errorIcon}${sid.substring(8, 20)}...`;
+                    li.onclick = () => filterSession(sid);
+                    list.appendChild(li);
+                });
         }
+
+        // Search and Clear Listeners
+        document.getElementById('session-search').addEventListener('input', () => {
+            updateSessionList();
+            updateMarkers(); // Re-filter markers
+        });
+        document.getElementById('clear-logs').addEventListener('click', () => {
+            logs = [];
+            sessions.clear();
+            sessionActivity = {};
+            document.getElementById('log-body').innerHTML = '';
+            for (let sid in markers) {
+                map.removeLayer(markers[sid]);
+                if (markers[sid].headingLine) map.removeLayer(markers[sid].headingLine);
+            }
+            markers = {};
+            updateSessionList();
+            updateActiveSessionStats();
+        });
 
         const ERROR_DICTIONARY = {
             'Uncaught ReferenceError': { tr: 'Tanımlanmamış Değişken Hatası', solution: 'Kod içerisinde var olmayan bir değişkene erişilmeye çalışılıyor. Değişkenin tanımlandığından emin olun.' },
@@ -335,14 +421,48 @@
                 </div>
 
                 <div class="detail-group">
-                    <h4>Sistem Bilgisi</h4>
+                    <h4>💻 Sistem & Cihaz Gücü</h4>
                     <div class="info-grid">
-                        <div class="info-item"><span>Platform</span><strong>${log.system_info?.platform}</strong></div>
-                        <div class="info-item"><span>Ekran</span><strong>${log.system_info?.screen}</strong></div>
-                        <div class="info-item"><span>GPU</span><strong>${log.system_info?.gpu?.substring(0, 30)}...</strong></div>
-                        <div class="info-item"><span>Bellek</span><strong>${log.system_info?.memory}</strong></div>
+                        <div class="info-item"><span>İşletim Sistemi</span><strong>${log.system_info?.platform || 'Bilinmiyor'}</strong></div>
+                        <div class="info-item"><span>İşlemci Gücü</span><strong>${log.system_info?.cores} Çekirdek</strong></div>
+                        <div class="info-item"><span>Bellek Kapasitesi</span><strong>${log.system_info?.memory} GB</strong></div>
+                        <div class="info-item"><span>Ekran Çözünürlüğü</span><strong>${log.system_info?.screen}</strong></div>
+                        <div class="info-item" style="grid-column: span 2;"><span>Ekran Kartı (GPU)</span><strong>${log.system_info?.gpu?.substring(0, 60)}...</strong></div>
                     </div>
                 </div>
+                
+                <div class="detail-group">
+                    <h4>🌐 İnternet & Bağlantı</h4>
+                    <div class="info-grid">
+                        <div class="info-item"><span>Durum</span><strong>${log.system_info?.connection?.status === 'Online' ? 'Bağlı' : 'Çevrimdışı'}</strong></div>
+                        <div class="info-item"><span>Bağlantı Tipi</span><strong>${log.system_info?.connection?.type || 'Bilinmiyor'}</strong></div>
+                        <div class="info-item"><span>Tahmini Hız</span><strong>${log.system_info?.connection?.downlink} Mbps</strong></div>
+                        <div class="info-item"><span>Gecikme (Ping)</span><strong>${log.system_info?.connection?.rtt} ms</strong></div>
+                        <div class="info-item" style="grid-column: span 2;"><span>Konum</span><strong>${log.system_info?.location?.city || (log.system_info?.location?.isApprox ? 'Yaklaşık' : 'N/A')} ${log.system_info?.location?.country ? `(${log.system_info.location.country})` : ''}</strong></div>
+                    </div>
+                </div>
+
+                <div class="detail-group">
+                    <h4>📦 Hafıza & Uygulama Durumu</h4>
+                    <div class="info-grid">
+                        <div class="info-item"><span>Tarayıcı Depolama</span><strong>${log.system_info?.storage?.localStorage}</strong></div>
+                        <div class="info-item"><span>Veritabanı (IDB)</span><strong>${log.system_info?.storage?.indexedDB ? 'Çalışıyor' : 'Durduruldu'}</strong></div>
+                        <div class="info-item"><span>Sayfa Konumu</span><strong>${log.system_info?.page?.visible ? 'Ön Planda (Aktif)' : 'Sekme Arkasında'}</strong></div>
+                        <div class="info-item"><span>Oturum Süresi</span><strong>${log.system_info?.page?.duration}</strong></div>
+                    </div>
+                </div>
+
+                ${log.system_info?.scene ? `
+                <div class="detail-group">
+                    <h4>🎮 3D Harita Detayları</h4>
+                    <div class="info-grid">
+                        <div class="info-item"><span>Temel Çizimler</span><strong>${log.system_info.scene.primitives} Adet</strong></div>
+                        <div class="info-item"><span>Zemin Kaplamaları</span><strong>${log.system_info.scene.groundPrimitives}</strong></div>
+                        <div class="info-item"><span>Toplam Nesne</span><strong>${log.system_info.scene.objects}</strong></div>
+                        <div class="info-item"><span>Video Bellek (Tex)</span><strong>${log.system_info.scene.vram}</strong></div>
+                    </div>
+                </div>
+                ` : ''}
             `;
         };
 
