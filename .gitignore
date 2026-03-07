@@ -1,6 +1,12 @@
 # Logo tasarım dosyaları
 logo/
 
+# İçe aktarma test verileri (büyük dosyalar)
+import/
+
+# Lokal çalıştırma scripti
+serve.bat
+
 # CesiumJS kütüphanesi (CDN'den yükleniyor)
 app/Cesium/
 

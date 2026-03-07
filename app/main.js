@@ -387,6 +387,608 @@ Cesium.Cesium3DTileset.fromUrl("../Scene/merinos1.json", {
 	}
 });
 
+// ═══════════════════════════════════════════════════════════════
+// CLIPBOX — KIRPMA KUTUSU (Faz 1)
+// Cesium ClippingPlaneCollection — 6 düzlemli kutu kırpma
+// ✂️ tıkla → haritaya tıkla → 30×30×30 kutu anında oluşur
+// Koordinat sistemi: tileset boundingSphere merkezi ENU
+// ═══════════════════════════════════════════════════════════════
+var ClipBoxManager = {
+	active: false,
+	_placementMode: false,
+	_clickHandler: null,
+	_escHandler: null,
+
+	// Kutu boyutları (metre)
+	_halfSize: { x: 15, y: 15, z: 15 },
+
+	// Clipping planes modelMatrix
+	_clipModelMatrix: null,
+	// Tıklanan world pozisyonu
+	_worldCenter: null,
+	// ENU matrisi (vektör kırpma için)
+	_enuAtClick: null,
+	// Wireframe entity'leri
+	_wireframeEntities: [],
+	// Gizlenen entity'ler (vektör kırpma)
+	_hiddenEntities: [],
+	// Gizlenen primitives (referans + ölçüm)
+	_hiddenPrimitives: [],
+
+	// ── AKTİVASYON: YERLEŞTİRME MODUNA GİR ─────────────────
+	activate: function () {
+		if (!tileset) {
+			console.warn('ClipBox: Tileset henüz yüklenmedi.');
+			return;
+		}
+
+		// Zaten aktifse veya placement modundaysa → kapat
+		if (this.active || this._placementMode) {
+			this.deactivate();
+			return;
+		}
+
+		this._placementMode = true;
+
+		// Cursor crosshair + buton aktif
+		viewer.canvas.style.cursor = 'crosshair';
+		var btn = document.getElementById('btnClipBox');
+		if (btn) btn.classList.add('active');
+
+		// İpucu mesajı
+		var rd = document.getElementById('resultDisplay');
+		if (rd) {
+			rd.style.display = '';
+			var rdDiv = rd.querySelector('div');
+			if (rdDiv) rdDiv.textContent = '✂️ Kırpma noktası seçmek için haritaya tıklayın';
+		}
+
+		// Harita tıklama handler
+		var self = this;
+		if (this._clickHandler) {
+			this._clickHandler.destroy();
+			this._clickHandler = null;
+		}
+		this._clickHandler = new Cesium.ScreenSpaceEventHandler(viewer.canvas);
+		this._clickHandler.setInputAction(function (click) {
+			self._onMapClick(click);
+		}, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+		// ESC ile iptal
+		this._escHandler = function (e) {
+			if (e.key === 'Escape') self.deactivate();
+		};
+		document.addEventListener('keydown', this._escHandler);
+
+		TelemetryManager.addLog('ClipBox: Yerleştirme modu');
+	},
+
+	// ── HARİTAYA TIKLANDIĞINDA ──────────────────────────────
+	_onMapClick: function (click) {
+		if (!this._placementMode) return;
+
+		// pickPosition için depth test geçici olarak aç
+		var prevDepth = viewer.scene.globe.depthTestAgainstTerrain;
+		viewer.scene.globe.depthTestAgainstTerrain = true;
+
+		// 3D pozisyon al
+		var worldPos = viewer.scene.pickPosition(click.position);
+		if (!Cesium.defined(worldPos) || Cesium.Cartesian3.equals(worldPos, Cesium.Cartesian3.ZERO)) {
+			var ray = viewer.camera.getPickRay(click.position);
+			if (ray) worldPos = viewer.scene.globe.pick(ray, viewer.scene);
+		}
+		viewer.scene.globe.depthTestAgainstTerrain = prevDepth;
+
+		if (!Cesium.defined(worldPos)) {
+			console.warn('ClipBox: Pozisyon alınamadı, tekrar deneyin.');
+			return;
+		}
+
+		// ─── KOORDİNAT HESAPLAMA ─────────────────────────────
+		// Cesium resmi yöntemi: clippingPlanesOriginMatrix kullan
+		// modelMatrix = inverse(tileset.clippingPlanesOriginMatrix) * ENU(clickedPoint)
+		// Bu sayede plane'ler tıklanan noktada merkezlenir
+		var enuAtClick = Cesium.Transforms.eastNorthUpToFixedFrame(worldPos);
+		var inverseOrigin = Cesium.Matrix4.inverse(
+			tileset.clippingPlanesOriginMatrix, new Cesium.Matrix4()
+		);
+		this._clipModelMatrix = Cesium.Matrix4.multiply(
+			inverseOrigin, enuAtClick, new Cesium.Matrix4()
+		);
+
+		// Tıklanan world pozisyonunu sakla (wireframe + flyTo için)
+		this._worldCenter = Cesium.Cartesian3.clone(worldPos);
+
+		console.log('ClipBox: Yerleştirildi, modelMatrix hesaplandı');
+
+		// Yerleştirme bitir
+		this._placementMode = false;
+		this.active = true;
+		viewer.canvas.style.cursor = '';
+
+		// Click handler temizle
+		if (this._clickHandler) {
+			this._clickHandler.destroy();
+			this._clickHandler = null;
+		}
+
+		// ENU matrisi sakla (vektör kırpma için)
+		this._enuAtClick = enuAtClick;
+
+		// Kırpma uygula
+		this._applyClipping();
+
+		// Wireframe kutu çiz (vektör kırpmadan ÖNCE, böylece wireframe hariç tutulur)
+		this._drawWireframe(worldPos);
+
+		// Vektör verileri de kırp (wireframe'den SONRA çağır)
+		this._clipEntities();
+
+		// Mini panel göster
+		this._showMiniPanel();
+
+		// resultDisplay güncelle
+		var rd = document.getElementById('resultDisplay');
+		if (rd) {
+			rd.style.display = '';
+			var rdDiv = rd.querySelector('div');
+			if (rdDiv) rdDiv.textContent = '✂️ Kırpma aktif — kapatmak için ✂️ butonuna veya ESC\'e basın';
+		}
+
+		// Kamera kırpma bölgesine uçur
+		this._flyToBox(worldPos);
+
+		viewer.scene.requestRender();
+		TelemetryManager.addLog('ClipBox yerleştirildi');
+	},
+
+	// ── KIRPMA DÜZLEMLERİNİ UYGULA ──────────────────────────
+	_applyClipping: function () {
+		if (!tileset || !this._clipModelMatrix) return;
+
+		var hx = this._halfSize.x, hy = this._halfSize.y, hz = this._halfSize.z;
+
+		// Plane'ler orijin merkezli — modelMatrix zaten doğru noktaya taşıyor
+		// Her plane: normal dışarı bakıyor, distance = halfSize
+		// unionClippingRegions=true → herhangi bir plane'in dışındaki her şey kesilir
+		// Sonuç: sadece kutu İÇİ görünür
+		var planes = [
+			new Cesium.ClippingPlane(new Cesium.Cartesian3(1, 0, 0), hx),
+			new Cesium.ClippingPlane(new Cesium.Cartesian3(-1, 0, 0), hx),
+			new Cesium.ClippingPlane(new Cesium.Cartesian3(0, 1, 0), hy),
+			new Cesium.ClippingPlane(new Cesium.Cartesian3(0, -1, 0), hy),
+			new Cesium.ClippingPlane(new Cesium.Cartesian3(0, 0, 1), hz),
+			new Cesium.ClippingPlane(new Cesium.Cartesian3(0, 0, -1), hz),
+		];
+
+		// Önceki collection'ı güvenli şekilde temizle
+		try {
+			if (tileset.clippingPlanes && !tileset.clippingPlanes.isDestroyed()) {
+				tileset.clippingPlanes.enabled = false;
+			}
+		} catch (e) { /* ignore */ }
+
+		// Yeni collection oluştur
+		tileset.clippingPlanes = new Cesium.ClippingPlaneCollection({
+			planes: planes,
+			unionClippingRegions: true,
+			edgeColor: Cesium.Color.CYAN,
+			edgeWidth: 2.0,
+			modelMatrix: this._clipModelMatrix,
+			enabled: true
+		});
+	},
+
+	// ── WİREFRAME KUTU ÇİZ ──────────────────────────────────
+	_drawWireframe: function (worldCenter) {
+		this._clearWireframe();
+
+		var hx = this._halfSize.x, hy = this._halfSize.y, hz = this._halfSize.z;
+		var enu = Cesium.Transforms.eastNorthUpToFixedFrame(worldCenter);
+
+		// 8 köşe noktası (lokal ENU → world)
+		var corners = [
+			[-hx, -hy, -hz], [hx, -hy, -hz], [hx, hy, -hz], [-hx, hy, -hz], // alt
+			[-hx, -hy, hz], [hx, -hy, hz], [hx, hy, hz], [-hx, hy, hz], // üst
+		];
+
+		var worldCorners = [];
+		for (var i = 0; i < corners.length; i++) {
+			var local = new Cesium.Cartesian3(corners[i][0], corners[i][1], corners[i][2]);
+			worldCorners.push(Cesium.Matrix4.multiplyByPoint(enu, local, new Cesium.Cartesian3()));
+		}
+
+		// 12 kenar çizgisi
+		var edges = [
+			// Alt yüz
+			[0, 1], [1, 2], [2, 3], [3, 0],
+			// Üst yüz
+			[4, 5], [5, 6], [6, 7], [7, 4],
+			// Dikey kenarlar
+			[0, 4], [1, 5], [2, 6], [3, 7]
+		];
+
+		var edgeColor = Cesium.Color.CYAN.withAlpha(0.85);
+
+		for (var e = 0; e < edges.length; e++) {
+			var a = worldCorners[edges[e][0]];
+			var b = worldCorners[edges[e][1]];
+			var ent = viewer.entities.add({
+				polyline: {
+					positions: [a, b],
+					width: 2,
+					material: edgeColor,
+					clampToGround: false,
+					arcType: Cesium.ArcType.NONE
+				}
+			});
+			this._wireframeEntities.push(ent);
+		}
+	},
+
+	// ── WİREFRAME TEMİZLE ────────────────────────────────────
+	_clearWireframe: function () {
+		for (var i = 0; i < this._wireframeEntities.length; i++) {
+			viewer.entities.remove(this._wireframeEntities[i]);
+		}
+		this._wireframeEntities = [];
+	},
+
+	// ── VEKTÖR VERİLERİ KIRP ───────────────────────────────
+	_clipEntities: function () {
+		this._restoreEntities();
+
+		if (!this._enuAtClick) return;
+
+		var invEnu = Cesium.Matrix4.inverse(this._enuAtClick, new Cesium.Matrix4());
+		var hx = this._halfSize.x, hy = this._halfSize.y, hz = this._halfSize.z;
+		var self = this;
+
+		// Helper: tek entity'yi kontrol et
+		function checkAndHide(ent) {
+			// Wireframe entity'leri atla
+			if (self._wireframeEntities.indexOf(ent) >= 0) return;
+			// Zaten gizli ise atla
+			if (!ent.show) return;
+
+			var isInside = false;
+			var localPos = new Cesium.Cartesian3();
+			var time = viewer.clock.currentTime;
+
+			// Point/Billboard/Label — tek pozisyon
+			if (ent.position) {
+				var pos = ent.position.getValue ? ent.position.getValue(time) : ent.position;
+				if (Cesium.defined(pos)) {
+					Cesium.Matrix4.multiplyByPoint(invEnu, pos, localPos);
+					if (Math.abs(localPos.x) <= hx && Math.abs(localPos.y) <= hy && Math.abs(localPos.z) <= hz) {
+						isInside = true;
+					}
+				}
+			}
+
+			// Polyline — herhangi bir vertex kutu içindeyse göster
+			if (!isInside && ent.polyline && ent.polyline.positions) {
+				var positions = ent.polyline.positions.getValue ? ent.polyline.positions.getValue(time) : ent.polyline.positions;
+				if (positions) {
+					for (var j = 0; j < positions.length; j++) {
+						Cesium.Matrix4.multiplyByPoint(invEnu, positions[j], localPos);
+						if (Math.abs(localPos.x) <= hx && Math.abs(localPos.y) <= hy && Math.abs(localPos.z) <= hz) {
+							isInside = true;
+							break;
+						}
+					}
+				}
+			}
+
+			// Polygon — herhangi bir vertex kutu içindeyse göster
+			if (!isInside && ent.polygon && ent.polygon.hierarchy) {
+				var hierarchy = ent.polygon.hierarchy.getValue ? ent.polygon.hierarchy.getValue(time) : ent.polygon.hierarchy;
+				if (hierarchy && hierarchy.positions) {
+					for (var k = 0; k < hierarchy.positions.length; k++) {
+						Cesium.Matrix4.multiplyByPoint(invEnu, hierarchy.positions[k], localPos);
+						if (Math.abs(localPos.x) <= hx && Math.abs(localPos.y) <= hy && Math.abs(localPos.z) <= hz) {
+							isInside = true;
+							break;
+						}
+					}
+				}
+			}
+
+			// Kutu dışındaysa gizle
+			if (!isInside) {
+				ent.show = false;
+				self._hiddenEntities.push(ent);
+			}
+		}
+
+		// 1) viewer.entities tara
+		var entities = viewer.entities.values;
+		for (var i = 0; i < entities.length; i++) {
+			checkAndHide(entities[i]);
+		}
+
+		// 2) Tüm DataSource'ları tara (drawLayer / Ölçümler dahil)
+		for (var d = 0; d < viewer.dataSources.length; d++) {
+			var ds = viewer.dataSources.get(d);
+			var dsEntities = ds.entities.values;
+			for (var e = 0; e < dsEntities.length; e++) {
+				checkAndHide(dsEntities[e]);
+			}
+		}
+
+		// 3) Measurements tara — Entity+Primitive karışık
+		if (typeof measurements !== 'undefined') {
+			for (var mi = 0; mi < measurements.length; mi++) {
+				var m = measurements[mi];
+				if (!m.entities || !m.checked) continue;
+
+				// Ölçümün noktalarından herhangi biri kutu içinde mi?
+				var mInside = false;
+				if (m.points && m.points.length > 0) {
+					for (var pi = 0; pi < m.points.length; pi++) {
+						var lp = new Cesium.Cartesian3();
+						Cesium.Matrix4.multiplyByPoint(invEnu, m.points[pi], lp);
+						if (Math.abs(lp.x) <= hx && Math.abs(lp.y) <= hy && Math.abs(lp.z) <= hz) {
+							mInside = true;
+							break;
+						}
+					}
+				}
+
+				if (!mInside) {
+					for (var ei = 0; ei < m.entities.length; ei++) {
+						var ent2 = m.entities[ei];
+						if (ent2 && ent2.show !== undefined && ent2.show !== false) {
+							ent2.show = false;
+							self._hiddenPrimitives.push(ent2);
+						}
+						if (ent2 && ent2.label) ent2.label.show = false;
+					}
+				}
+			}
+		}
+
+		// 4) Referans gruplarının _batchPrimitives'ini tara
+		if (typeof groups !== 'undefined') {
+			for (var gi = 0; gi < groups.length; gi++) {
+				var grp = groups[gi];
+				if (!grp._batchPrimitives || !grp.checked) continue;
+
+				// Gruptaki ölçümlerin noktalarından herhangi biri kutu içinde mi?
+				var grpInside = false;
+				for (var gmi = 0; gmi < measurements.length; gmi++) {
+					var gm = measurements[gmi];
+					if (gm.groupId !== grp.id || !gm.points) continue;
+					for (var gpi = 0; gpi < gm.points.length; gpi++) {
+						var glp = new Cesium.Cartesian3();
+						Cesium.Matrix4.multiplyByPoint(invEnu, gm.points[gpi], glp);
+						if (Math.abs(glp.x) <= hx && Math.abs(glp.y) <= hy && Math.abs(glp.z) <= hz) {
+							grpInside = true;
+							break;
+						}
+					}
+					if (grpInside) break;
+				}
+
+				if (!grpInside) {
+					for (var bp = 0; bp < grp._batchPrimitives.length; bp++) {
+						var prim = grp._batchPrimitives[bp];
+						if (prim && prim.show !== false) {
+							prim.show = false;
+							self._hiddenPrimitives.push(prim);
+						}
+					}
+				}
+			}
+		}
+
+		console.log('ClipBox: ' + this._hiddenEntities.length + ' entity + ' + this._hiddenPrimitives.length + ' primitive gizlendi');
+	},
+
+	// ── GİZLENEN ENTITY'LERİ GERİ GÖSTER ───────────────────
+	_restoreEntities: function () {
+		for (var i = 0; i < this._hiddenEntities.length; i++) {
+			this._hiddenEntities[i].show = true;
+		}
+		this._hiddenEntities = [];
+
+		// Primitives geri göster
+		for (var j = 0; j < this._hiddenPrimitives.length; j++) {
+			var p = this._hiddenPrimitives[j];
+			if (p && !p.isDestroyed || (p && typeof p.isDestroyed === 'function' && !p.isDestroyed())) {
+				p.show = true;
+				if (p.label) p.label.show = true;
+			}
+		}
+		this._hiddenPrimitives = [];
+	},
+
+	// ── MİNİ PANEL GÖSTER/GİZLE ────────────────────────────
+	_showMiniPanel: function () {
+		var panel = document.getElementById('clipMiniPanel');
+		if (!panel) return;
+		// Slider değerlerini sync et
+		var sx = document.getElementById('clipMiniX');
+		var sy = document.getElementById('clipMiniY');
+		var sz = document.getElementById('clipMiniZ');
+		if (sx) { sx.value = this._halfSize.x * 2; document.getElementById('clipMiniXVal').textContent = (this._halfSize.x * 2) + 'm'; }
+		if (sy) { sy.value = this._halfSize.y * 2; document.getElementById('clipMiniYVal').textContent = (this._halfSize.y * 2) + 'm'; }
+		if (sz) { sz.value = this._halfSize.z * 2; document.getElementById('clipMiniZVal').textContent = (this._halfSize.z * 2) + 'm'; }
+		panel.classList.add('show');
+	},
+
+	_hideMiniPanel: function () {
+		var panel = document.getElementById('clipMiniPanel');
+		if (panel) panel.classList.remove('show');
+	},
+
+	// ── BOYUT GÜNCELLE (performanslı) ───────────────────────
+	_updateSize: function (axis, fullSize, updateEntities) {
+		this._halfSize[axis] = fullSize / 2;
+
+		// Tileset clipping güncelle (çok hızlı — sadece distance değişiyor)
+		this._applyClipping();
+
+		// Wireframe yeniden çiz
+		if (this._worldCenter) {
+			this._drawWireframe(this._worldCenter);
+		}
+
+		// Entity kırpma — sadece slider bırakıldığında (change event)
+		if (updateEntities) {
+			this._clipEntities();
+		}
+
+		viewer.scene.requestRender();
+	},
+
+	// ── KAMERA KIRPMA BÖLGESİNE UÇUR ────────────────────────
+	_flyToBox: function (worldCenter) {
+		var maxDim = Math.max(this._halfSize.x, this._halfSize.y, this._halfSize.z) * 2;
+		viewer.camera.flyToBoundingSphere(
+			new Cesium.BoundingSphere(worldCenter, maxDim / 2),
+			{
+				offset: new Cesium.HeadingPitchRange(
+					Cesium.Math.toRadians(30),
+					Cesium.Math.toRadians(-35),
+					maxDim * 2.5
+				),
+				duration: 1.2
+			}
+		);
+	},
+
+	// ── KAPAT ───────────────────────────────────────────────
+	deactivate: function () {
+		this.active = false;
+		this._placementMode = false;
+
+		// Click handler temizle
+		if (this._clickHandler) {
+			this._clickHandler.destroy();
+			this._clickHandler = null;
+		}
+
+		// ESC handler temizle
+		if (this._escHandler) {
+			document.removeEventListener('keydown', this._escHandler);
+			this._escHandler = null;
+		}
+
+		viewer.canvas.style.cursor = '';
+
+		// Kırpma → SADECE enabled=false (asla undefined atama!)
+		try {
+			if (tileset && tileset.clippingPlanes && !tileset.clippingPlanes.isDestroyed()) {
+				tileset.clippingPlanes.enabled = false;
+			}
+		} catch (e) {
+			console.warn('ClipBox cleanup:', e);
+		}
+
+		// Wireframe kaldır
+		this._clearWireframe();
+
+		// Gizlenen entity'leri geri göster
+		this._restoreEntities();
+
+		// Mini panel gizle
+		this._hideMiniPanel();
+
+		// UI sıfırla
+		var rd = document.getElementById('resultDisplay');
+		if (rd) {
+			rd.style.display = '';
+			var rdDiv = rd.querySelector('div');
+			if (rdDiv) rdDiv.textContent = 'Araç seçin ve haritaya tıklayın.';
+		}
+
+		var btn = document.getElementById('btnClipBox');
+		if (btn) btn.classList.remove('active');
+
+		this._clipModelMatrix = null;
+		this._worldCenter = null;
+		this._enuAtClick = null;
+		this._hiddenPrimitives = [];
+
+		viewer.scene.requestRender();
+		TelemetryManager.addLog('ClipBox kapatıldı');
+	}
+};
+
+// ── CLIPBOX EVENT BAĞLANTILARI ──────────────────────────────
+(function () {
+	// ── Mini Panel Slider Handler'ları ──
+	var sliderThrottleId = null;
+	['X', 'Y', 'Z'].forEach(function (axis) {
+		var slider = document.getElementById('clipMini' + axis);
+		var valLabel = document.getElementById('clipMini' + axis + 'Val');
+		if (!slider || !valLabel) return;
+
+		// input: sürüklerken — sadece tileset + wireframe güncelle (hızlı)
+		slider.addEventListener('input', function () {
+			var val = parseInt(slider.value);
+			valLabel.textContent = val + 'm';
+			if (sliderThrottleId) return;
+			sliderThrottleId = requestAnimationFrame(function () {
+				sliderThrottleId = null;
+				ClipBoxManager._updateSize(axis.toLowerCase(), val, false);
+			});
+		});
+
+		// change: slider bırakıldığında — entity kırpmayı da güncelle
+		slider.addEventListener('change', function () {
+			var val = parseInt(slider.value);
+			ClipBoxManager._updateSize(axis.toLowerCase(), val, true);
+		});
+	});
+
+	// Sıfırla butonu
+	var resetBtn = document.getElementById('clipMiniReset');
+	if (resetBtn) {
+		resetBtn.addEventListener('click', function () {
+			['X', 'Y', 'Z'].forEach(function (a) {
+				var s = document.getElementById('clipMini' + a);
+				var v = document.getElementById('clipMini' + a + 'Val');
+				if (s) { s.value = 30; }
+				if (v) { v.textContent = '30m'; }
+			});
+			ClipBoxManager._halfSize = { x: 15, y: 15, z: 15 };
+			ClipBoxManager._applyClipping();
+			if (ClipBoxManager._worldCenter) {
+				ClipBoxManager._drawWireframe(ClipBoxManager._worldCenter);
+			}
+			ClipBoxManager._clipEntities();
+			viewer.scene.requestRender();
+		});
+	}
+
+	// Odakla butonu
+	var flyBtn = document.getElementById('clipMiniFlyTo');
+	if (flyBtn) {
+		flyBtn.addEventListener('click', function () {
+			if (ClipBoxManager._worldCenter) {
+				ClipBoxManager._flyToBox(ClipBoxManager._worldCenter);
+			}
+		});
+	}
+
+	// Kapat butonu
+	var closeBtn = document.getElementById('clipMiniClose');
+	if (closeBtn) {
+		closeBtn.addEventListener('click', function () {
+			ClipBoxManager.deactivate();
+		});
+	}
+
+	var btnClipBox = document.getElementById('btnClipBox');
+	if (btnClipBox) {
+		btnClipBox.addEventListener('click', function () {
+			ClipBoxManager.activate();
+		});
+	}
+})();
+
 // ─── SPLASH SCREEN: Gerçek tileset yükleme progress'i ───
 function initSplashProgress(ts) {
 	var splash = document.getElementById('splashScreen');
@@ -580,12 +1182,12 @@ if (btnThemeToggle) {
 			html.classList.remove('dark');
 			html.classList.add('light');
 			themeIcon.textContent = 'light_mode';
-			localStorage.setItem('cbs-theme', 'light');
+			CbsStorage.setSetting('cbs-theme', 'light');
 		} else {
 			html.classList.remove('light');
 			html.classList.add('dark');
 			themeIcon.textContent = 'dark_mode';
-			localStorage.setItem('cbs-theme', 'dark');
+			CbsStorage.setSetting('cbs-theme', 'dark');
 		}
 	});
 }
@@ -718,7 +1320,7 @@ var _drawerIsOpen = false;
 		icon.textContent = 'chevron_right';
 		btn.style.right = 'calc(320px + 16px)'; // w-80 = 320px + right-4
 		if (label) label.style.display = 'none';
-		localStorage.setItem('cbs-drawer', 'open');
+		CbsStorage.setSetting('cbs-drawer', 'open');
 	}
 
 	function closeDrawer() {
@@ -727,7 +1329,7 @@ var _drawerIsOpen = false;
 		icon.textContent = 'chevron_left';
 		btn.style.right = '0';
 		if (label) { label.style.display = ''; positionLabel('0'); }
-		localStorage.setItem('cbs-drawer', 'closed');
+		CbsStorage.setSetting('cbs-drawer', 'closed');
 	}
 
 	btn.addEventListener('click', function () {
@@ -763,14 +1365,14 @@ var _toolPanelIsOpen = false;
 		_toolPanelIsOpen = true;
 		panel.style.transform = 'translateX(0)';
 		icon.textContent = 'chevron_left';
-		localStorage.setItem('cbs-toolpanel', 'open');
+		CbsStorage.setSetting('cbs-toolpanel', 'open');
 	}
 
 	function closeToolPanel() {
 		_toolPanelIsOpen = false;
 		panel.style.transform = 'translateX(calc(-100% + 28px))';
 		icon.textContent = 'chevron_right';
-		localStorage.setItem('cbs-toolpanel', 'closed');
+		CbsStorage.setSetting('cbs-toolpanel', 'closed');
 	}
 	// Global erişim (setActiveTool mobilde çağırır)
 	window.closeToolPanel = closeToolPanel;
@@ -815,7 +1417,123 @@ document.addEventListener('keydown', function (e) {
 		var btnHeight = document.getElementById('btnHeight');
 		if (btnHeight) btnHeight.click();
 	}
+
+	// T tuşu: Üstten görünüm
+	if (e.key === 't' || e.key === 'T') {
+		var topBtn = document.querySelector('.camera-angle-btn[data-pitch="-90"]');
+		if (topBtn) topBtn.click();
+	}
+
+	// X tuşu: X-Ray toggle
+	if (e.key === 'x' || e.key === 'X') {
+		var xrayBtn = document.getElementById('btnXRayToggle');
+		if (xrayBtn) xrayBtn.click();
+	}
 });
+
+// ─── X-RAY MODU: Tüm vektör verileri 3B modelin önünde göster ───
+var _xrayActive = false;
+var _xrayIconOff = '<svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="currentColor" style="opacity:0.8;"><path d="m880-194-80-80v-286H514l-80-80h366q33 0 56.5 23.5T880-560v366ZM560-720v-80H274l-80-80h366q33 0 56.5 23.5T640-800v80h-80Zm97 303ZM400-160h286L400-446v286ZM823-23l-57-57H400q-34 0-57-23t-23-57v-366L160-686v286h80v80h-80q-34 0-57-23t-23-57v-366l-57-57 57-57L880-80l-57 57ZM543-303Z"/></svg>';
+var _xrayIconOn = '<svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="currentColor"><path d="M240-400v80h-80q-33 0-56.5-23.5T80-400v-400q0-33 23.5-56.5T160-880h400q33 0 56.5 23.5T640-800v80h-80v-80H160v400h80ZM400-80q-33 0-56.5-23.5T320-160v-400q0-33 23.5-56.5T400-640h400q33 0 56.5 23.5T880-560v400q0 33-23.5 56.5T800-80H400Z"/></svg>';
+
+function toggleXRay() {
+	_xrayActive = !_xrayActive;
+	var btn = document.getElementById('btnXRayToggle');
+
+	// Buton görsel durumu + ikon güncelle
+	if (btn) {
+		var svgSpan = btn.querySelector('.xray-icon');
+		if (_xrayActive) {
+			btn.style.background = 'rgba(59, 130, 246, 0.15)';
+			btn.style.borderColor = 'rgba(59, 130, 246, 0.5)';
+			btn.style.opacity = '1';
+			btn.style.color = '#3B82F6';
+			if (svgSpan) svgSpan.innerHTML = _xrayIconOn;
+		} else {
+			btn.style.background = 'transparent';
+			btn.style.borderColor = 'transparent';
+			btn.style.opacity = '0.5';
+			btn.style.color = '';
+			if (svgSpan) svgSpan.innerHTML = _xrayIconOff;
+		}
+	}
+
+	// 1. Manuel ölçüm entity'leri — measurements dizisinden
+	measurements.forEach(function (m) {
+		if (m.isBatched) return; // Batch olanlar aşağıda ayrı işlenir
+		m.entities.forEach(function (ent) {
+			applyXRayToPrimitive(ent, _xrayActive);
+		});
+	});
+
+	// 2. Batch import primitifleri — grupların _batchPrimitives'inden
+	groups.forEach(function (g) {
+		if (!g._batchPrimitives) return;
+		g._batchPrimitives.forEach(function (p) {
+			applyXRayToPrimitive(p, _xrayActive);
+		});
+	});
+
+	viewer.scene.requestRender();
+}
+
+// Tek bir primitive/collection/entity'ye X-Ray uygula veya kaldır
+function applyXRayToPrimitive(prim, enable) {
+	if (!prim) return;
+	// Yıkılmış (destroyed) primitive'lere dokunma
+	if (typeof prim.isDestroyed === 'function' && prim.isDestroyed()) return;
+	try {
+		// A) PointPrimitiveCollection — her point'e disableDepthTestDistance
+		//    + bağlı .label (LabelCollection) varsa onu da X-Ray'le
+		if (prim instanceof Cesium.PointPrimitiveCollection) {
+			for (var i = 0; i < prim.length; i++) {
+				prim.get(i).disableDepthTestDistance = enable ? Number.POSITIVE_INFINITY : 0;
+			}
+			// addPointLabel() fonksiyonu label'ı .label olarak bağlar — onu da işle
+			if (prim.label) {
+				applyXRayToPrimitive(prim.label, enable);
+			}
+			return;
+		}
+
+		// B) LabelCollection — her label'a disableDepthTestDistance
+		if (prim instanceof Cesium.LabelCollection) {
+			for (var j = 0; j < prim.length; j++) {
+				prim.get(j).disableDepthTestDistance = enable ? Number.POSITIVE_INFINITY : 0;
+			}
+			return;
+		}
+
+		// C) Cesium.Primitive (Polyline veya Polygon) — depthFailAppearance
+		if (prim instanceof Cesium.Primitive) {
+			if (enable) {
+				if (prim.appearance && !prim.depthFailAppearance) {
+					prim.depthFailAppearance = prim.appearance;
+				}
+			} else {
+				prim.depthFailAppearance = undefined;
+			}
+			return;
+		}
+
+		// D) Cesium.Entity (restoreHeight'teki P_mid noktası gibi)
+		if (prim instanceof Cesium.Entity) {
+			var ddt = enable ? Number.POSITIVE_INFINITY : 0;
+			if (prim.point) prim.point.disableDepthTestDistance = ddt;
+			if (prim.label) prim.label.disableDepthTestDistance = ddt;
+			if (prim.billboard) prim.billboard.disableDepthTestDistance = ddt;
+			return;
+		}
+	} catch (e) {
+		// Sessizce geç — bazı primitive tipleri desteklemeyebilir
+	}
+}
+
+// X-Ray butonunu bağla
+(function () {
+	var btn = document.getElementById('btnXRayToggle');
+	if (btn) btn.addEventListener('click', toggleXRay);
+})();
 
 // Aktif grup adını label'da güncelle (renderList ve grup değişikliklerinde çağırılır)
 function updateActiveGroupLabel() {
@@ -828,8 +1546,6 @@ function updateActiveGroupLabel() {
 // ─── 1.5.1. 3D DÜNYA (GLOBE TOGGLE) + YÜKSEKLİK OFSETİ ────────────────
 var globeVisible = false;
 var heightOffsetPanel = document.getElementById('heightOffsetPanel');
-var heightSlider = document.getElementById('heightSlider');
-var heightInput = document.getElementById('heightInput');
 var currentHeightOffset = 0;
 
 // Yükseklik ofsetini tileset'e uygula (modelMatrix ile)
@@ -853,27 +1569,6 @@ function applyHeightOffset(offset) {
 	tileset.modelMatrix = Cesium.Matrix4.fromTranslation(translation);
 }
 
-// Slider ↔ Input senkronizasyonu
-heightSlider.addEventListener('input', function () {
-	var val = parseFloat(this.value);
-	heightInput.value = val;
-	applyHeightOffset(val);
-});
-
-heightInput.addEventListener('change', function () {
-	var val = parseFloat(this.value) || 0;
-	// Slider sınırlarını aşarsa slider'ı güncelleme ama ofseti uygula
-	heightSlider.value = Math.max(-500, Math.min(500, val));
-	applyHeightOffset(val);
-});
-
-// Sıfırlama butonu
-document.getElementById('btnHeightReset').addEventListener('click', function () {
-	heightSlider.value = 0;
-	heightInput.value = 0;
-	applyHeightOffset(0);
-});
-
 // Katman toggle butonları (Uydu / Sokak)
 var btnSatellite = document.getElementById('btnLayerSatellite');
 var btnStreet = document.getElementById('btnLayerStreet');
@@ -889,14 +1584,24 @@ function setLayerBtnActive(btn, isActive) {
 }
 
 btnSatellite.addEventListener('click', function () {
-	satelliteLayer.show = !satelliteLayer.show;
-	setLayerBtnActive(this, satelliteLayer.show);
+	if (satelliteLayer) satelliteLayer.show = true;
+	streetLayer.show = false;
+	setLayerBtnActive(btnSatellite, true);
+	setLayerBtnActive(btnStreet, false);
+	viewer.scene.requestRender();
 });
 
 btnStreet.addEventListener('click', function () {
-	streetLayer.show = !streetLayer.show;
-	setLayerBtnActive(this, streetLayer.show);
+	streetLayer.show = true;
+	if (satelliteLayer) satelliteLayer.show = false;
+	setLayerBtnActive(btnStreet, true);
+	setLayerBtnActive(btnSatellite, false);
+	viewer.scene.requestRender();
 });
+
+// Başlangıç durumu: Sokak aktif
+setLayerBtnActive(btnStreet, true);
+setLayerBtnActive(btnSatellite, false);
 
 // ─── NOKTA BULUTU (Point Cloud) KATMANI ─────────────────────────
 // TODO: Nokta bulutu verisi hazır olduğunda aşağıdaki kodu aktifleştir
@@ -1056,9 +1761,6 @@ viewModeBtns.forEach(function (btn) {
 					viewer.scene.postProcessStages.ambientOcclusion.uniforms.stepSize = 1.0;
 				}
 
-				// Gölge haritalarını etkinleştir
-				viewer.shadows = true;
-				if (tileset) tileset.shadows = Cesium.ShadowMode.ENABLED;
 				break;
 
 		}
@@ -1263,32 +1965,20 @@ var groupCount = 0;
 var activeGroupId = 0;
 var activeHighlightId = null;
 
-var STORAGE_KEY = "merinos_measurements";
+// STORAGE_KEY artık cbs-storage.js'de tanımlı (CbsStorage modülü)
+
+// Cartesian3 → {lat, lon, height} dönüştürücü (DAL'a parametre olarak geçilir)
+function _serializePoint(p) {
+	var carto = Cesium.Cartographic.fromCartesian(p);
+	return { lat: Cesium.Math.toDegrees(carto.latitude), lon: Cesium.Math.toDegrees(carto.longitude), height: carto.height };
+}
 
 function saveToStorage() {
-	try {
-		var dataToSave = {
-			groups: groups.map(function (g) {
-				return { id: g.id, name: g.name, isOpen: g.isOpen, checked: g.checked, color: g.color || '#14B8A6' };
-			}),
-			measurements: measurements.map(function (m) {
-				return {
-					id: m.id,
-					groupId: m.groupId || 0,
-					name: m.name,
-					type: m.type,
-					resultText: m.resultText,
-					checked: m.checked,
-					points: m.points.map(function (p) {
-						var carto = Cesium.Cartographic.fromCartesian(p);
-						return { lat: Cesium.Math.toDegrees(carto.latitude), lon: Cesium.Math.toDegrees(carto.longitude), height: carto.height };
-					})
-				};
-			}),
-			activeGroupId: activeGroupId
-		};
-		var json = JSON.stringify(dataToSave);
-		var sizeBytes = json.length;
+	CbsStorage.saveAll(
+		{ groups: groups, measurements: measurements, activeGroupId: activeGroupId },
+		_serializePoint
+	).then(function (result) {
+		var sizeBytes = result.sizeBytes;
 		var sizeMB = (sizeBytes / (1024 * 1024)).toFixed(2);
 		var pct = Math.min(100, Math.round((sizeBytes / (5 * 1024 * 1024)) * 100));
 
@@ -1301,10 +1991,8 @@ function saveToStorage() {
 				'warning'
 			);
 		}
-
-		localStorage.setItem(STORAGE_KEY, json);
-	} catch (e) {
-		console.error('localStorage kayıt hatası:', e);
+	}).catch(function (e) {
+		console.error('Kayıt hatası:', e);
 		// ─── 5MB DOLU (kırmızı engelleme) ───
 		if (e.name === 'QuotaExceededError' || e.code === 22) {
 			showStorageToast(
@@ -1313,7 +2001,7 @@ function saveToStorage() {
 				'critical'
 			);
 		}
-	}
+	});
 }
 
 // ─── DEPOLAMA UYARI TOAST SİSTEMİ ───
@@ -1380,15 +2068,12 @@ function debouncedSave() {
 }
 
 function loadFromStorage() {
-	var saved = localStorage.getItem(STORAGE_KEY);
-	if (!saved) return;
-	try {
-		var data = JSON.parse(saved);
+	CbsStorage.loadAll().then(function (data) {
+		if (!data) return;
 
-		// Handle legacy format (array vs object)
-		var savedGroups = Array.isArray(data) ? [] : (data.groups || []);
-		var savedMeasures = Array.isArray(data) ? data : (data.measurements || []);
-		activeGroupId = data.activeGroupId !== undefined ? data.activeGroupId : 0;
+		var savedGroups = data.groups;
+		var savedMeasures = data.measurements;
+		activeGroupId = data.activeGroupId;
 
 		if (savedGroups.length > 0) {
 			groups = savedGroups;
@@ -1432,9 +2117,9 @@ function loadFromStorage() {
 			}
 		});
 		renderList();
-	} catch (e) {
+	}).catch(function (e) {
 		console.error("Ölçümler geri yüklenirken hata:", e);
-	}
+	});
 }
 
 // ─── YARDIMCI ETİKET & GEOMETRİ FONKSİYONLARI ───────────────
@@ -1486,13 +2171,15 @@ function createStablePolyline(positions, width, material, depthFailColor, isDash
 					color: material || Cesium.Color.YELLOW,
 					dashLength: VEC_STYLE.height.dashLength,
 					gapColor: Cesium.Color.TRANSPARENT
-				})
+				}),
+				translucent: false
 			});
 		} else {
 			appearance = new Cesium.PolylineMaterialAppearance({
 				material: Cesium.Material.fromType('Color', {
 					color: material || Cesium.Color.YELLOW
-				})
+				}),
+				translucent: false
 			});
 		}
 
@@ -1724,7 +2411,7 @@ function restoreLine(m) {
 	}
 	// Toplam mesafe etiketi — çizgi üzerindeki orta noktaya
 	if (!_isMob) {
-		m.entities.push(addLabel(midpointAlongLine(m.points), m.resultText, lineColor));
+		m.entities.push(addLabel(midpointAlongLine(m.points), m.resultText || m.name || '', lineColor));
 	}
 }
 
@@ -1749,10 +2436,61 @@ function restorePolygon(m) {
 	if (polyPrim) m.entities.push(polyPrim);
 
 	// Etiket (haritada 2D m² göster)
-	var labelText = m.resultText;
-	var match2D = m.resultText.match(/2D:\s*([\d.]+)\s*m²/);
-	if (match2D) labelText = '2D: ' + match2D[1] + ' m²';
+	var labelText = m.resultText || m.name || '';
+	if (m.resultText) {
+		var match2D = m.resultText.match(/2D:\s*([\d.]+)\s*m²/);
+		if (match2D) labelText = '2D: ' + match2D[1] + ' m²';
+	}
 	m.entities.push(addLabel(centroid(m.points), labelText, polyColor));
+}
+
+// ─── HAFİF RESTORE (Import Verisi İçin — %85 Daha Az Entity) ────────────────
+// Köşe noktalarını ATLAR, tek kapalı polyline + dolgu + etiket = 3 entity
+function restorePolygonLight(m) {
+	if (!m.points || m.points.length < 3) return;
+	var grp = groups.find(function (g) { return g.id === m.groupId; });
+	var hexColor = grp && grp.color ? grp.color : '#14B8A6';
+	var polyColor = Cesium.Color.fromCssColorString(hexColor);
+	var isLabelsOn = !grp || grp.labelsVisible !== false;
+
+	// 1. Tek kapalı polyline (tüm kenarlar bir seferde)
+	var closedPoints = m.points.concat([m.points[0]]); // Kapanış noktası ekle
+	var edgePrim = createStablePolyline(closedPoints, VEC_STYLE.polygon.edgeWidth, polyColor);
+	if (edgePrim) m.entities.push(edgePrim);
+
+	// 2. Dolgu polygon 
+	var polyPrim = createStablePolygon(m.points.slice(), polyColor.withAlpha(VEC_STYLE.polygon.fillAlpha));
+	if (polyPrim) m.entities.push(polyPrim);
+
+	// 3. Etiket (opsiyonel — label toggle kontrolü)
+	var labelText = m.resultText || m.name || '';
+	if (m.resultText) {
+		var match2D = m.resultText.match(/2D:\s*([\d.]+)\s*m²/);
+		if (match2D) labelText = '2D: ' + match2D[1] + ' m²';
+	}
+	var lbl = addLabel(centroid(m.points), labelText, polyColor);
+	if (lbl && lbl.label) lbl.label.show = isLabelsOn && m.checked;
+	m.entities.push(lbl);
+}
+
+// Hafif çizgi restore — köşe noktası yok, sadece polyline + etiket = 2 entity
+function restoreLineLight(m) {
+	if (!m.points || m.points.length < 2) return;
+	var grp = groups.find(function (g) { return g.id === m.groupId; });
+	var hexColor = grp && grp.color ? grp.color : '#EAB308';
+	var lineColor = Cesium.Color.fromCssColorString(hexColor);
+	var isLabelsOn = !grp || grp.labelsVisible !== false;
+
+	// 1. Tek polyline (tüm segmentler)
+	var linePrim = createStablePolyline(m.points, VEC_STYLE.line.width, lineColor);
+	if (linePrim) m.entities.push(linePrim);
+
+	// 2. Etiket
+	if (!_isMob) {
+		var lbl = addLabel(midpointAlongLine(m.points), m.resultText || m.name || '', lineColor);
+		if (lbl && lbl.label) lbl.label.show = isLabelsOn && m.checked;
+		m.entities.push(lbl);
+	}
 }
 
 function restoreHeight(m) {
@@ -1798,7 +2536,7 @@ function restoreHeight(m) {
 	m.entities.push(addLabel(midpoint(p1, pMid), '↔ ' + distH.toFixed(2) + ' m', hColor));
 
 	// Etiket dikey çizginin ortasına
-	m.entities.push(addLabel(midpoint(pMid, p2), m.resultText, hColor));
+	m.entities.push(addLabel(midpoint(pMid, p2), m.resultText || m.name || '', hColor));
 }
 
 function restoreCoord(m) {
@@ -1807,8 +2545,178 @@ function restoreCoord(m) {
 	m.entities.push(addPointLabel(m.points[0], pName, grp && grp.color ? grp.color : '#14B8A6'));
 }
 
-// Başlangıçta kayıtlı verileri yükle
-setTimeout(loadFromStorage, 1000);
+// Başlangıçta kayıtlı verileri yükle + kaydedilmiş import'ları geri yükle
+setTimeout(function () {
+	loadFromStorage();
+	// Import restore — loadFromStorage'dan ~500ms sonra (IndexedDB async)
+	setTimeout(restoreImports, 500);
+}, 1000);
+
+// ─── KAYDEDILMIŞ IMPORT'LARI GERİ YÜKLE ───
+function restoreImports() {
+	CbsStorage.loadImports().then(function (importRecords) {
+		if (!importRecords || importRecords.length === 0) return;
+		console.info('CbsStorage: ' + importRecords.length + ' kaydedilmiş import geri yükleniyor...');
+
+		importRecords.forEach(function (rec) {
+			// Grup oluştur (yoksa)
+			var existingGroup = groups.find(function (g) { return g.id === rec.groupId; });
+			if (!existingGroup) {
+				var newGroup = {
+					id: rec.groupId,
+					name: rec.groupName || 'İçe Aktırma',
+					isOpen: false,
+					checked: true,
+					color: rec.groupColor || '#14B8A6',
+					isReferans: true
+				};
+				groups.push(newGroup);
+				if (rec.groupId > groupCount) groupCount = rec.groupId;
+				existingGroup = newGroup;
+			}
+
+			var hexColor = existingGroup.color || '#14B8A6';
+			var cesColor = Cesium.Color.fromCssColorString(hexColor);
+			var zOffset = rec.zOffset || 0;
+			var features = rec.features || [];
+
+			// Geometri akümülatörleri (batch rendering)
+			var polyFillInstances = [];
+			var polyLineInstances = [];
+			var labelEntries = [];
+			var batchPrimitives = [];
+
+			features.forEach(function (feat) {
+				var points = feat.coords.map(function (c) {
+					return Cesium.Cartesian3.fromDegrees(c.lon, c.lat, c.z + zOffset);
+				});
+
+				var m = {
+					id: ++measureCount,
+					groupId: rec.groupId,
+					name: feat.name,
+					type: feat.type,
+					resultText: feat.resultText || '',
+					checked: true,
+					isImported: true,
+					isBatched: (feat.type === 'polygon' || feat.type === 'line'),
+					points: points,
+					entities: []
+				};
+				measurements.push(m);
+
+				if (feat.type === 'polygon' && points.length >= 3) {
+					try {
+						polyFillInstances.push(new Cesium.GeometryInstance({
+							geometry: new Cesium.CoplanarPolygonGeometry({
+								polygonHierarchy: new Cesium.PolygonHierarchy(points),
+								vertexFormat: Cesium.MaterialAppearance.MaterialSupport.BASIC.vertexFormat
+							})
+						}));
+					} catch (e) { }
+					try {
+						var closedPts = points.concat([points[0]]);
+						polyLineInstances.push(new Cesium.GeometryInstance({
+							geometry: new Cesium.PolylineGeometry({
+								positions: closedPts,
+								width: VEC_STYLE.polygon.edgeWidth || 2,
+								arcType: Cesium.ArcType.NONE,
+								vertexFormat: Cesium.PolylineMaterialAppearance.VERTEX_FORMAT
+							})
+						}));
+					} catch (e) { }
+					var labelText = m.resultText || m.name || '';
+					labelEntries.push({ position: centroid(points), text: labelText });
+				} else if (feat.type === 'line' && points.length >= 2) {
+					try {
+						polyLineInstances.push(new Cesium.GeometryInstance({
+							geometry: new Cesium.PolylineGeometry({
+								positions: points,
+								width: VEC_STYLE.line.width || 3,
+								arcType: Cesium.ArcType.NONE,
+								vertexFormat: Cesium.PolylineMaterialAppearance.VERTEX_FORMAT
+							})
+						}));
+					} catch (e) { }
+				} else if (feat.type === 'coord') {
+					restoreCoord(m);
+				}
+			});
+
+			// Bulk primitive oluştur
+			if (polyFillInstances.length > 0) {
+				try {
+					var fillPrim = viewer.scene.primitives.add(new Cesium.Primitive({
+						geometryInstances: polyFillInstances,
+						appearance: new Cesium.MaterialAppearance({
+							material: Cesium.Material.fromType('Color', {
+								color: cesColor.withAlpha(VEC_STYLE.polygon.fillAlpha || 0.25)
+							}),
+							faceForward: true
+						}),
+						asynchronous: true,
+						allowPicking: false
+					}));
+					fillPrim._isImportBatch = true;
+					fillPrim._isFillBatch = true;
+					batchPrimitives.push(fillPrim);
+				} catch (e) { console.warn('Import restore fill hatası:', e); }
+			}
+
+			if (polyLineInstances.length > 0) {
+				try {
+					var linePrim = viewer.scene.primitives.add(new Cesium.Primitive({
+						geometryInstances: polyLineInstances,
+						appearance: new Cesium.PolylineMaterialAppearance({
+							material: Cesium.Material.fromType('Color', {
+								color: cesColor
+							}),
+							translucent: false
+						}),
+						asynchronous: true,
+						allowPicking: false
+					}));
+					linePrim._isImportBatch = true;
+					linePrim._isPolylineBatch = true;
+					batchPrimitives.push(linePrim);
+				} catch (e) { console.warn('Import restore line hatası:', e); }
+			}
+
+			if (labelEntries.length > 0) {
+				var labelCol = viewer.scene.primitives.add(new Cesium.LabelCollection());
+				labelEntries.forEach(function (le) {
+					var lifted = liftPosition(le.position);
+					labelCol.add({
+						position: lifted,
+						text: le.text,
+						font: VEC_STYLE.label.font,
+						fillColor: cesColor,
+						outlineColor: VEC_STYLE.label.outlineColor,
+						outlineWidth: VEC_STYLE.label.outlineWidth,
+						style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+						verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+						pixelOffset: new Cesium.Cartesian2(0, VEC_STYLE.label.offsetY),
+						distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0.0, 150.0),
+						showBackground: true,
+						backgroundColor: new Cesium.Color(0, 0, 0, 0.6)
+					});
+				});
+				labelCol._isImportBatch = true;
+				batchPrimitives.push(labelCol);
+			}
+
+			if (existingGroup) {
+				existingGroup._batchPrimitives = batchPrimitives;
+			}
+		});
+
+		renderList();
+		viewer.scene.requestRender();
+		console.info('CbsStorage: ' + importRecords.length + ' import grubu geri yüklendi');
+	}).catch(function (e) {
+		console.error('Import geri yükleme hatası:', e);
+	});
+}
 
 // Sayfa açılışında CRS ve Kapsam seçicilerini boşa al (tarayıcı önbelleğini sıfırla)
 setTimeout(function () {
@@ -1932,18 +2840,161 @@ function showColorPalette(group, anchorEl) {
 
 // Bir gruptaki tüm ölçüm entity'lerini yeni renge boya (sil & yeniden oluştur)
 function applyGroupColor(groupId, hexColor) {
+	var group = groups.find(function (g) { return g.id === groupId; });
+
+	// Batch primitifli grup — batch'i yeniden oluştur (GPU performansı korunur)
+	if (group && group._batchPrimitives) {
+		rebuildBatchPrimitives(group);
+	}
+
+	// Non-batched (bireysel) measurement'ları yeniden çiz
 	measurements.forEach(function (m) {
-		if (m.groupId !== groupId) return;
-		// Mevcut entity/primitive'leri kaldır
+		if (m.groupId !== groupId || m.isBatched) return;
 		m.entities.forEach(function (ent) { safeRemoveItem(ent); });
 		m.entities = [];
-		// Yeni renkle yeniden oluştur
 		if (m.type === 'coord') restoreCoord(m);
 		else if (m.type === 'line') restoreLine(m);
 		else if (m.type === 'polygon') restorePolygon(m);
 		else if (m.type === 'height') restoreHeight(m);
+
+		// X-Ray aktifse yeniden oluşturulan entity'lere uygula
+		if (_xrayActive) {
+			m.entities.forEach(function (ent) {
+				applyXRayToPrimitive(ent, true);
+			});
+		}
 	});
 	viewer.scene.requestRender();
+}
+
+// ─── BATCH PRİMİTİFLERİ YENİDEN OLUŞTUR (renk/KOT değişikliğinde) ───
+function rebuildBatchPrimitives(group) {
+	// 1. Eski batch primitifleri kaldır
+	if (group._batchPrimitives) {
+		group._batchPrimitives.forEach(function (p) {
+			try { viewer.scene.primitives.remove(p); } catch (e) { }
+		});
+		group._batchPrimitives = null;
+	}
+
+	var hexColor = group.color || '#14B8A6';
+	var cesColor = Cesium.Color.fromCssColorString(hexColor);
+	var polyFillInstances = [];
+	var polyLineInstances = [];
+	var labelEntries = [];
+	var batchPrimitives = [];
+
+	// 2. Mevcut measurement point'lerinden geometri instance'ları oluştur
+	measurements.forEach(function (m) {
+		if (m.groupId !== group.id || !m.isBatched) return;
+		var points = m.points;
+
+		if (m.type === 'polygon' && points.length >= 3) {
+			try {
+				polyFillInstances.push(new Cesium.GeometryInstance({
+					geometry: new Cesium.CoplanarPolygonGeometry({
+						polygonHierarchy: new Cesium.PolygonHierarchy(points),
+						vertexFormat: Cesium.MaterialAppearance.MaterialSupport.BASIC.vertexFormat
+					})
+				}));
+			} catch (e) { }
+			try {
+				var closedPts = points.concat([points[0]]);
+				polyLineInstances.push(new Cesium.GeometryInstance({
+					geometry: new Cesium.PolylineGeometry({
+						positions: closedPts,
+						width: VEC_STYLE.polygon.edgeWidth || 2,
+						arcType: Cesium.ArcType.NONE,
+						vertexFormat: Cesium.PolylineMaterialAppearance.VERTEX_FORMAT
+					})
+				}));
+			} catch (e) { }
+			var labelText = m.resultText || m.name || '';
+			labelEntries.push({ position: centroid(points), text: labelText });
+		} else if (m.type === 'line' && points.length >= 2) {
+			try {
+				polyLineInstances.push(new Cesium.GeometryInstance({
+					geometry: new Cesium.PolylineGeometry({
+						positions: points,
+						width: VEC_STYLE.line.width || 3,
+						arcType: Cesium.ArcType.NONE,
+						vertexFormat: Cesium.PolylineMaterialAppearance.VERTEX_FORMAT
+					})
+				}));
+			} catch (e) { }
+		}
+	});
+
+	// 3. Yeni batch primitifler oluştur
+	if (polyFillInstances.length > 0) {
+		try {
+			var fillPrim = viewer.scene.primitives.add(new Cesium.Primitive({
+				geometryInstances: polyFillInstances,
+				appearance: new Cesium.MaterialAppearance({
+					material: Cesium.Material.fromType('Color', {
+						color: cesColor.withAlpha(VEC_STYLE.polygon.fillAlpha || 0.25)
+					}),
+					faceForward: true
+				}),
+				asynchronous: true,
+				allowPicking: false
+			}));
+			fillPrim._isImportBatch = true;
+			fillPrim._isFillBatch = true;
+			batchPrimitives.push(fillPrim);
+		} catch (e) { console.warn('Batch rebuild fill hatası:', e); }
+	}
+
+	if (polyLineInstances.length > 0) {
+		try {
+			var linePrim = viewer.scene.primitives.add(new Cesium.Primitive({
+				geometryInstances: polyLineInstances,
+				appearance: new Cesium.PolylineMaterialAppearance({
+					material: Cesium.Material.fromType('Color', {
+						color: cesColor
+					}),
+					translucent: false
+				}),
+				asynchronous: true,
+				allowPicking: false
+			}));
+			linePrim._isImportBatch = true;
+			linePrim._isPolylineBatch = true;
+			batchPrimitives.push(linePrim);
+		} catch (e) { console.warn('Batch rebuild line hatası:', e); }
+	}
+
+	if (labelEntries.length > 0) {
+		var labelCol = viewer.scene.primitives.add(new Cesium.LabelCollection());
+		labelEntries.forEach(function (le) {
+			var lifted = liftPosition(le.position);
+			labelCol.add({
+				position: lifted,
+				text: le.text,
+				font: VEC_STYLE.label.font,
+				fillColor: cesColor,
+				outlineColor: VEC_STYLE.label.outlineColor,
+				outlineWidth: VEC_STYLE.label.outlineWidth,
+				style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+				verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+				pixelOffset: new Cesium.Cartesian2(0, VEC_STYLE.label.offsetY),
+				distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0.0, 150.0),
+				showBackground: true,
+				backgroundColor: new Cesium.Color(0, 0, 0, 0.6)
+			});
+		});
+		labelCol._isImportBatch = true;
+		batchPrimitives.push(labelCol);
+	}
+
+	group._batchPrimitives = batchPrimitives;
+
+	// X-Ray aktifse yeni batch primitiflere de uygula
+	if (_xrayActive) {
+		batchPrimitives.forEach(function (p) {
+			applyXRayToPrimitive(p, true);
+		});
+	}
 }
 
 // ─── 5. ÖLÇÜM LİSTESİ ─────────────────────────────────────────
@@ -1979,15 +3030,118 @@ function renderList() {
 			viewer.scene.requestRender();
 		};
 
+		// Hiyerarşik açma/kapama oku
+		var modelExpand = document.createElement('span');
+		modelExpand.style.cssText = 'font-size:10px;color:var(--text-muted, #64748b);cursor:pointer;user-select:none;width:12px;text-align:center;flex-shrink:0;transition:transform 0.2s;';
+		modelExpand.textContent = '▸';
+		modelExpand.title = 'Kot kontrolünü aç/kapat';
+
+		modelRow.appendChild(modelExpand);
 		modelRow.appendChild(modelIcon);
 		modelRow.appendChild(modelName);
 		modelRow.appendChild(modelCheck);
 		container.appendChild(modelRow);
+
+		// ─── KOT Kontrolü (gizli, tıkla aç) ───
+		var kotRow = document.createElement('div');
+		kotRow.className = 'flex items-center gap-1 px-2 py-1';
+		kotRow.style.cssText = 'margin-top:-4px;margin-bottom:6px;padding-left:26px;display:none;';
+
+		var kotMinus = document.createElement('button');
+		kotMinus.style.cssText = 'width:18px;height:18px;font-size:12px;font-weight:700;color:var(--text-primary, #cbd5e1);background:var(--bg-surface, rgba(30,41,59,0.6));border:1px solid var(--border, rgba(71,85,105,0.4));border-radius:4px;cursor:pointer;padding:0;line-height:16px;text-align:center;flex-shrink:0;';
+		kotMinus.textContent = '−';
+		kotMinus.title = 'Kotu düşür';
+
+		var kotSlider = document.createElement('input');
+		kotSlider.type = 'range';
+		kotSlider.min = '-500';
+		kotSlider.max = '500';
+		kotSlider.value = currentHeightOffset;
+		kotSlider.step = '1';
+		kotSlider.className = 'h-1 accent-primary cursor-pointer';
+		kotSlider.style.cssText = 'flex:1;min-width:0;';
+		kotSlider.title = 'Yükseklik Ofseti (metre)';
+
+		var kotPlus = document.createElement('button');
+		kotPlus.style.cssText = 'width:18px;height:18px;font-size:12px;font-weight:700;color:var(--text-primary, #cbd5e1);background:var(--bg-surface, rgba(30,41,59,0.6));border:1px solid var(--border, rgba(71,85,105,0.4));border-radius:4px;cursor:pointer;padding:0;line-height:16px;text-align:center;flex-shrink:0;';
+		kotPlus.textContent = '+';
+		kotPlus.title = 'Kotu yükselt';
+
+		var kotInput = document.createElement('input');
+		kotInput.type = 'number';
+		kotInput.value = currentHeightOffset;
+		kotInput.step = '1';
+		kotInput.style.cssText = 'width:40px;padding:1px 3px;font-size:10px;text-align:center;background:var(--bg-base, #0f172a);border:1px solid var(--border-subtle, rgba(71,85,105,0.25));border-radius:4px;color:var(--text-primary, #cbd5e1);';
+		kotInput.title = 'Metre cinsinden yükseklik ofseti';
+
+		var kotUnit = document.createElement('span');
+		kotUnit.style.cssText = 'font-size:9px;color:var(--text-muted, #64748b);';
+		kotUnit.textContent = 'm';
+
+		var kotReset = document.createElement('button');
+		kotReset.style.cssText = 'color:var(--text-muted, #64748b);cursor:pointer;padding:0;background:none;border:none;line-height:1;';
+		kotReset.title = 'Sıfırla';
+		kotReset.innerHTML = '<span class="material-symbols-outlined" style="font-size:13px;">restart_alt</span>';
+
+		// Accordion toggle
+		modelExpand.addEventListener('click', function (e) {
+			e.stopPropagation();
+			var isOpen = kotRow.style.display !== 'none';
+			kotRow.style.display = isOpen ? 'none' : 'flex';
+			modelExpand.textContent = isOpen ? '▸' : '▾';
+		});
+
+		// Event listeners
+		kotSlider.addEventListener('input', function () {
+			var val = parseFloat(this.value);
+			kotInput.value = val;
+			applyHeightOffset(val);
+		});
+		kotMinus.addEventListener('click', function () {
+			var val = (parseFloat(kotInput.value) || 0) - 1;
+			kotInput.value = val;
+			kotSlider.value = Math.max(-500, Math.min(500, val));
+			applyHeightOffset(val);
+		});
+		kotPlus.addEventListener('click', function () {
+			var val = (parseFloat(kotInput.value) || 0) + 1;
+			kotInput.value = val;
+			kotSlider.value = Math.max(-500, Math.min(500, val));
+			applyHeightOffset(val);
+		});
+		kotInput.addEventListener('change', function () {
+			var val = parseFloat(this.value) || 0;
+			kotSlider.value = Math.max(-500, Math.min(500, val));
+			applyHeightOffset(val);
+		});
+		kotReset.addEventListener('click', function () {
+			kotSlider.value = 0;
+			kotInput.value = 0;
+			applyHeightOffset(0);
+		});
+
+		kotRow.appendChild(kotMinus);
+		kotRow.appendChild(kotSlider);
+		kotRow.appendChild(kotPlus);
+		kotRow.appendChild(kotInput);
+		kotRow.appendChild(kotUnit);
+		kotRow.appendChild(kotReset);
+		container.appendChild(kotRow);
 	}
 
-	// Referans grupları (📌) önce, standart gruplar sonra
-	var refGroups = groups.filter(function (g) { return g.name.indexOf('📌') === 0; });
-	var stdGroups = groups.filter(function (g) { return g.name.indexOf('📌') !== 0; });
+	// Referans grupları (isReferans) önce, standart gruplar sonra
+	var refGroups = groups.filter(function (g) { return g.isReferans; });
+	var stdGroups = groups.filter(function (g) { return !g.isReferans; });
+
+	// Referans bölüm başlığı
+	if (refGroups.length > 0) {
+		var refHeader = document.createElement('div');
+		refHeader.className = 'flex items-center gap-2 mb-2 px-1';
+		refHeader.innerHTML = '<div class="flex-1 h-[1px]" style="background:var(--border-subtle)"></div>' +
+			'<span class="text-[8px] font-bold uppercase tracking-widest" style="color:var(--text-muted)">📌 Referans Veriler</span>' +
+			'<div class="flex-1 h-[1px]" style="background:var(--border-subtle)"></div>';
+		container.appendChild(refHeader);
+	}
 
 	// Önce referans gruplarını render et
 	refGroups.forEach(function (group) {
@@ -1999,7 +3153,7 @@ function renderList() {
 		var sep = document.createElement('div');
 		sep.className = 'flex items-center gap-2 my-3 px-1';
 		sep.innerHTML = '<div class="flex-1 h-[1px]" style="background:var(--border-subtle)"></div>' +
-			'<span class="text-[8px] font-bold uppercase tracking-widest" style="color:var(--text-muted)">Katmanlar</span>' +
+			'<span class="text-[8px] font-bold uppercase tracking-widest" style="color:var(--text-muted)">Ölçümler</span>' +
 			'<div class="flex-1 h-[1px]" style="background:var(--border-subtle)"></div>';
 		container.appendChild(sep);
 	}
@@ -2020,6 +3174,7 @@ function renderGroupItem(container, group) {
 	var header = document.createElement('div');
 	header.className = 'folder-header' + (activeGroupId === group.id ? ' active' : '');
 	header.onclick = function () {
+		if (group.isReferans) return; // Referans gruplar aktif grup olamaz
 		activeGroupId = group.id;
 		renderList();
 		updateActiveGroupLabel();
@@ -2056,10 +3211,26 @@ function renderGroupItem(container, group) {
 	groupCheck.onclick = function (e) {
 		e.stopPropagation();
 		group.checked = groupCheck.checked;
+		// Batch primitifleri varsa alt-toggle durumlarını dikkate alarak toggle et
+		if (group._batchPrimitives) {
+			group._batchPrimitives.forEach(function (p) {
+				if (p._isImportBatch && p instanceof Cesium.LabelCollection) {
+					p.show = group.checked && (group.labelsVisible !== false);
+				} else if (p._isImportBatch && p._isPolylineBatch) {
+					p.show = group.checked && (group.linesVisible !== false);
+				} else if (p._isImportBatch && p._isFillBatch) {
+					p.show = group.checked && (group.fillVisible !== false);
+				} else {
+					p.show = group.checked;
+				}
+			});
+		}
 		measurements.forEach(function (m) {
 			if (m.groupId === group.id) {
 				m.checked = group.checked;
-				m.entities.forEach(function (ent) { ent.show = group.checked; if (ent.label) ent.label.show = group.checked; });
+				if (!m.isBatched) {
+					m.entities.forEach(function (ent) { ent.show = group.checked; if (ent.label) ent.label.show = group.checked; });
+				}
 			}
 		});
 		viewer.scene.requestRender();
@@ -2095,57 +3266,218 @@ function renderGroupItem(container, group) {
 		showColorPalette(group, colorBtn);
 	};
 
-	header.appendChild(arrow);
-	header.appendChild(countBadge);
-	header.appendChild(folderIcon);
-	header.appendChild(groupName);
-	header.appendChild(colorBtn);
-	header.appendChild(groupCheck);
+	// ─── REFERANS GRUP: İki satırlı header ───
+	if (group.isReferans) {
+		// Dosya adından 📌 prefix'ini temizle
+		var displayName = group.name.replace(/^📌\s*/, '');
 
-	// REFERANS grubuna ± Z kontrolleri ekle
-	if (group.name.indexOf('📌') === 0) {
-		var refControls = document.createElement('div');
-		refControls.className = 'flex items-center gap-0.5 ml-1';
-		refControls.onclick = function (e) { e.stopPropagation(); };
+		header.appendChild(arrow);
+		header.appendChild(colorBtn);
 
-		// 🧲 Snap Toggle Butonu
+		// Referans ikonu
+		var pinIcon = document.createElement('span');
+		pinIcon.className = 'material-symbols-outlined shrink-0';
+		pinIcon.style.cssText = 'font-size:13px;color:' + (group.color || '#14B8A6') + ';';
+		pinIcon.innerText = 'push_pin';
+		header.appendChild(pinIcon);
+
+		// Dosya adı — tam okunabilir
+		groupName.className = 'text-[10px] font-bold text-slate-300 flex-1 truncate tracking-tight';
+		groupName.innerText = displayName;
+		groupName.title = displayName;
+		groupName.style.cssText = 'max-width:140px;';
+		header.appendChild(groupName);
+
+		header.appendChild(countBadge);
+		header.appendChild(groupCheck);
+
+		groupWrapper.appendChild(header);
+
+		// ─── Satır 2: Kontrol çubuğu (sadece açıkken görünür) ───
+		var controlBar = document.createElement('div');
+		controlBar.className = group.isOpen ? 'flex items-center gap-1 px-2 py-1' : 'items-center gap-1 px-2 py-1';
+		controlBar.style.cssText = 'padding-left:28px;background:var(--ref-control-bg, rgba(15,23,42,0.4));border-top:1px solid var(--border-subtle, rgba(71,85,105,0.15));' + (group.isOpen ? 'display:flex;' : 'display:none;');
+		controlBar.onclick = function (e) { e.stopPropagation(); };
+
+		// Toggle buton stili helper (tema uyumlu)
+		var btnOnStyle = 'width:20px;height:20px;display:flex;align-items:center;justify-content:center;border-radius:4px;font-size:11px;font-weight:bold;cursor:pointer;border:none;background:rgba(20,184,166,0.2);color:#14B8A6;transition:all 0.15s;';
+		var btnOffStyle = 'width:20px;height:20px;display:flex;align-items:center;justify-content:center;border-radius:4px;font-size:11px;font-weight:bold;cursor:pointer;border:1px solid var(--border-subtle, rgba(71,85,105,0.3));background:var(--bg-elevated, #1e293b);color:var(--text-muted, #94a3b8);transition:all 0.15s;';
+
+		// 🧲 Snap Toggle
 		var btnSnap = document.createElement('button');
 		var isSnapOn = !!group.snapEnabled;
-		btnSnap.className = 'w-5 h-5 flex items-center justify-center rounded text-[11px] font-bold transition-colors ' + (isSnapOn ? 'bg-primary/20 text-primary' : 'bg-slate-700 text-slate-500 hover:text-slate-300');
-		btnSnap.innerHTML = '<span class="material-symbols-outlined text-[13px]">' + (isSnapOn ? 'my_location' : 'location_disabled') + '</span>';
-		btnSnap.title = isSnapOn ? 'Snap AÇIK — kapatmak için tıkla' : 'Snap KAPALI — açmak için tıkla';
+		btnSnap.style.cssText = isSnapOn ? btnOnStyle : btnOffStyle;
+		btnSnap.innerHTML = '<span class="material-symbols-outlined" style="font-size:13px">' + (isSnapOn ? 'my_location' : 'location_disabled') + '</span>';
+		btnSnap.title = isSnapOn ? 'Snap AÇIK' : 'Snap KAPALI';
 		btnSnap.onclick = function () {
 			group.snapEnabled = !group.snapEnabled;
-			renderList();
+			var newSnap = group.snapEnabled;
+			btnSnap.style.cssText = newSnap ? btnOnStyle : btnOffStyle;
+			btnSnap.innerHTML = '<span class="material-symbols-outlined" style="font-size:13px">' + (newSnap ? 'my_location' : 'location_disabled') + '</span>';
+			btnSnap.title = newSnap ? 'Snap AÇIK' : 'Snap KAPALI';
 		};
-		refControls.appendChild(btnSnap);
+		controlBar.appendChild(btnSnap);
+
+		// 🏷️ Etiket Toggle
+		var isLabelsOn = group.labelsVisible !== false;
+		var btnLabel = document.createElement('button');
+		btnLabel.style.cssText = isLabelsOn ? btnOnStyle : btnOffStyle;
+		btnLabel.innerHTML = '<span class="material-symbols-outlined" style="font-size:13px">' + (isLabelsOn ? 'label' : 'label_off') + '</span>';
+		btnLabel.title = isLabelsOn ? 'Etiketler AÇIK' : 'Etiketler KAPALI';
+		btnLabel.onclick = function () {
+			var wasOn = group.labelsVisible !== false;
+			group.labelsVisible = !wasOn;
+			var nowOn = group.labelsVisible;
+			if (group._batchPrimitives) {
+				group._batchPrimitives.forEach(function (p) {
+					if (p._isImportBatch && p instanceof Cesium.LabelCollection) {
+						p.show = nowOn && group.checked;
+					}
+				});
+			}
+			measurements.forEach(function (m) {
+				if (m.groupId === group.id && !m.isBatched) {
+					m.entities.forEach(function (ent) {
+						if (ent.label) ent.label.show = nowOn && m.checked;
+					});
+				}
+			});
+			btnLabel.style.cssText = nowOn ? btnOnStyle : btnOffStyle;
+			btnLabel.innerHTML = '<span class="material-symbols-outlined" style="font-size:13px">' + (nowOn ? 'label' : 'label_off') + '</span>';
+			btnLabel.title = nowOn ? 'Etiketler AÇIK' : 'Etiketler KAPALI';
+			viewer.scene.requestRender();
+		};
+		controlBar.appendChild(btnLabel);
+
+		// 🔲 Alan (Fill) Gizle/Göster Toggle
+		var isFillOn = group.fillVisible !== false;
+		var btnFill = document.createElement('button');
+		btnFill.style.cssText = isFillOn ? btnOnStyle : btnOffStyle;
+		btnFill.innerHTML = '<span class="material-symbols-outlined" style="font-size:13px">' + (isFillOn ? 'format_color_fill' : 'format_color_reset') + '</span>';
+		btnFill.title = isFillOn ? 'Alanlar AÇIK' : 'Alanlar KAPALI';
+		btnFill.onclick = function () {
+			var wasFill = group.fillVisible !== false;
+			group.fillVisible = !wasFill;
+			var nowFill = group.fillVisible;
+			if (group._batchPrimitives) {
+				group._batchPrimitives.forEach(function (p) {
+					if (p._isImportBatch && p instanceof Cesium.Primitive && !(p._isPolylineBatch)) {
+						p.show = nowFill && group.checked;
+					}
+				});
+			}
+			btnFill.style.cssText = nowFill ? btnOnStyle : btnOffStyle;
+			btnFill.innerHTML = '<span class="material-symbols-outlined" style="font-size:13px">' + (nowFill ? 'format_color_fill' : 'format_color_reset') + '</span>';
+			btnFill.title = nowFill ? 'Alanlar AÇIK' : 'Alanlar KAPALI';
+			viewer.scene.requestRender();
+		};
+		controlBar.appendChild(btnFill);
+
+		// 📏 Çizgi (Line) Gizle/Göster Toggle
+		var isLinesOn = group.linesVisible !== false;
+		var btnLine = document.createElement('button');
+		btnLine.style.cssText = isLinesOn ? btnOnStyle : btnOffStyle;
+		btnLine.innerHTML = '<span class="material-symbols-outlined" style="font-size:13px">' + (isLinesOn ? 'timeline' : 'remove') + '</span>';
+		btnLine.title = isLinesOn ? 'Çizgiler AÇIK' : 'Çizgiler KAPALI';
+		btnLine.onclick = function () {
+			var wasLines = group.linesVisible !== false;
+			group.linesVisible = !wasLines;
+			var nowLines = group.linesVisible;
+			if (group._batchPrimitives) {
+				group._batchPrimitives.forEach(function (p) {
+					if (p._isImportBatch && p._isPolylineBatch) {
+						p.show = nowLines && group.checked;
+					}
+				});
+			}
+			btnLine.style.cssText = nowLines ? btnOnStyle : btnOffStyle;
+			btnLine.innerHTML = '<span class="material-symbols-outlined" style="font-size:13px">' + (nowLines ? 'timeline' : 'remove') + '</span>';
+			btnLine.title = nowLines ? 'Çizgiler AÇIK' : 'Çizgiler KAPALI';
+			viewer.scene.requestRender();
+		};
+		controlBar.appendChild(btnLine);
+
+		// Ayırıcı
+		var sep1 = document.createElement('div');
+		sep1.style.cssText = 'width:1px;height:12px;background:var(--border, rgba(71,85,105,0.3));margin:0 2px;';
+		controlBar.appendChild(sep1);
+
+		// Z kontrolleri — gerçek kot değeri
+		var currentZOffset = group._zOffset || 0;
+		var zBtnStyle = 'width:20px;height:20px;display:flex;align-items:center;justify-content:center;border-radius:4px;font-size:10px;font-weight:bold;cursor:pointer;border:1px solid var(--border-subtle, rgba(71,85,105,0.3));background:var(--bg-elevated, #1e293b);color:var(--text-muted, #94a3b8);transition:all 0.15s;';
 
 		var btnZDown = document.createElement('button');
-		btnZDown.className = 'w-5 h-5 flex items-center justify-center rounded bg-slate-700 hover:bg-red-600/80 text-slate-400 hover:text-white text-[10px] font-bold transition-colors';
+		btnZDown.style.cssText = zBtnStyle;
 		btnZDown.innerText = '−';
-		btnZDown.title = 'Z −1m';
-		btnZDown.onclick = function () { adjustGroupZ(group.id, -1); };
+		btnZDown.title = 'Kot −1m';
+		btnZDown.onmouseenter = function () { this.style.background = 'rgba(239,68,68,0.7)'; this.style.color = '#fff'; };
+		btnZDown.onmouseleave = function () { this.style.background = 'var(--bg-elevated, #1e293b)'; this.style.color = 'var(--text-muted, #94a3b8)'; };
+
+		var zInput = document.createElement('input');
+		zInput.type = 'number';
+		zInput.value = currentZOffset;
+		zInput.step = '1';
+		zInput.style.cssText = 'width:40px;padding:1px 2px;font-size:9px;text-align:center;background:var(--bg-surface, #111827);border:1px solid var(--border-subtle, rgba(71,85,105,0.25));border-radius:3px;color:var(--text-primary, #cbd5e1);font-family:monospace;';
+		zInput.title = 'Gerçek kot ofseti (metre)';
 
 		var btnZUp = document.createElement('button');
-		btnZUp.className = 'w-5 h-5 flex items-center justify-center rounded bg-slate-700 hover:bg-teal-600/80 text-slate-400 hover:text-white text-[10px] font-bold transition-colors';
+		btnZUp.style.cssText = zBtnStyle;
 		btnZUp.innerText = '+';
-		btnZUp.title = 'Z +1m';
-		btnZUp.onclick = function () { adjustGroupZ(group.id, 1); };
+		btnZUp.title = 'Kot +1m';
+		btnZUp.onmouseenter = function () { this.style.background = 'rgba(20,184,166,0.7)'; this.style.color = '#fff'; };
+		btnZUp.onmouseleave = function () { this.style.background = 'var(--bg-elevated, #1e293b)'; this.style.color = 'var(--text-muted, #94a3b8)'; };
 
-		var zLabel = document.createElement('span');
-		zLabel.className = 'text-[8px] text-slate-600 font-mono px-0.5';
-		zLabel.innerText = 'Z';
+		var zUnit = document.createElement('span');
+		zUnit.style.cssText = 'font-size:8px;color:var(--text-muted, #64748b);font-family:monospace;';
+		zUnit.textContent = 'm';
 
-		refControls.appendChild(btnZDown);
-		refControls.appendChild(zLabel);
-		refControls.appendChild(btnZUp);
-		header.appendChild(refControls);
+		btnZDown.onclick = function () {
+			adjustGroupZ(group.id, -1);
+			group._zOffset = (group._zOffset || 0) - 1;
+			zInput.value = group._zOffset;
+		};
+		btnZUp.onclick = function () {
+			adjustGroupZ(group.id, 1);
+			group._zOffset = (group._zOffset || 0) + 1;
+			zInput.value = group._zOffset;
+		};
+		zInput.onchange = function () {
+			var newVal = parseFloat(zInput.value) || 0;
+			var oldVal = group._zOffset || 0;
+			var delta = newVal - oldVal;
+			if (delta !== 0) {
+				adjustGroupZ(group.id, delta);
+				group._zOffset = newVal;
+			}
+		};
+
+		controlBar.appendChild(btnZDown);
+		controlBar.appendChild(zInput);
+		controlBar.appendChild(btnZUp);
+		controlBar.appendChild(zUnit);
+
+		// Spacer
+		var spacer = document.createElement('div');
+		spacer.style.cssText = 'flex:1;';
+		controlBar.appendChild(spacer);
+
+		// 🗑️ Sil
+		controlBar.appendChild(btnDelGroup);
+
+		groupWrapper.appendChild(controlBar);
+	} else {
+		// ─── STANDART GRUP: Tek satırlı header (değişiklik yok) ───
+		header.appendChild(arrow);
+		header.appendChild(countBadge);
+		header.appendChild(folderIcon);
+		header.appendChild(groupName);
+		header.appendChild(colorBtn);
+		header.appendChild(groupCheck);
+		if (group.id !== 0) header.appendChild(btnDelGroup);
+		groupWrapper.appendChild(header);
 	}
 
-	if (group.id !== 0) header.appendChild(btnDelGroup);
-	groupWrapper.appendChild(header);
-
-	// ─── Group Content (Measurements) ───
+	// ─── Group Content (Measurements) — Paginated Rendering ───
 	var content = document.createElement('div');
 	content.className = 'folder-content';
 
@@ -2157,7 +3489,18 @@ function renderGroupItem(container, group) {
 		content.appendChild(empty);
 	}
 
-	groupMeasures.forEach(function (m) {
+	// Büyük grupları otomatik kapat (200+ öğe, ilk render)
+	var PAGE_SIZE = 50;
+	if (groupMeasures.length > 200 && group._visibleCount === undefined && group.isOpen) {
+		group.isOpen = false;
+		groupWrapper.className = 'folder-item mb-2 folder-collapsed';
+	}
+
+	// Sayfalama: sadece görünür kadar render et
+	var visibleCount = group._visibleCount || PAGE_SIZE;
+	var itemsToRender = groupMeasures.slice(0, visibleCount);
+
+	itemsToRender.forEach(function (m) {
 		var row = document.createElement('div');
 		var selectedClass = activeHighlightId === m.id ? ' border-primary bg-primary/10' : ' border-slate-700/50 bg-slate-800/50 hover:bg-slate-700/50';
 		row.className = 'flex items-center justify-between py-0.5 px-1.5 rounded border transition-colors mb-1' + selectedClass;
@@ -2220,6 +3563,23 @@ function renderGroupItem(container, group) {
 		row.appendChild(rightDiv);
 		content.appendChild(row);
 	});
+
+	// "Daha Fazla Göster" butonu (kalan öğe varsa)
+	var remaining = groupMeasures.length - visibleCount;
+	if (remaining > 0) {
+		var showMore = document.createElement('button');
+		showMore.className = 'w-full text-center text-[9px] font-bold py-1.5 my-1 rounded transition-colors';
+		showMore.style.cssText = 'background:rgba(20,184,166,0.08);color:#14B8A6;border:1px dashed rgba(20,184,166,0.3);cursor:pointer;';
+		showMore.innerText = '▼ ' + Math.min(remaining, PAGE_SIZE) + ' daha göster (' + remaining + ' kalan)';
+		showMore.onmouseenter = function () { this.style.background = 'rgba(20,184,166,0.15)'; };
+		showMore.onmouseleave = function () { this.style.background = 'rgba(20,184,166,0.08)'; };
+		showMore.onclick = function (e) {
+			e.stopPropagation();
+			group._visibleCount = (group._visibleCount || PAGE_SIZE) + PAGE_SIZE;
+			renderList();
+		};
+		content.appendChild(showMore);
+	}
 
 	groupWrapper.appendChild(content);
 	container.appendChild(groupWrapper);
@@ -2314,6 +3674,14 @@ function highlightMeasurement(id) {
 	if (delFab) {
 		delFab.style.display = (_isMob && activeHighlightId !== null) ? 'flex' : 'none';
 	}
+	// ── EditManager Entegrasyonu ──
+	if (typeof EditManager !== 'undefined') {
+		if (activeHighlightId === null) {
+			EditManager.stopEdit();
+		} else {
+			EditManager.startEdit(activeHighlightId);
+		}
+	}
 	viewer.scene.requestRender();
 }
 
@@ -2335,11 +3703,22 @@ function deleteMeasurement(id) {
 function deleteGroup(id) {
 	if (id === 0) return; // Varsayılan "Grup 1" silinemez
 
+	// Batch primitifleri varsa sahneden kaldır
+	var grp = groups.find(function (g) { return g.id === id; });
+	if (grp && grp._batchPrimitives) {
+		grp._batchPrimitives.forEach(function (prim) {
+			try { viewer.scene.primitives.remove(prim); } catch (e) { }
+		});
+		grp._batchPrimitives = null;
+	}
+
 	// Gruba ait objeleri sahneden kaldır ve measurements listesinden ayır
 	var remainingMeasurements = [];
 	measurements.forEach(function (m) {
 		if (m.groupId === id) {
-			m.entities.forEach(function (ent) { safeRemoveItem(ent); });
+			if (!m.isBatched) {
+				m.entities.forEach(function (ent) { safeRemoveItem(ent); });
+			}
 			if (activeHighlightId === m.id) activeHighlightId = null;
 		} else {
 			remainingMeasurements.push(m); // Silinmeyecekleri tut
@@ -2357,6 +3736,9 @@ function deleteGroup(id) {
 	viewer.scene.requestRender();
 	renderList();
 	debouncedSave();
+
+	// İmport verisini de IndexedDB'den sil
+	CbsStorage.deleteImport(id).catch(function (e) { console.warn('Import silme hatası:', e); });
 }
 
 // Seçili objeyi Delete tuşuyla silme
@@ -2434,46 +3816,49 @@ function clearTempDrawing() {
 }
 
 // ─── Z-AYAR SLIDER SİSTEMİ ────────────────────────────────────
-var _zOverlayContainer = document.createElement('div');
-_zOverlayContainer.id = 'zOverlayContainer';
-_zOverlayContainer.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:50;overflow:hidden;';
-document.getElementById('cesiumContainer').appendChild(_zOverlayContainer);
-
-var _zButtons = []; // { el, index, cartesian }
+// Z butonu artık resultDisplay barının sağında sabit konumda beliriyor
+var _zBtnWrapper = null;  // Z buton wrapper'ı
 var _activeZSlider = null; // popup ref
+var _activeZIndex = -1;    // hangi clickPoints index'i
 
 function clearZOverlays() {
-	_zButtons = [];
-	_activeZSlider = null;
-	_zOverlayContainer.innerHTML = '';
+	closeZSlider();
+	if (_zBtnWrapper && _zBtnWrapper.parentNode) {
+		_zBtnWrapper.parentNode.removeChild(_zBtnWrapper);
+	}
+	_zBtnWrapper = null;
+	_activeZIndex = -1;
 }
 
 function createZButton(index) {
-	// Sadece aktif noktada Z butonu göster — önce eskisini kaldır
+	// Önce eskisini kaldır
 	clearZOverlays();
+	_activeZIndex = index;
 
+	var resultBar = document.getElementById('resultDisplay');
+	if (!resultBar) return;
+
+	// Wrapper — resultDisplay'in sağında konumlanır
 	var wrapper = document.createElement('div');
-	wrapper.style.cssText = 'position:absolute;pointer-events:auto;display:flex;flex-direction:column;align-items:flex-start;';
+	wrapper.style.cssText = 'position:absolute;right:-52px;top:50%;transform:translateY(-50%);pointer-events:auto;display:flex;flex-direction:column;align-items:center;';
 	wrapper.className = 'z-btn-wrapper';
 
 	var btn = document.createElement('button');
-	btn.textContent = 'Z';
+	btn.textContent = 'Z ±';
 	btn.setAttribute('aria-label', 'Yükseklik (Z) Ayarla');
+	btn.title = 'Kot (Z) Ayarla';
 	btn.style.cssText = [
-		'width:22px;height:22px;font-size:11px;font-weight:700',
-		'border:1px solid rgba(103,232,249,0.25);border-radius:6px',
-		'background:rgba(15,23,42,0.75);color:#67e8f9',
-		'cursor:pointer;padding:0;line-height:22px;text-align:center',
-		'backdrop-filter:blur(8px);pointer-events:auto',
-		'transition:all 0.2s ease;box-shadow:0 2px 8px rgba(0,0,0,0.3)'
+		'padding:6px 14px;font-size:14px;font-weight:600;font-family:inherit',
+		'border:1px solid rgba(0,0,0,0.15);border-radius:9999px',
+		'background:#ffffff;color:#0f172a',
+		'cursor:pointer;white-space:nowrap',
+		'transition:all 0.2s ease'
 	].join(';');
 	btn.addEventListener('mouseenter', function () {
-		this.style.borderColor = 'rgba(103,232,249,0.6)';
-		this.style.boxShadow = '0 2px 12px rgba(103,232,249,0.25)';
+		this.style.background = '#e2e8f0';
 	});
 	btn.addEventListener('mouseleave', function () {
-		this.style.borderColor = 'rgba(103,232,249,0.25)';
-		this.style.boxShadow = '0 2px 8px rgba(0,0,0,0.3)';
+		this.style.background = '#ffffff';
 	});
 	btn.addEventListener('click', function (e) {
 		e.stopPropagation();
@@ -2485,16 +3870,16 @@ function createZButton(index) {
 	});
 	wrapper.appendChild(btn);
 
-	_zOverlayContainer.appendChild(wrapper);
-	_zButtons.push({ el: wrapper, index: index });
-	updateSingleZPosition(0);
+	// resultDisplay'e relative pozisyon ekle (bir kez)
+	if (getComputedStyle(resultBar).position === 'static') {
+		resultBar.style.position = 'relative';
+	}
+	resultBar.appendChild(wrapper);
+	_zBtnWrapper = wrapper;
 }
 
 function removeLastZButton() {
-	if (_zButtons.length === 0) return;
-	closeZSlider();
-	var last = _zButtons.pop();
-	if (last.el.parentNode) last.el.parentNode.removeChild(last.el);
+	clearZOverlays();
 }
 
 function openZSlider(index, wrapperEl) {
@@ -2510,7 +3895,8 @@ function openZSlider(index, wrapperEl) {
 		'border:1px solid rgba(103,232,249,0.2)',
 		'border-radius:10px;padding:8px 10px',
 		'backdrop-filter:blur(12px);pointer-events:auto',
-		'margin-bottom:6px;margin-left:8px;min-width:110px',
+		'position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%)',
+		'min-width:110px',
 		'box-shadow:0 4px 20px rgba(0,0,0,0.45),0 0 1px rgba(103,232,249,0.15)'
 	].join(';');
 	popup._zIndex = index;
@@ -2615,11 +4001,9 @@ function openZSlider(index, wrapperEl) {
 	popup.appendChild(resetRow);
 	popup.appendChild(hint);
 
-	wrapperEl.insertBefore(popup, wrapperEl.firstChild);
+	wrapperEl.appendChild(popup);
 	_activeZSlider = popup;
 }
-
-// _closeZOnOutsideClick artık kullanılmıyor
 
 function closeZSlider() {
 	if (_activeZSlider && _activeZSlider.parentNode) {
@@ -2627,35 +4011,6 @@ function closeZSlider() {
 	}
 	_activeZSlider = null;
 }
-
-function updateSingleZPosition(arrIdx) {
-	if (arrIdx >= _zButtons.length) return;
-	// Popup açıkken pozisyonu sabitle — hareket etmesin
-	if (_activeZSlider) return;
-	var entry = _zButtons[arrIdx];
-	var ptIndex = entry.index;
-	if (ptIndex >= clickPoints.length) return;
-	var screenPos = Cesium.SceneTransforms.wgs84ToWindowCoordinates(viewer.scene, clickPoints[ptIndex]);
-	if (screenPos) {
-		entry.el.style.left = (screenPos.x + 14) + 'px';
-		entry.el.style.bottom = (viewer.canvas.clientHeight - screenPos.y + 16) + 'px';
-		entry.el.style.top = 'auto';
-		entry.el.style.display = '';
-	} else {
-		entry.el.style.display = 'none';
-	}
-}
-
-function updateZOverlayPositions() {
-	for (var i = 0; i < _zButtons.length; i++) {
-		updateSingleZPosition(i);
-	}
-}
-
-// Her frame'de Z butonlarının ekran pozisyonunu güncelle
-viewer.scene.preRender.addEventListener(function () {
-	if (_zButtons.length > 0) updateZOverlayPositions();
-});
 
 // ─── REDRAW: clickPoints'ten TÜM GEÇİCİ ÇİZİMİ TEKRAR OLUŞTUR ───
 function redrawFromClickPoints() {
@@ -2863,7 +4218,9 @@ areaModeBtns.forEach(function (btn) {
 // Optimizasyon: 1) 33ms throttle, 2) Vertex önceliği, 3) Globe pick yok, 4) Viewport clipping
 var _lastSnapTime = 0;
 handler.setInputAction(function (movement) {
-	if (!activeTool) {
+	// EditManager sürükleme sırasında snap aktif kalmalı
+	var _editDragging = (typeof EditManager !== 'undefined' && EditManager.isDragging);
+	if (!activeTool && !_editDragging) {
 		if (snapIndicator && snapIndicator.show) {
 			snapIndicator.show = false;
 			viewer.scene.requestRender();
@@ -2983,8 +4340,17 @@ handler.setInputAction(function (movement) {
 
 // ─── 7. SOL TIK: ÇİZİM VEYA SEÇİM ───────────────────────────────
 handler.setInputAction(function (click) {
+	// EditManager sürükleme sırasında LEFT_CLICK'i engelle
+	if (typeof EditManager !== 'undefined' && EditManager.isDragging) return;
+
 	// Eğer aktif bir araç yoksa, haritadaki objeleri (ölçümleri) seçme işlemi yap
 	if (!activeTool) {
+		// Edit grip tıklanmışsa seçim/seçimi kaldırma mantığını atla
+		var _pickCheck = viewer.scene.pick(click.position);
+		if (Cesium.defined(_pickCheck) && _pickCheck.id && _pickCheck.id.properties &&
+			_pickCheck.id.properties._editGrip && _pickCheck.id.properties._editGrip.getValue()) {
+			return; // EditManager LEFT_DOWN handler'ı bununla ilgilenecek
+		}
 		var pickedObject = viewer.scene.pick(click.position);
 		if (Cesium.defined(pickedObject) && pickedObject.id) {
 			var entity = pickedObject.id;
@@ -3164,6 +4530,12 @@ handler.setInputAction(function (click) {
 				entities: tempEntities.slice(),
 				checked: true
 			});
+			// X-Ray aktifse yeni ölçüme uygula
+			if (_xrayActive) {
+				measurements[measurements.length - 1].entities.forEach(function (ent) {
+					applyXRayToPrimitive(ent, true);
+				});
+			}
 			tempEntities = []; clickPoints = []; pointCounter = 0;
 			renderList(); setActiveTool(null);
 			debouncedSave();
@@ -3198,6 +4570,12 @@ handler.setInputAction(function (click) {
 			checked: true
 		});
 		// SONRAKİ NOKTA İÇİN SIFIRLAMALAR
+		// X-Ray aktifse yeni ölçüme uygula
+		if (_xrayActive) {
+			measurements[measurements.length - 1].entities.forEach(function (ent) {
+				applyXRayToPrimitive(ent, true);
+			});
+		}
 		tempEntities = [];
 		clickPoints = [];
 		// pointCounter SIFIRLANMIYOR Kİ 1, 2, 3 DİYE ARDIL ARTSIN
@@ -3262,6 +4640,12 @@ handler.setInputAction(function () {
 			entities: tempEntities.slice(),
 			checked: true
 		});
+		// X-Ray aktifse yeni ölçüme uygula
+		if (_xrayActive) {
+			measurements[measurements.length - 1].entities.forEach(function (ent) {
+				applyXRayToPrimitive(ent, true);
+			});
+		}
 		tempEntities = []; clickPoints = []; pointCounter = 0;
 		renderList(); setActiveTool(null);
 		debouncedSave();
@@ -3306,6 +4690,12 @@ handler.setInputAction(function () {
 			entities: tempEntities.slice(),
 			checked: true
 		});
+		// X-Ray aktifse yeni ölçüme uygula
+		if (_xrayActive) {
+			measurements[measurements.length - 1].entities.forEach(function (ent) {
+				applyXRayToPrimitive(ent, true);
+			});
+		}
 		tempEntities = []; clickPoints = []; pointCounter = 0;
 		renderList(); setActiveTool(null);
 		debouncedSave();
@@ -3538,76 +4928,179 @@ function getModelAverageZ() {
 function getOrCreateReferansGroup(fileName) {
 	var groupName = '📌 ' + (fileName || 'REFERANS');
 	var existing = groups.find(function (g) { return g.name === groupName; });
-	if (existing) return existing.id;
+	if (existing) {
+		// Aynı dosya tekrar import ediliyor — üzerine yaz
+		if (!confirm('"' + fileName + '" zaten içe aktarılmış.\nÜzerine yazmak ister misiniz?')) {
+			return null; // İptal
+		}
+		// Eski grubu temizle
+		deleteGroup(existing.id);
+	}
 	groupCount++;
-	var refGroup = { id: groupCount, name: groupName, isOpen: true, checked: true };
+	var refGroup = { id: groupCount, name: groupName, isOpen: true, checked: true, isReferans: true };
 	groups.push(refGroup);
 	return refGroup.id;
 }
 
 // Bir gruptaki tüm ölçümlerin Z (yükseklik) değerini delta kadar kaydır
 function adjustGroupZ(groupId, delta) {
+	var group = groups.find(function (g) { return g.id === groupId; });
+	var hasBatched = false;
+
 	measurements.forEach(function (m) {
 		if (m.groupId !== groupId) return;
-		// 1. Eski entity'leri kaldır
-		m.entities.forEach(function (ent) { safeRemoveItem(ent); });
-		m.entities = [];
-		// 2. Her noktanın yüksekliğine delta ekle
+
+		// Non-batched: eski entity'leri kaldır
+		if (!m.isBatched) {
+			m.entities.forEach(function (ent) { safeRemoveItem(ent); });
+			m.entities = [];
+		} else {
+			hasBatched = true;
+		}
+
+		// Her noktanın yüksekliğine delta ekle
 		m.points = m.points.map(function (p) {
 			var carto = Cesium.Cartographic.fromCartesian(p);
 			carto.height += delta;
 			return Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, carto.height);
 		});
-		// 3. Yeniden çiz
-		if (m.type === 'coord') restoreCoord(m);
-		else if (m.type === 'line') restoreLine(m);
-		else if (m.type === 'polygon') restorePolygon(m);
-		else if (m.type === 'height') restoreHeight(m);
+
+		// Non-batched: yeniden çiz
+		if (!m.isBatched) {
+			if (m.type === 'coord') restoreCoord(m);
+			else if (m.type === 'line') restoreLine(m);
+			else if (m.type === 'polygon') restorePolygon(m);
+			else if (m.type === 'height') restoreHeight(m);
+
+			// X-Ray aktifse yeniden oluşturulan entity'lere uygula
+			if (_xrayActive) {
+				m.entities.forEach(function (ent) {
+					applyXRayToPrimitive(ent, true);
+				});
+			}
+		}
 	});
+
+	// Batch primitifleri yeniden oluştur (güncel point'lerle)
+	if (hasBatched && group) {
+		rebuildBatchPrimitives(group);
+	}
+
 	saveToStorage();
-	viewer.scene.requestRender(); // requestRenderMode=true iken anlık görsel güncelleme
+	viewer.scene.requestRender();
 }
+// ─── IMPORT LOADING OVERLAY YÖNETİMİ ───────────────────────────
+var _importCurrentFileName = '';
+function showImportLoading(fileName) {
+	var overlay = document.getElementById('importLoadingOverlay');
+	if (fileName) _importCurrentFileName = fileName;
+	document.getElementById('importLoadingFileName').textContent = '📂 ' + (_importCurrentFileName || 'Dosya');
+	document.getElementById('importLoadingStatus').textContent = 'Dosya okunuyor…';
+	overlay.classList.remove('hidden');
+}
+
+function updateImportLoading(message) {
+	var el = document.getElementById('importLoadingStatus');
+	if (el) el.textContent = message;
+}
+
+function hideImportLoading() {
+	var overlay = document.getElementById('importLoadingOverlay');
+	if (overlay) overlay.classList.add('hidden');
+}
+
+function importError(message) {
+	hideImportLoading();
+	alert('İçe aktarma hatası: ' + message);
+}
+
+// ─── FORMAT BİLGİ MESAJLARI (Z Dialog İçin) ─────────────────────
+var importFormatMessages = {
+	csv: '💡 <b>CSV formatı:</b> NoktaAdi, X, Y, Z (virgül veya noktalı virgül ayraçlı). İlk satır başlık olabilir.',
+	geojson: '💡 <b>GeoJSON:</b> Standart FeatureCollection. Point, LineString ve Polygon desteklenir. Koordinatlar [lon, lat, z] sırasında olmalıdır.',
+	dxf: '💡 <b>DXF:</b> POINT, LINE, POLYLINE, CIRCLE, ARC, ELLIPSE, 3DFACE entity tipleri desteklenir. AutoCAD uyumlu.',
+	kml: '💡 <b>KML/KMZ:</b> Google Earth uyumlu Placemark verileri. KMZ arşivi otomatik çözülür. Z değerleri WGS84 absolute altitude olarak okunur.'
+};
+
 // Z-Offset diyaloğunu göster ve callback ile sonucu döndür
-function showImportZDialog(callback) {
+function showImportZDialog(callback, formatType) {
 	var dialog = document.getElementById('importZDialog');
 	var avgZ = getModelAverageZ();
 	document.getElementById('importZModelAvg').innerText = avgZ.toFixed(1) + ' m';
 	document.getElementById('importZOffsetInput').value = '0';
+
+	// Format bilgisini göster/gizle
+	var formatInfoEl = document.getElementById('importFormatInfo');
+	if (formatInfoEl) {
+		if (formatType && importFormatMessages[formatType]) {
+			formatInfoEl.innerHTML = importFormatMessages[formatType];
+			formatInfoEl.style.display = '';
+		} else {
+			formatInfoEl.style.display = 'none';
+		}
+	}
+
 	dialog.classList.remove('hidden');
+	// Loading overlay'ı gizle — Z Dialog kullanıcı etkileşimi gerektirir
+	hideImportLoading();
 
 	function cleanup() {
 		dialog.classList.add('hidden');
 		document.getElementById('importZApply').removeEventListener('click', onApply);
 		document.getElementById('importZSkip').removeEventListener('click', onSkip);
-		document.getElementById('importZBackdrop').removeEventListener('click', onSkip);
+		document.getElementById('importZCancel').removeEventListener('click', onCancel);
+		document.getElementById('importZBackdrop').removeEventListener('click', onCancel);
+		document.removeEventListener('keydown', onKeyDown);
 	}
 
 	function onApply() {
 		var offset = parseFloat(document.getElementById('importZOffsetInput').value) || 0;
 		cleanup();
-		callback(offset);
+		// Loading'i yeniden aç — veriler oluşturulacak
+		showImportLoading();
+		updateImportLoading('Veriler oluşturuluyor…');
+		// setTimeout ile browser'a repaint fırsatı ver — yoksa loading görünmez
+		setTimeout(function () { callback(offset); }, 50);
 	}
 
 	function onSkip() {
 		cleanup();
-		callback(0);
+		// Loading'i yeniden aç — veriler oluşturulacak
+		showImportLoading();
+		updateImportLoading('Veriler oluşturuluyor…');
+		// setTimeout ile browser'a repaint fırsatı ver — yoksa loading görünmez
+		setTimeout(function () { callback(0); }, 50);
+	}
+
+	function onCancel() {
+		cleanup();
+		// null = iptal edildi — import gerçekleşmez
+		callback(null);
+	}
+
+	function onKeyDown(e) {
+		if (e.key === 'Escape') { onCancel(); }
+		else if (e.key === 'Enter') { onApply(); }
 	}
 
 	document.getElementById('importZApply').addEventListener('click', onApply);
 	document.getElementById('importZSkip').addEventListener('click', onSkip);
-	document.getElementById('importZBackdrop').addEventListener('click', onSkip);
+	document.getElementById('importZCancel').addEventListener('click', onCancel);
+	document.getElementById('importZBackdrop').addEventListener('click', onCancel);
+	document.addEventListener('keydown', onKeyDown);
 }
 
 // İçe Aktarma: Format kılavuz mesajları
 var importGuides = {
 	btnImportCSV: 'CSV formatı: <b>NoktaAdi, X, Y, Z</b> (virgül veya noktalı virgül ayraçlı). İlk satır başlık olabilir.',
 	btnImportGeoJSON: 'GeoJSON formatı: Standart <b>FeatureCollection</b>. Point, LineString ve Polygon desteklenir.',
-	btnImportDXF: 'DXF formatı: <b>POINT, LINE, POLYLINE</b> entity tipleri desteklenir.'
+	btnImportDXF: 'DXF formatı: <b>POINT, LINE, POLYLINE, CIRCLE, ARC, ELLIPSE, 3DFACE</b> entity tipleri desteklenir.',
+	btnImportKML: 'KML/KMZ formatı: Google Earth uyumlu <b>Placemark</b> verileri. KMZ ZIP arşivi otomatik açılır.'
 };
 
 // Label'a tıklandığında CRS kontrolü yap, geçerliyse dosya seçiciyi aç
 var _importing = false; // input.click() → label döngüsünü önlemek için bayrak
-['btnImportCSV', 'btnImportGeoJSON', 'btnImportDXF'].forEach(function (id) {
+['btnImportCSV', 'btnImportGeoJSON', 'btnImportDXF', 'btnImportKML'].forEach(function (id) {
 	var input = document.getElementById(id);
 	var label = input.closest('label');
 	if (!label) return;
@@ -3629,12 +5122,14 @@ var _importing = false; // input.click() → label döngüsünü önlemek için 
 // CSV İçe Aktarma (Akıllı sütun algılama + Z-Offset diyaloğu)
 document.getElementById('btnImportCSV').addEventListener('change', function (e) {
 	var file = e.target.files[0]; if (!file) return;
+	showImportLoading(file.name);
 	var crs = document.getElementById('exportCrs').value;
 	var reader = new FileReader();
 	reader.onload = function (ev) {
+		var resultBar = document.querySelector('#resultDisplay > div');
 		try {
 			var lines = ev.target.result.split(/\r?\n/).filter(function (l) { return l.trim() !== ''; });
-			if (lines.length === 0) return;
+			if (lines.length === 0) { hideImportLoading(); return; }
 
 			var firstParts = lines[0].split(/[;,\t]/);
 			var hasHeader = isNaN(parseFloat(firstParts[0].trim()));
@@ -3669,10 +5164,14 @@ document.getElementById('btnImportCSV').addEventListener('change', function (e) 
 				parsedRows.push({ lat: lat, lon: lon, z: rawZ, name: name });
 			}
 
-			if (parsedRows.length === 0) { alert('CSV dosyasında geçerli nokta bulunamadı.'); return; }
+			if (parsedRows.length === 0) { importError('CSV dosyasında geçerli nokta bulunamadı.'); return; }
 
+			updateImportLoading('Z ayarı bekleniyor…');
 			showImportZDialog(function (zOffset) {
+				if (zOffset === null) { hideImportLoading(); resultBar.innerHTML = '<span class="text-slate-400 text-[11px]">İçe aktarma iptal edildi.</span>'; return; }
+				updateImportLoading('Veriler oluşturuluyor…');
 				var refGroupId = getOrCreateReferansGroup(file.name);
+				if (refGroupId === null) { hideImportLoading(); resultBar.innerHTML = '<span class="text-slate-400 text-[11px]">İçe aktarma iptal edildi.</span>'; return; }
 				parsedRows.forEach(function (row, i) {
 					var pos = Cesium.Cartesian3.fromDegrees(row.lon, row.lat, row.z + zOffset);
 					var m = {
@@ -3682,95 +5181,341 @@ document.getElementById('btnImportCSV').addEventListener('change', function (e) 
 						type: 'coord',
 						resultText: row.lat.toFixed(6) + ', ' + row.lon.toFixed(6),
 						checked: true,
+						isImported: true,
 						points: [pos],
 						entities: []
 					};
 					measurements.push(m);
 					restoreCoord(m);
 				});
-				saveToStorage(); renderList();
+				renderList();
+				viewer.scene.requestRender();
+				// ─── Import verisini IndexedDB'ye kaydet ───
+				var csvFeats = parsedRows.map(function (row) {
+					return { name: row.name, type: 'coord', resultText: row.lat.toFixed(6) + ', ' + row.lon.toFixed(6), coords: [{ lat: row.lat, lon: row.lon, z: row.z }] };
+				});
+				var csvGroup = groups.find(function (g) { return g.id === refGroupId; });
+				CbsStorage.saveImport(refGroupId, file.name, csvGroup && csvGroup.color || '#14B8A6', csvFeats, zOffset)
+					.catch(function (e) { console.warn('CSV import kayıt hatası:', e); });
+
+				hideImportLoading();
 				document.querySelector('#resultDisplay > div').innerHTML =
 					'<span class="text-green-400 font-bold text-[11px]">✓ ' + parsedRows.length + ' nokta "' + file.name + '" grubuna aktarıldı.' + (zOffset !== 0 ? ' (Z+' + zOffset + 'm)' : '') + '</span>';
-			});
+			}, 'csv');
 		} catch (csvErr) {
 			console.error('CSV içe aktırma hatası:', csvErr);
-			alert('CSV dosyası okunamadı: ' + csvErr.message);
+			importError('CSV dosyası okunamadı: ' + csvErr.message);
 		}
 	};
+	reader.onerror = function () { importError('CSV dosyası okunamadı.'); };
 	reader.readAsText(file);
 	e.target.value = '';
 });
 
-// GeoJSON İçe Aktarma (Z-Offset diyaloğu + REFERANS grubu)
+// GeoJSON İçe Aktarma — Web Worker ile Off-Thread Parsing
 document.getElementById('btnImportGeoJSON').addEventListener('change', function (e) {
 	var file = e.target.files[0]; if (!file) return;
-	var crs = document.getElementById('exportCrs').value;
+	showImportLoading(file.name);
+	var userCrs = document.getElementById('exportCrs').value;
+	var resultBar = document.querySelector('#resultDisplay > div');
+
 	var reader = new FileReader();
 	reader.onload = function (ev) {
-		try {
-			var data = JSON.parse(ev.target.result);
-		} catch (err) {
-			alert('Geçersiz GeoJSON dosyası: ' + err.message);
-			return;
+		var fileText = ev.target.result;
+		var fileName = file.name;
+
+		// Entity oluşturma — İKİ FAZLI BATCH (GPU Draw Call Azaltma)
+		// Faz 1: Measurement objelerini oluştur (entity yok)
+		// Faz 2: Tüm geometrileri 2 Primitive + 1 LabelCollection'a topla
+		function startBatchRendering(parsedFeats, crsInfo) {
+			if (parsedFeats.length === 0) { importError('GeoJSON dosyasında geçerli öğe bulunamadı.'); return; }
+
+			updateImportLoading('Z ayarı bekleniyor…');
+			showImportZDialog(function (zOffset) {
+				if (zOffset === null) { hideImportLoading(); resultBar.innerHTML = '<span class="text-slate-400 text-[11px]">İçe aktarma iptal edildi.</span>'; return; }
+				updateImportLoading('Geometriler hazırlanıyor…');
+				var refGroupId = getOrCreateReferansGroup(fileName);
+				if (refGroupId === null) { hideImportLoading(); resultBar.innerHTML = '<span class="text-slate-400 text-[11px]">İçe aktarma iptal edildi.</span>'; return; }
+				var refGroup = groups.find(function (g) { return g.id === refGroupId; });
+				var hexColor = refGroup && refGroup.color ? refGroup.color : '#14B8A6';
+				var cesColor = Cesium.Color.fromCssColorString(hexColor);
+				var total = parsedFeats.length;
+				var BATCH_SIZE = 200; // Faz 1 daha hızlı — entity oluşturma yok
+
+				// Geometri akümülatörleri
+				var polyFillInstances = [];
+				var polyLineInstances = [];
+				var coordPoints = [];
+				var labelEntries = [];
+				var sharedPivot = null;
+
+				function processBatch(startIdx) {
+					var frameStart = performance.now();
+					var end = Math.min(startIdx + BATCH_SIZE, total);
+					for (var i = startIdx; i < end; i++) {
+						var feat = parsedFeats[i];
+						var points = feat.coords.map(function (c) {
+							return Cesium.Cartesian3.fromDegrees(c.lon, c.lat, c.z + zOffset);
+						});
+
+						// İlk noktayı pivot olarak kullan (anti-jitter)
+						if (!sharedPivot && points.length > 0) sharedPivot = points[0];
+
+						var m = {
+							id: ++measureCount,
+							groupId: refGroupId,
+							name: feat.name,
+							type: feat.type,
+							checked: true,
+							isImported: true,
+							isBatched: true, // Batch primitif — bireysel entity yok
+							points: points,
+							entities: []
+						};
+						measurements.push(m);
+
+						if (feat.type === 'polygon' && points.length >= 3) {
+							// Polygon dolgu instance'ı
+							try {
+								polyFillInstances.push(new Cesium.GeometryInstance({
+									geometry: new Cesium.CoplanarPolygonGeometry({
+										polygonHierarchy: new Cesium.PolygonHierarchy(points),
+										vertexFormat: Cesium.MaterialAppearance.MaterialSupport.BASIC.vertexFormat
+									})
+								}));
+							} catch (e) { /* geçersiz geometri */ }
+
+							// Polygon kenar instance'ı (kapalı polyline)
+							try {
+								var closedPts = points.concat([points[0]]);
+								polyLineInstances.push(new Cesium.GeometryInstance({
+									geometry: new Cesium.PolylineGeometry({
+										positions: closedPts,
+										width: VEC_STYLE.polygon.edgeWidth || 2,
+										arcType: Cesium.ArcType.NONE,
+										vertexFormat: Cesium.PolylineMaterialAppearance.VERTEX_FORMAT
+									})
+								}));
+							} catch (e) { /* geçersiz geometri */ }
+
+							// Etiket verisi
+							var labelText = m.resultText || m.name || '';
+							var cx = centroid(points);
+							labelEntries.push({ position: cx, text: labelText });
+						} else if (feat.type === 'line' && points.length >= 2) {
+							try {
+								polyLineInstances.push(new Cesium.GeometryInstance({
+									geometry: new Cesium.PolylineGeometry({
+										positions: points,
+										width: VEC_STYLE.line.width || 3,
+										arcType: Cesium.ArcType.NONE,
+										vertexFormat: Cesium.PolylineMaterialAppearance.VERTEX_FORMAT
+									})
+								}));
+							} catch (e) { /* geçersiz geometri */ }
+							if (!_isMob) {
+								labelEntries.push({ position: midpointAlongLine(points), text: m.resultText || m.name || '' });
+							}
+						} else if (feat.type === 'coord') {
+							// Noktalar bireysel kalır (az sayıda)
+							restoreCoord(m);
+						}
+					}
+
+					var elapsed = performance.now() - frameStart;
+					if (elapsed < 8) BATCH_SIZE = Math.min(BATCH_SIZE + 50, 500);
+					else if (elapsed > 14) BATCH_SIZE = Math.max(BATCH_SIZE - 50, 50);
+
+					if (end < total) {
+						if (total > 200) {
+							var pct = Math.round((end / total) * 100);
+							resultBar.innerHTML = '<span class="text-cyan-400 font-bold text-[11px]">⏳ ' + end + '/' + total + ' (%' + pct + ') geometri hazırlanıyor…</span>';
+							updateImportLoading(end + '/' + total + ' (%' + pct + ') geometri hazırlanıyor…');
+						}
+						requestAnimationFrame(function () { processBatch(end); });
+					} else {
+						// ═══ FAZ 2: BULK PRIMITIVE OLUŞTURMA ═══
+						resultBar.innerHTML = '<span class="text-cyan-400 font-bold text-[11px]">⏳ GPU primitifleri oluşturuluyor…</span>';
+
+						requestAnimationFrame(function () {
+							var batchPrimitives = [];
+
+							// 1. Tek Polygon Fill Primitive
+							if (polyFillInstances.length > 0) {
+								try {
+									var fillPrim = viewer.scene.primitives.add(new Cesium.Primitive({
+										geometryInstances: polyFillInstances,
+										appearance: new Cesium.MaterialAppearance({
+											material: Cesium.Material.fromType('Color', {
+												color: cesColor.withAlpha(VEC_STYLE.polygon.fillAlpha || 0.25)
+											}),
+											faceForward: true
+										}),
+										asynchronous: true, // GPU'da async derle
+										allowPicking: false
+									}));
+									fillPrim._isImportBatch = true;
+									fillPrim._isFillBatch = true;
+									batchPrimitives.push(fillPrim);
+								} catch (e) { console.warn('Batch fill hatası:', e); }
+							}
+
+							// 2. Tek Polyline Primitive (kenarlar + çizgiler)
+							if (polyLineInstances.length > 0) {
+								try {
+									var linePrim = viewer.scene.primitives.add(new Cesium.Primitive({
+										geometryInstances: polyLineInstances,
+										appearance: new Cesium.PolylineMaterialAppearance({
+											material: Cesium.Material.fromType('Color', {
+												color: cesColor
+											}),
+											translucent: false
+										}),
+										asynchronous: true,
+										allowPicking: false
+									}));
+									linePrim._isImportBatch = true;
+									linePrim._isPolylineBatch = true;
+									batchPrimitives.push(linePrim);
+								} catch (e) { console.warn('Batch line hatası:', e); }
+							}
+
+							// 3. Tek LabelCollection (tüm etiketler)
+							if (labelEntries.length > 0) {
+								var labelCol = viewer.scene.primitives.add(new Cesium.LabelCollection());
+								labelEntries.forEach(function (le) {
+									var lifted = liftPosition(le.position);
+									labelCol.add({
+										position: lifted,
+										text: le.text,
+										font: VEC_STYLE.label.font,
+										fillColor: cesColor,
+										outlineColor: VEC_STYLE.label.outlineColor,
+										outlineWidth: VEC_STYLE.label.outlineWidth,
+										style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+										verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+										pixelOffset: new Cesium.Cartesian2(0, VEC_STYLE.label.offsetY),
+										distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0.0, 150.0),
+										showBackground: true,
+										backgroundColor: new Cesium.Color(0, 0, 0, 0.6)
+									});
+								});
+								labelCol._isImportBatch = true;
+								batchPrimitives.push(labelCol);
+							}
+
+							// Batch primitifleri gruba kaydet (toggle + silme için)
+							if (refGroup) {
+								refGroup._batchPrimitives = batchPrimitives;
+							}
+
+							renderList();
+							viewer.scene.requestRender();
+
+							// ─── Import verisini IndexedDB'ye kaydet (kalıcılık) ───
+							CbsStorage.saveImport(refGroupId, fileName, hexColor, parsedFeats, zOffset)
+								.then(function () { console.info('CbsStorage: Import kaydedildi (' + total + ' öğe, grup ' + refGroupId + ')'); })
+								.catch(function (e) { console.warn('Import kayıt hatası:', e); });
+
+							hideImportLoading();
+							resultBar.innerHTML =
+								'<span class="text-green-400 font-bold text-[11px]">✓ ' + total + ' öğe "' + fileName + '" grubuna aktarıldı.' + crsInfo + (zOffset !== 0 ? ' (Z+' + zOffset + 'm)' : '') + ' [' + (polyFillInstances.length + polyLineInstances.length) + ' geometri → 3 draw call]</span>';
+						});
+					}
+				}
+				processBatch(0);
+			}, 'geojson');
 		}
-		var feats = data.features || (data.type === 'Feature' ? [data] : []);
-		if (feats.length === 0) { alert('GeoJSON dosyasında öğe bulunamadı.'); return; }
 
-		// Önce parse et
-		var parsedFeats = [];
-		feats.forEach(function (f) {
-			if (!f.geometry) return;
-			var coords = f.geometry.coordinates;
-			var type = f.geometry.type;
-			var props = f.properties || {};
-			var name = props.Name || props.name || props.NAME || (type + ' ' + (measurements.length + parsedFeats.length + 1));
-			var mType = type === 'Point' ? 'coord' : (type === 'Polygon' ? 'polygon' : 'line');
+		// Web Worker ile off-thread parsing dene
+		try {
+			var worker = new Worker('import-worker.js');
+			resultBar.innerHTML = '<span class="text-cyan-400 font-bold text-[11px]">⏳ Dosya arka planda işleniyor…</span>';
 
-			var rawCoords = (type === 'Point') ? [coords] : (type === 'Polygon' ? coords[0] : coords);
-			var converted = [];
-			rawCoords.forEach(function (c) {
-				var lon, lat, z = c[2] || 0;
-				if (crs === '5254') { var wgs = tm30ToWgs84(c[0], c[1]); lat = wgs[0]; lon = wgs[1]; }
-				else { lon = c[0]; lat = c[1]; }
-				converted.push({ lon: lon, lat: lat, z: z });
-			});
+			worker.onmessage = function (msg) {
+				var d = msg.data;
+				if (d.error) { importError(d.error); return; }
+				if (d.progress) {
+					resultBar.innerHTML = '<span class="text-cyan-400 font-bold text-[11px]">⏳ ' + d.progress + ' öğe parse edildi…</span>';
+					updateImportLoading(d.progress + ' öğe parse edildi…');
+					return;
+				}
+				if (d.features) {
+					worker.terminate();
+					startBatchRendering(d.features, d.crsInfo || '');
+				}
+			};
 
-			// Polygon kapanış noktasını kaldır
-			if (mType === 'polygon' && converted.length > 1) {
-				var f2 = converted[0], l2 = converted[converted.length - 1];
-				if (Math.abs(f2.lon - l2.lon) < 0.00001 && Math.abs(f2.lat - l2.lat) < 0.00001) converted.pop();
+			worker.onerror = function (err) {
+				console.warn('Worker başarısız, inline fallback:', err.message);
+				worker.terminate();
+				inlineParse();
+			};
+
+			worker.postMessage({ text: fileText, userCrs: userCrs });
+		} catch (workerErr) {
+			console.warn('Worker oluşturulamadı, inline fallback:', workerErr.message);
+			inlineParse();
+		}
+
+		// Fallback: Worker çalışmazsa main thread'de parse et
+		function inlineParse() {
+			try {
+				var data = JSON.parse(fileText);
+			} catch (err) {
+				importError('Geçersiz GeoJSON dosyası: ' + err.message);
+				return;
 			}
+			var fileCrs = null;
+			if (data.crs && data.crs.properties && data.crs.properties.name) {
+				var crsName = data.crs.properties.name.toString();
+				if (crsName.indexOf('5254') !== -1 || crsName.indexOf('TM30') !== -1) fileCrs = '5254';
+				else if (crsName.indexOf('4326') !== -1 || crsName.indexOf('WGS') !== -1) fileCrs = '4326';
+				else if (crsName.indexOf('3857') !== -1) fileCrs = '4326';
+			}
+			var effectiveCrs = fileCrs || userCrs;
+			var crsInfo = fileCrs ? ' (CRS otomatik algılandı: EPSG:' + fileCrs + ')' : '';
+			var feats = data.features || (data.type === 'Feature' ? [data] : []);
+			var parsedFeats = [];
+			var globalIdx = measurements.length;
 
-			if (converted.length > 0) parsedFeats.push({ name: name, type: mType, coords: converted });
-		});
-
-		if (parsedFeats.length === 0) { alert('GeoJSON dosyasında geçerli öğe bulunamadı.'); return; }
-
-		showImportZDialog(function (zOffset) {
-			var refGroupId = getOrCreateReferansGroup(file.name);
-			parsedFeats.forEach(function (feat, index) {
-				var points = feat.coords.map(function (c) {
-					return Cesium.Cartesian3.fromDegrees(c.lon, c.lat, c.z + zOffset);
-				});
-				var m = {
-					id: ++measureCount,
-					groupId: refGroupId,
-					name: feat.name,
-					type: feat.type,
-					checked: true,
-					points: points,
-					entities: []
-				};
-				measurements.push(m);
-				if (feat.type === 'coord') restoreCoord(m);
-				else if (feat.type === 'line') restoreLine(m);
-				else if (feat.type === 'polygon') restorePolygon(m);
-			});
-			saveToStorage(); renderList();
-			document.querySelector('#resultDisplay > div').innerHTML =
-				'<span class="text-green-400 font-bold text-[11px]">✓ ' + parsedFeats.length + ' öğe "' + file.name + '" grubuna aktarıldı.' + (zOffset !== 0 ? ' (Z+' + zOffset + 'm)' : '') + '</span>';
-		});
+			function convertCoord(c) {
+				var lon, lat, z = c[2] || 0;
+				if (effectiveCrs === '5254') { var wgs = tm30ToWgs84(c[0], c[1]); lat = wgs[0]; lon = wgs[1]; }
+				else { lon = c[0]; lat = c[1]; }
+				return { lon: lon, lat: lat, z: z };
+			}
+			function removeClosingPoint(converted) {
+				if (converted.length > 1) {
+					var f2 = converted[0], l2 = converted[converted.length - 1];
+					if (Math.abs(f2.lon - l2.lon) < 0.00001 && Math.abs(f2.lat - l2.lat) < 0.00001) converted.pop();
+				}
+				return converted;
+			}
+			function smartName(props, geomType, idx) {
+				if (props.Name || props.name || props.NAME) return props.Name || props.name || props.NAME;
+				if (props.adano && props.parselno) return props.adano + '/' + props.parselno;
+				if (props.adano) return 'Ada ' + props.adano;
+				if (props.fid !== undefined && props.fid !== null) return 'FID ' + props.fid;
+				if (props.tapukimlikno) return 'Tapu ' + props.tapukimlikno;
+				if (props.id !== undefined && props.id !== null) return geomType + ' ' + props.id;
+				return geomType + ' ' + idx;
+			}
+			function processGeometry(geom, props) {
+				var type = geom.type, coords = geom.coordinates;
+				if (type === 'Point') { parsedFeats.push({ name: smartName(props, 'Nokta', ++globalIdx), type: 'coord', coords: [convertCoord(coords)] }); }
+				else if (type === 'LineString') { var c = coords.map(convertCoord); if (c.length > 0) parsedFeats.push({ name: smartName(props, 'Çizgi', ++globalIdx), type: 'line', coords: c }); }
+				else if (type === 'Polygon') { var c = removeClosingPoint(coords[0].map(convertCoord)); if (c.length > 0) parsedFeats.push({ name: smartName(props, 'Alan', ++globalIdx), type: 'polygon', coords: c }); }
+				else if (type === 'MultiPoint') { coords.forEach(function (pt) { processGeometry({ type: 'Point', coordinates: pt }, props); }); }
+				else if (type === 'MultiLineString') { coords.forEach(function (ls) { processGeometry({ type: 'LineString', coordinates: ls }, props); }); }
+				else if (type === 'MultiPolygon') { coords.forEach(function (p) { processGeometry({ type: 'Polygon', coordinates: p }, props); }); }
+				else if (type === 'GeometryCollection') { (geom.geometries || []).forEach(function (g) { processGeometry(g, props); }); }
+			}
+			feats.forEach(function (f) { if (f.geometry) processGeometry(f.geometry, f.properties || {}); });
+			startBatchRendering(parsedFeats, crsInfo);
+		}
 	};
+	reader.onerror = function () { importError('GeoJSON dosyası okunamadı.'); };
 	reader.readAsText(file);
 	e.target.value = '';
 });
@@ -3778,9 +5523,11 @@ document.getElementById('btnImportGeoJSON').addEventListener('change', function 
 // DXF İçe Aktarma (Z-Offset diyaloğu + REFERANS grubu)
 document.getElementById('btnImportDXF').addEventListener('change', function (e) {
 	var file = e.target.files[0]; if (!file) return;
+	showImportLoading(file.name);
 	var crs = document.getElementById('exportCrs').value;
 	var reader = new FileReader();
 	reader.onload = function (ev) {
+		var resultBar = document.querySelector('#resultDisplay > div');
 		try {
 			var content = ev.target.result;
 			var lines = content.split(/\r?\n/);
@@ -3791,6 +5538,15 @@ document.getElementById('btnImportDXF').addEventListener('change', function (e) 
 			var entityClosed = false;
 			var inVertex = false;
 			var vertexPoint = null;
+			// Genişletilmiş DXF özellik depolama (CIRCLE/ARC/ELLIPSE için)
+			var entityRadius = 0;
+			var entityStartAngle = 0;
+			var entityEndAngle = 360;
+			var entityMajorX = 0;
+			var entityMajorY = 0;
+			var entityMajorZ = 0;
+			var entityRatio = 1;
+			var entityBulges = []; // LWPOLYLINE bulge değerleri
 
 			// Faz 1: Parse → parsedEntities dizisine topla
 			var parsedEntities = [];
@@ -3802,26 +5558,90 @@ document.getElementById('btnImportDXF').addEventListener('change', function (e) 
 				return { lon: lon, lat: lat, z: p.z || 0 };
 			}
 
+			// CIRCLE/ARC → polyline dönüşüm (36 segment)
+			function arcToPolyline(cx, cy, cz, radius, startDeg, endDeg) {
+				var pts = [];
+				var segments = 36;
+				var sRad = startDeg * Math.PI / 180;
+				var eRad = endDeg * Math.PI / 180;
+				if (eRad <= sRad) eRad += 2 * Math.PI;
+				var step = (eRad - sRad) / segments;
+				for (var s = 0; s <= segments; s++) {
+					var a = sRad + s * step;
+					pts.push({ x: cx + radius * Math.cos(a), y: cy + radius * Math.sin(a), z: cz });
+				}
+				return pts;
+			}
+
+			// ELLIPSE → polyline dönüşüm (36 segment)
+			function ellipseToPolyline(cx, cy, cz, majX, majY, ratio, startParam, endParam) {
+				var pts = [];
+				var segments = 36;
+				var majorLen = Math.sqrt(majX * majX + majY * majY);
+				var rotation = Math.atan2(majY, majX);
+				var minorLen = majorLen * ratio;
+				if (endParam <= startParam) endParam += 2 * Math.PI;
+				var step = (endParam - startParam) / segments;
+				for (var s = 0; s <= segments; s++) {
+					var t = startParam + s * step;
+					var px = majorLen * Math.cos(t);
+					var py = minorLen * Math.sin(t);
+					var rx = px * Math.cos(rotation) - py * Math.sin(rotation);
+					var ry = px * Math.sin(rotation) + py * Math.cos(rotation);
+					pts.push({ x: cx + rx, y: cy + ry, z: cz });
+				}
+				return pts;
+			}
+
 			function finalizeEntity() {
 				if (inVertex && vertexPoint) {
 					entityPoints.push(vertexPoint);
 					vertexPoint = null;
 					inVertex = false;
 				}
-				if (!currentEntity || entityPoints.length === 0) return;
+				if (!currentEntity) return;
 
-				var mType;
-				if (currentEntity === 'POINT') mType = 'coord';
-				else if (currentEntity === 'LINE') mType = 'line';
-				else if (currentEntity === 'POLYLINE' || currentEntity === 'LWPOLYLINE') {
-					mType = entityClosed ? 'polygon' : 'line';
+				var mType = null;
+				var coordSource = entityPoints;
+
+				if (currentEntity === 'POINT') {
+					if (entityPoints.length > 0) mType = 'coord';
+				} else if (currentEntity === 'LINE') {
+					if (entityPoints.length >= 2) mType = 'line';
+				} else if (currentEntity === 'POLYLINE' || currentEntity === 'LWPOLYLINE') {
+					if (entityPoints.length > 0) mType = entityClosed ? 'polygon' : 'line';
+				} else if (currentEntity === 'CIRCLE') {
+					if (entityPoints.length > 0 && entityRadius > 0) {
+						var c = entityPoints[0];
+						coordSource = arcToPolyline(c.x, c.y, c.z || 0, entityRadius, 0, 360);
+						mType = 'polygon';
+					}
+				} else if (currentEntity === 'ARC') {
+					if (entityPoints.length > 0 && entityRadius > 0) {
+						var c = entityPoints[0];
+						coordSource = arcToPolyline(c.x, c.y, c.z || 0, entityRadius, entityStartAngle, entityEndAngle);
+						mType = 'line';
+					}
+				} else if (currentEntity === 'ELLIPSE') {
+					if (entityPoints.length > 0) {
+						var c = entityPoints[0];
+						coordSource = ellipseToPolyline(c.x, c.y, c.z || 0, entityMajorX, entityMajorY, entityRatio, entityStartAngle, entityEndAngle);
+						var isFullEllipse = Math.abs(entityEndAngle - entityStartAngle - 2 * Math.PI) < 0.01 || (entityStartAngle === 0 && entityEndAngle === 0);
+						mType = isFullEllipse ? 'polygon' : 'line';
+					}
+				} else if (currentEntity === '3DFACE') {
+					if (entityPoints.length >= 3) {
+						mType = 'polygon';
+					}
 				}
-				else return;
 
-				var coords = entityPoints.map(convertRawPoint);
+				if (mType === null || coordSource.length === 0) return;
+				var coords = coordSource.map(convertRawPoint);
 				var name = entityLayer || (currentEntity + ' ' + (parsedEntities.length + 1));
 				parsedEntities.push({ name: name, type: mType, coords: coords });
 			}
+
+			var SUPPORTED_ENTITIES = ['POINT', 'LINE', 'POLYLINE', 'LWPOLYLINE', 'CIRCLE', 'ARC', 'ELLIPSE', '3DFACE'];
 
 			for (var i = 0; i < lines.length; i++) {
 				var code = lines[i].trim();
@@ -3844,8 +5664,12 @@ document.getElementById('btnImportDXF').addEventListener('change', function (e) 
 					}
 					if (currentEntity && !inVertex) finalizeEntity();
 
-					if (val === 'POINT' || val === 'LINE' || val === 'POLYLINE' || val === 'LWPOLYLINE') {
-						currentEntity = val; entityPoints = []; entityLayer = ''; entityClosed = false; inVertex = false; vertexPoint = null;
+					if (SUPPORTED_ENTITIES.indexOf(val) !== -1) {
+						currentEntity = val; entityPoints = []; entityLayer = ''; entityClosed = false;
+						inVertex = false; vertexPoint = null;
+						entityRadius = 0; entityStartAngle = 0; entityEndAngle = 360;
+						entityMajorX = 0; entityMajorY = 0; entityMajorZ = 0; entityRatio = 1;
+						entityBulges = [];
 					} else {
 						currentEntity = null;
 					}
@@ -3858,6 +5682,36 @@ document.getElementById('btnImportDXF').addEventListener('change', function (e) 
 					if (code === '70' && !inVertex && (currentEntity === 'POLYLINE' || currentEntity === 'LWPOLYLINE')) {
 						entityClosed = (parseInt(val) & 1) === 1; i++; continue;
 					}
+					// Radius (CIRCLE, ARC)
+					if (code === '40' && (currentEntity === 'CIRCLE' || currentEntity === 'ARC')) {
+						entityRadius = numVal; i++; continue;
+					}
+					// ELLIPSE ratio (kod 40 = ratio, farklı entitylerde farklı anlam)
+					if (code === '40' && currentEntity === 'ELLIPSE') {
+						entityRatio = numVal; i++; continue;
+					}
+					// Start angle (ARC derece, ELLIPSE radian)
+					if (code === '50') {
+						entityStartAngle = numVal; i++; continue;
+					}
+					// End angle (ARC derece, ELLIPSE radian)
+					if (code === '51') {
+						entityEndAngle = numVal; i++; continue;
+					}
+					// ELLIPSE start/end parametreleri (code 41, 42)
+					if (code === '41' && currentEntity === 'ELLIPSE') {
+						entityStartAngle = numVal; i++; continue;
+					}
+					if (code === '42' && currentEntity === 'ELLIPSE') {
+						entityEndAngle = numVal; i++; continue;
+					}
+					// ELLIPSE major axis endpoint (codes 11, 21, 31)
+					if (currentEntity === 'ELLIPSE') {
+						if (code === '11') { entityMajorX = numVal; i++; continue; }
+						if (code === '21') { entityMajorY = numVal; i++; continue; }
+						if (code === '31') { entityMajorZ = numVal; i++; continue; }
+					}
+
 					if (inVertex && vertexPoint) {
 						if (code === '10') vertexPoint.x = numVal;
 						else if (code === '20') vertexPoint.y = numVal;
@@ -3866,30 +5720,54 @@ document.getElementById('btnImportDXF').addEventListener('change', function (e) 
 					}
 					if (code === '10') {
 						if (currentEntity === 'LWPOLYLINE') entityPoints.push({ x: numVal, y: 0, z: 0 });
+						else if (currentEntity === '3DFACE') {
+							entityPoints[0] = entityPoints[0] || { x: 0, y: 0, z: 0 };
+							entityPoints[0].x = numVal;
+						}
 						else if (!entityPoints[0]) entityPoints[0] = { x: numVal, y: 0, z: 0 };
 						else entityPoints[0].x = numVal;
 					} else if (code === '20') {
-						var lp = currentEntity === 'LWPOLYLINE' ? entityPoints[entityPoints.length - 1] : entityPoints[0];
+						var lp = currentEntity === 'LWPOLYLINE' ? entityPoints[entityPoints.length - 1] : (currentEntity === '3DFACE' ? entityPoints[0] : entityPoints[0]);
 						if (lp) lp.y = numVal;
+						else if (currentEntity === '3DFACE') { entityPoints[0] = { x: 0, y: numVal, z: 0 }; }
 					} else if (code === '30') {
-						var lpz = currentEntity === 'LWPOLYLINE' ? entityPoints[entityPoints.length - 1] : entityPoints[0];
+						var lpz = currentEntity === 'LWPOLYLINE' ? entityPoints[entityPoints.length - 1] : (currentEntity === '3DFACE' ? entityPoints[0] : entityPoints[0]);
 						if (lpz) lpz.z = numVal;
 					} else if (code === '11') {
-						entityPoints[1] = { x: numVal, y: 0, z: 0 };
+						if (currentEntity === '3DFACE') { entityPoints[1] = entityPoints[1] || { x: 0, y: 0, z: 0 }; entityPoints[1].x = numVal; }
+						else { entityPoints[1] = { x: numVal, y: 0, z: 0 }; }
 					} else if (code === '21') {
-						if (entityPoints[1]) entityPoints[1].y = numVal;
+						if (currentEntity === '3DFACE') { entityPoints[1] = entityPoints[1] || { x: 0, y: 0, z: 0 }; entityPoints[1].y = numVal; }
+						else if (entityPoints[1]) entityPoints[1].y = numVal;
 					} else if (code === '31') {
-						if (entityPoints[1]) entityPoints[1].z = numVal;
+						if (currentEntity === '3DFACE') { entityPoints[1] = entityPoints[1] || { x: 0, y: 0, z: 0 }; entityPoints[1].z = numVal; }
+						else if (entityPoints[1]) entityPoints[1].z = numVal;
+					} else if (code === '12') {
+						if (currentEntity === '3DFACE') { entityPoints[2] = entityPoints[2] || { x: 0, y: 0, z: 0 }; entityPoints[2].x = numVal; }
+					} else if (code === '22') {
+						if (currentEntity === '3DFACE') { entityPoints[2] = entityPoints[2] || { x: 0, y: 0, z: 0 }; entityPoints[2].y = numVal; }
+					} else if (code === '32') {
+						if (currentEntity === '3DFACE') { entityPoints[2] = entityPoints[2] || { x: 0, y: 0, z: 0 }; entityPoints[2].z = numVal; }
+					} else if (code === '13') {
+						if (currentEntity === '3DFACE') { entityPoints[3] = entityPoints[3] || { x: 0, y: 0, z: 0 }; entityPoints[3].x = numVal; }
+					} else if (code === '23') {
+						if (currentEntity === '3DFACE') { entityPoints[3] = entityPoints[3] || { x: 0, y: 0, z: 0 }; entityPoints[3].y = numVal; }
+					} else if (code === '33') {
+						if (currentEntity === '3DFACE') { entityPoints[3] = entityPoints[3] || { x: 0, y: 0, z: 0 }; entityPoints[3].z = numVal; }
 					}
 					i++;
 				}
 			}
 
-			if (parsedEntities.length === 0) { alert('DXF dosyasında geçerli öğe bulunamadı.'); return; }
+			if (parsedEntities.length === 0) { importError('DXF dosyasında geçerli öğe bulunamadı.'); return; }
 
 			// Faz 2: Z diyaloğu → oluştur
+			updateImportLoading('Z ayarı bekleniyor…');
 			showImportZDialog(function (zOffset) {
+				if (zOffset === null) { hideImportLoading(); resultBar.innerHTML = '<span class="text-slate-400 text-[11px]">İçe aktarma iptal edildi.</span>'; return; }
+				updateImportLoading('Veriler oluşturuluyor…');
 				var refGroupId = getOrCreateReferansGroup(file.name);
+				if (refGroupId === null) { hideImportLoading(); resultBar.innerHTML = '<span class="text-slate-400 text-[11px]">İçe aktarma iptal edildi.</span>'; return; }
 				parsedEntities.forEach(function (ent, idx) {
 					var points = ent.coords.map(function (c) {
 						return Cesium.Cartesian3.fromDegrees(c.lon, c.lat, c.z + zOffset);
@@ -3900,41 +5778,292 @@ document.getElementById('btnImportDXF').addEventListener('change', function (e) 
 						name: ent.name,
 						type: ent.type,
 						checked: true,
+						isImported: true,
 						points: points,
 						entities: []
 					};
 					measurements.push(m);
 					if (ent.type === 'coord') restoreCoord(m);
-					else if (ent.type === 'line') restoreLine(m);
-					else if (ent.type === 'polygon') restorePolygon(m);
+					else if (ent.type === 'line') restoreLineLight(m);
+					else if (ent.type === 'polygon') restorePolygonLight(m);
 				});
-				saveToStorage(); renderList();
+				renderList();
+				viewer.scene.requestRender();
+				// ─── Import verisini IndexedDB'ye kaydet ───
+				var dxfGroup = groups.find(function (g) { return g.id === refGroupId; });
+				CbsStorage.saveImport(refGroupId, file.name, dxfGroup && dxfGroup.color || '#14B8A6', parsedEntities, zOffset)
+					.catch(function (e) { console.warn('DXF import kayıt hatası:', e); });
+
+				hideImportLoading();
 				document.querySelector('#resultDisplay > div').innerHTML =
 					'<span class="text-green-400 font-bold text-[11px]">✓ ' + parsedEntities.length + ' öğe "' + file.name + '" grubuna aktarıldı.' + (zOffset !== 0 ? ' (Z+' + zOffset + 'm)' : '') + '</span>';
-			});
+			}, 'dxf');
 		} catch (dxfErr) {
 			console.error('DXF içe aktarma hatası:', dxfErr);
-			alert('DXF dosyası okunamadı: ' + dxfErr.message);
+			importError('DXF dosyası okunamadı: ' + dxfErr.message);
 		}
 	};
+	reader.onerror = function () { importError('DXF dosyası okunamadı.'); };
 	reader.readAsText(file);
 	e.target.value = '';
 });
 
-// ─── YAKINLAŞ / UZAKLAŞ KONTROLLERİ ─────────────────────────
-document.getElementById('btnZoomIn').addEventListener('click', function () {
-	if (viewer && viewer.camera) {
-		var cameraHeight = viewer.camera.positionCartographic.height;
-		var moveRate = cameraHeight / 2.0; // Yüksekliğe oranla yakınlaşma miktarı
-		viewer.camera.zoomIn(moveRate);
+// ─── KML/KMZ İçe Aktarma (Endüstri Standardı — DOMParser + JSZip) ─────────
+document.getElementById('btnImportKML').addEventListener('change', function (e) {
+	var file = e.target.files[0]; if (!file) return;
+	showImportLoading(file.name);
+	var isKmz = file.name.toLowerCase().endsWith('.kmz');
+
+	function processKmlText(kmlText, fileName) {
+		var resultBar = document.querySelector('#resultDisplay > div');
+		try {
+			var parser = new DOMParser();
+			var doc = parser.parseFromString(kmlText, 'text/xml');
+			var placemarks = doc.getElementsByTagName('Placemark');
+			if (placemarks.length === 0) { importError('KML dosyasında Placemark bulunamadı.'); return; }
+
+			var parsedFeats = [];
+			for (var p = 0; p < placemarks.length; p++) {
+				var pm = placemarks[p];
+				var nameEl = pm.getElementsByTagName('name')[0];
+				var descEl = pm.getElementsByTagName('description')[0];
+				var pmName = nameEl ? nameEl.textContent.trim() : (descEl ? descEl.textContent.trim().substring(0, 50) : 'Placemark ' + (p + 1));
+
+				// Point
+				var pointEl = pm.getElementsByTagName('Point')[0];
+				if (pointEl) {
+					var coordText = (pointEl.getElementsByTagName('coordinates')[0] || {}).textContent;
+					if (coordText) {
+						var parts = coordText.trim().split(',');
+						var lon = parseFloat(parts[0]), lat = parseFloat(parts[1]), z = parseFloat(parts[2]) || 0;
+						if (!isNaN(lon) && !isNaN(lat)) {
+							parsedFeats.push({ name: pmName, type: 'coord', coords: [{ lon: lon, lat: lat, z: z }] });
+						}
+					}
+				}
+
+				// LineString
+				var lineEl = pm.getElementsByTagName('LineString')[0];
+				if (lineEl) {
+					var coordText = (lineEl.getElementsByTagName('coordinates')[0] || {}).textContent;
+					if (coordText) {
+						var converted = [];
+						coordText.trim().split(/\s+/).forEach(function (tuple) {
+							var parts = tuple.split(',');
+							if (parts.length >= 2) {
+								converted.push({ lon: parseFloat(parts[0]), lat: parseFloat(parts[1]), z: parseFloat(parts[2]) || 0 });
+							}
+						});
+						if (converted.length > 0) parsedFeats.push({ name: pmName, type: 'line', coords: converted });
+					}
+				}
+
+				// Polygon (outer boundary only)
+				var polyEl = pm.getElementsByTagName('Polygon')[0];
+				if (polyEl) {
+					var outerBoundary = polyEl.getElementsByTagName('outerBoundaryIs')[0];
+					var linearRing = outerBoundary ? outerBoundary.getElementsByTagName('LinearRing')[0] : null;
+					var coordEl = linearRing ? linearRing.getElementsByTagName('coordinates')[0] : null;
+					if (coordEl) {
+						var converted = [];
+						coordEl.textContent.trim().split(/\s+/).forEach(function (tuple) {
+							var parts = tuple.split(',');
+							if (parts.length >= 2) {
+								converted.push({ lon: parseFloat(parts[0]), lat: parseFloat(parts[1]), z: parseFloat(parts[2]) || 0 });
+							}
+						});
+						// Kapanış noktasını kaldır
+						if (converted.length > 1) {
+							var f2 = converted[0], l2 = converted[converted.length - 1];
+							if (Math.abs(f2.lon - l2.lon) < 0.00001 && Math.abs(f2.lat - l2.lat) < 0.00001) converted.pop();
+						}
+						if (converted.length > 0) parsedFeats.push({ name: pmName, type: 'polygon', coords: converted });
+					}
+				}
+			}
+
+			if (parsedFeats.length === 0) { importError('KML dosyasında geçerli öğe bulunamadı.'); return; }
+
+			updateImportLoading('Z ayarı bekleniyor…');
+			showImportZDialog(function (zOffset) {
+				if (zOffset === null) { hideImportLoading(); resultBar.innerHTML = '<span class="text-slate-400 text-[11px]">İçe aktarma iptal edildi.</span>'; return; }
+				updateImportLoading('Veriler oluşturuluyor…');
+				var refGroupId = getOrCreateReferansGroup(fileName);
+				if (refGroupId === null) { hideImportLoading(); resultBar.innerHTML = '<span class="text-slate-400 text-[11px]">İçe aktarma iptal edildi.</span>'; return; }
+				parsedFeats.forEach(function (feat) {
+					var points = feat.coords.map(function (c) {
+						return Cesium.Cartesian3.fromDegrees(c.lon, c.lat, c.z + zOffset);
+					});
+					var m = {
+						id: ++measureCount,
+						groupId: refGroupId,
+						name: feat.name,
+						type: feat.type,
+						checked: true,
+						isImported: true,
+						points: points,
+						entities: []
+					};
+					measurements.push(m);
+					if (feat.type === 'coord') restoreCoord(m);
+					else if (feat.type === 'line') restoreLineLight(m);
+					else if (feat.type === 'polygon') restorePolygonLight(m);
+				});
+				renderList();
+				viewer.scene.requestRender();
+
+				// ─── Import verisini IndexedDB'ye kaydet ───
+				var kmlGroup = groups.find(function (g) { return g.id === refGroupId; });
+				CbsStorage.saveImport(refGroupId, fileName, kmlGroup && kmlGroup.color || '#14B8A6', parsedFeats, zOffset)
+					.catch(function (e) { console.warn('KML import kayıt hatası:', e); });
+
+				hideImportLoading();
+				document.querySelector('#resultDisplay > div').innerHTML =
+					'<span class="text-green-400 font-bold text-[11px]">✓ ' + parsedFeats.length + ' öğe "' + fileName + '" grubuna aktarıldı.' + (zOffset !== 0 ? ' (Z+' + zOffset + 'm)' : '') + '</span>';
+			}, 'kml');
+		} catch (kmlErr) {
+			console.error('KML içe aktarma hatası:', kmlErr);
+			importError('KML dosyası okunamadı: ' + kmlErr.message);
+		}
 	}
+
+	if (isKmz) {
+		// KMZ = ZIP → JSZip ile aç → .kml dosyasını bul
+		var reader = new FileReader();
+		reader.onload = function (ev) {
+			if (typeof JSZip === 'undefined') { importError('JSZip kütüphanesi yüklenemedi. KMZ desteği için internet bağlantısı gereklidir.'); return; }
+			JSZip.loadAsync(ev.target.result).then(function (zip) {
+				var kmlFile = null;
+				zip.forEach(function (path, entry) {
+					if (!kmlFile && path.toLowerCase().endsWith('.kml')) kmlFile = entry;
+				});
+				if (!kmlFile) { importError('KMZ arşivinde .kml dosyası bulunamadı.'); return; }
+				return kmlFile.async('string');
+			}).then(function (kmlText) {
+				if (kmlText) processKmlText(kmlText, file.name);
+			}).catch(function (err) {
+				console.error('KMZ açma hatası:', err);
+				importError('KMZ dosyası açılamadı: ' + err.message);
+			});
+		};
+		reader.onerror = function () { importError('KMZ dosyası okunamadı.'); };
+		reader.readAsArrayBuffer(file);
+	} else {
+		// Düz KML dosyası
+		var reader = new FileReader();
+		reader.onload = function (ev) {
+			processKmlText(ev.target.result, file.name);
+		};
+		reader.onerror = function () { importError('KML dosyası okunamadı.'); };
+		reader.readAsText(file);
+	}
+	e.target.value = '';
 });
 
-document.getElementById('btnZoomOut').addEventListener('click', function () {
-	if (viewer && viewer.camera) {
-		var cameraHeight = viewer.camera.positionCartographic.height;
-		var moveRate = cameraHeight / 2.0; // Yüksekliğe oranla uzaklaşma miktarı
-		viewer.camera.zoomOut(moveRate);
+// ─── KML/KMZ Dışa Aktarma ──────────────────────────────────────
+document.getElementById('btnExportKML').addEventListener('click', function () {
+	if (!requireCrsSelection()) return;
+	var exportMeasurements = getExportMeasurements();
+	if (exportMeasurements.length === 0) { alert('Dışa aktarılacak ölçüm bulunamadı.'); return; }
+
+	// WGS84'e dönüştür (KML spec her zaman WGS84)
+	function cartesianToWgs84(cart) {
+		var carto = Cesium.Cartographic.fromCartesian(cart);
+		return {
+			lon: Cesium.Math.toDegrees(carto.longitude),
+			lat: Cesium.Math.toDegrees(carto.latitude),
+			alt: carto.height
+		};
+	}
+
+	// KML oluştur
+	var kmlParts = [];
+	kmlParts.push('<?xml version="1.0" encoding="UTF-8"?>');
+	kmlParts.push('<kml xmlns="http://www.opengis.net/kml/2.2">');
+	kmlParts.push('<Document>');
+	kmlParts.push('<name>CBS 3D Export</name>');
+
+	// Grupları topla
+	var groupMap = {};
+	exportMeasurements.forEach(function (m) {
+		var gId = m.groupId || 0;
+		if (!groupMap[gId]) groupMap[gId] = [];
+		groupMap[gId].push(m);
+	});
+
+	Object.keys(groupMap).forEach(function (gId) {
+		var grp = groups.find(function (g) { return g.id == gId; });
+		var folderName = grp ? grp.name : 'Grup ' + gId;
+		kmlParts.push('<Folder><name>' + folderName + '</name>');
+
+		groupMap[gId].forEach(function (m) {
+			kmlParts.push('<Placemark>');
+			kmlParts.push('<name>' + (m.name || '').replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</name>');
+
+			if (m.type === 'coord' && m.points.length > 0) {
+				var w = cartesianToWgs84(m.points[0]);
+				kmlParts.push('<Point><coordinates>' + w.lon + ',' + w.lat + ',' + w.alt + '</coordinates></Point>');
+			} else if (m.type === 'line' && m.points.length > 1) {
+				var coords = m.points.map(function (p) {
+					var w = cartesianToWgs84(p);
+					return w.lon + ',' + w.lat + ',' + w.alt;
+				}).join(' ');
+				kmlParts.push('<LineString><altitudeMode>absolute</altitudeMode><coordinates>' + coords + '</coordinates></LineString>');
+			} else if (m.type === 'polygon' && m.points.length > 2) {
+				var coords = m.points.map(function (p) {
+					var w = cartesianToWgs84(p);
+					return w.lon + ',' + w.lat + ',' + w.alt;
+				});
+				// Kapanış noktası ekle
+				var first = cartesianToWgs84(m.points[0]);
+				coords.push(first.lon + ',' + first.lat + ',' + first.alt);
+				kmlParts.push('<Polygon><outerBoundaryIs><LinearRing><altitudeMode>absolute</altitudeMode><coordinates>' + coords.join(' ') + '</coordinates></LinearRing></outerBoundaryIs></Polygon>');
+			}
+			kmlParts.push('</Placemark>');
+		});
+		kmlParts.push('</Folder>');
+	});
+
+	kmlParts.push('</Document></kml>');
+	var kmlContent = kmlParts.join('\n');
+
+	// İndirme
+	var blob = new Blob([kmlContent], { type: 'application/vnd.google-earth.kml+xml' });
+	var a = document.createElement('a');
+	a.href = URL.createObjectURL(blob);
+	a.download = 'export.kml';
+	a.click();
+	URL.revokeObjectURL(a.href);
+	TelemetryManager.addLog('KML dışa aktarma: ' + exportMeasurements.length + ' öğe');
+});
+
+// ─── YAKINLAŞ / UZAKLAŞ KONTROLLERİ ─────────────────────────
+function doZoom(direction, factor) {
+	if (!viewer || !viewer.camera) return;
+	var cameraHeight = viewer.camera.positionCartographic.height;
+	var moveRate = cameraHeight / (factor || 2.0);
+	if (direction === 'in') viewer.camera.zoomIn(moveRate);
+	else viewer.camera.zoomOut(moveRate);
+}
+
+document.getElementById('btnZoomIn').addEventListener('click', function () { doZoom('in', 2.0); });
+document.getElementById('btnZoomOut').addEventListener('click', function () { doZoom('out', 2.0); });
+
+// Klavye +/- tuşları (biraz daha az hassas: /3 oranı)
+document.addEventListener('keydown', function (e) {
+	// Input/textarea odaklıyken çalışmasın
+	var tag = (e.target.tagName || '').toLowerCase();
+	if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+	if (e.key === '+' || e.key === '=' || (e.key === '+' && e.shiftKey)) {
+		e.preventDefault();
+		doZoom('in', 5.0);
+		document.getElementById('btnZoomIn').classList.add('bg-slate-700');
+		setTimeout(function () { document.getElementById('btnZoomIn').classList.remove('bg-slate-700'); }, 150);
+	} else if (e.key === '-' || e.key === '_') {
+		e.preventDefault();
+		doZoom('out', 5.0);
+		document.getElementById('btnZoomOut').classList.add('bg-slate-700');
+		setTimeout(function () { document.getElementById('btnZoomOut').classList.remove('bg-slate-700'); }, 150);
 	}
 });
 

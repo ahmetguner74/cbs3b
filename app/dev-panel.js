@@ -87,6 +87,7 @@
 			<!-- ═══ 5. TILESET RENDER ═══ -->
 			<div style="color:#f59e0b;font-weight:700;font-size:10px;letter-spacing:1px;margin:12px 0 6px;border-top:1px solid #1e293b;padding-top:8px;">5. TILESET RENDER</div>
 
+			<div class="dp-row"><span>SSE (LOD)</span><span class="dp-desc">Detay seviyesi (düşük=kalite)</span><input type="range" id="dp-sse" min="1" max="16" step="1" value="2" style="width:70px;"><span id="dp-sseVal" class="dp-val">2</span></div>
 			<label class="dp-row"><span>wireframe</span><span class="dp-desc">Tel kafes görünüm</span><input type="checkbox" id="dp-wireframe"></label>
 			<label class="dp-row"><span>backFaceCull</span><span class="dp-desc">Arka yüzleri gizle</span><input type="checkbox" id="dp-backface" checked></label>
 			<label class="dp-row"><span>shadows</span><span class="dp-desc">Tileset gölge alır/atar</span><input type="checkbox" id="dp-shadows"></label>
@@ -164,7 +165,7 @@
     // ── Slider değer göstericileri ──
     ['dp-tileAlpha', 'dp-brightMin', 'dp-brightMax', 'dp-matAlpha',
         'dp-ssaoInt', 'dp-ssaoBias', 'dp-ssaoLen', 'dp-ssaoStep',
-        'dp-blendAmt', 'dp-lightInt', 'dp-shadowDark'].forEach(function (id) {
+        'dp-blendAmt', 'dp-lightInt', 'dp-shadowDark', 'dp-sse'].forEach(function (id) {
             var el = document.getElementById(id);
             var valEl = document.getElementById(id + 'Val');
             if (el && valEl) {
@@ -201,6 +202,7 @@
         }
 
         if (t) {
+            document.getElementById('dp-sse').value = t.maximumScreenSpaceError || 2;
             document.getElementById('dp-wireframe').checked = t.debugWireframe || false;
             document.getElementById('dp-backface').checked = t.backFaceCulling !== false;
             document.getElementById('dp-shadows').checked = t.shadows === Cesium.ShadowMode.ENABLED;
@@ -215,7 +217,7 @@
         // Değer göstericilerini güncelle
         ['dp-tileAlpha', 'dp-brightMin', 'dp-brightMax', 'dp-matAlpha',
             'dp-ssaoInt', 'dp-ssaoBias', 'dp-ssaoLen', 'dp-ssaoStep',
-            'dp-blendAmt', 'dp-lightInt', 'dp-shadowDark'].forEach(function (id) {
+            'dp-blendAmt', 'dp-lightInt', 'dp-shadowDark', 'dp-sse'].forEach(function (id) {
                 var el = document.getElementById(id);
                 var valEl = document.getElementById(id + 'Val');
                 if (el && valEl) valEl.textContent = parseFloat(el.value).toFixed(2);
@@ -286,6 +288,7 @@
 
         // 5. Tileset Render
         if (t) {
+            t.maximumScreenSpaceError = parseInt(document.getElementById('dp-sse').value);
             t.debugWireframe = document.getElementById('dp-wireframe').checked;
             t.backFaceCulling = document.getElementById('dp-backface').checked;
             t.shadows = document.getElementById('dp-shadows').checked ? Cesium.ShadowMode.ENABLED : Cesium.ShadowMode.DISABLED;
@@ -330,6 +333,7 @@
         if (t) {
             t.customShader = undefined;
             t.style = undefined;
+            t.maximumScreenSpaceError = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ? 6 : 2;
             t.debugWireframe = false;
             t.shadows = Cesium.ShadowMode.DISABLED;
             t.backFaceCulling = true;

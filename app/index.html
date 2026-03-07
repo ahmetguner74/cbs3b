@@ -41,16 +41,21 @@
 			loadScript(cesiumSrc, function () {
 				if (document.readyState === 'loading') {
 					document.addEventListener('DOMContentLoaded', function () {
-						loadScript('main.js');
+						loadScript('cbs-storage.js', function () {
+							loadScript('main.js', function () { loadScript('edit-manager.js'); });
+						});
 					});
 				} else {
-					loadScript('main.js');
+					loadScript('cbs-storage.js', function () {
+						loadScript('main.js', function () { loadScript('edit-manager.js'); });
+					});
 				}
 			});
 		})();
 	</script>
 	<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.15.0/proj4.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 	<script src="messages.js"></script>
 	<style>
 		@import url('https://cesium.com/downloads/cesiumjs/releases/1.105/Build/Cesium/Widgets/widgets.css');
@@ -162,12 +167,13 @@
 			--bg-hover: #334155;
 			--border: #334155;
 			--border-subtle: #1e293b;
-			--text-primary: #f1f5f9;
-			--text-secondary: #94a3b8;
-			--text-muted: #64748b;
-			--glass-bg: rgba(17, 24, 39, 0.75);
+			--text-primary: #ffffff;
+			--text-secondary: #f1f5f9;
+			--text-muted: #e2e8f0;
+			--glass-bg: rgba(17, 24, 39, 1);
 			--glass-border: rgba(255, 255, 255, 0.06);
 			--shadow: rgba(0, 0, 0, 0.5);
+			--ref-control-bg: rgba(15, 23, 42, 0.4);
 		}
 
 		html.light {
@@ -180,9 +186,10 @@
 			--text-primary: #0f172a;
 			--text-secondary: #475569;
 			--text-muted: #94a3b8;
-			--glass-bg: rgba(255, 255, 255, 0.8);
+			--glass-bg: rgba(255, 255, 255, 1);
 			--glass-border: rgba(0, 0, 0, 0.06);
 			--shadow: rgba(0, 0, 0, 0.08);
+			--ref-control-bg: rgba(226, 232, 240, 0.6);
 		}
 
 		.tabular-nums {
@@ -267,6 +274,7 @@
 			background: rgba(20, 184, 166, 0.2);
 			color: #14B8A6;
 		}
+
 
 		/* ── GLASS EFFECT ── */
 		.glass-panel {
@@ -856,6 +864,19 @@
 			border-color: rgba(239, 68, 68, 0.2) !important;
 		}
 
+		/* ─── Dark: Hardcoded Tailwind text override (beyaza yakın) ─── */
+		html.dark .text-slate-300 {
+			color: #f8fafc !important;
+		}
+
+		html.dark .text-slate-400 {
+			color: #f1f5f9 !important;
+		}
+
+		html.dark .text-slate-500 {
+			color: #e2e8f0 !important;
+		}
+
 		/* ─── MOBİL: Panel yüksekliğini küçült, dünya butonunu gizle ─── */
 		@media (max-width: 768px) {
 			#globeDropdownContainer {
@@ -896,13 +917,30 @@
 							<span class="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
 						</span>
 						<span
-							class="text-[10px] font-bold tracking-wider text-slate-300 group-hover:text-white uppercase">v0.9.1</span>
+							class="text-[10px] font-bold tracking-wider text-slate-300 group-hover:text-white uppercase">v0.9.2</span>
 					</button>
 				</div>
 				<p class="text-xs text-slate-300 font-semibold tracking-tight mt-0.5">3D Sayısal Veri Üretim ve Analiz
 					Portalı</p>
 			</div>
 		</div>
+
+		<!-- ── X-RAY TOGGLE (Header Ortası) ── -->
+		<div class="flex-1 flex justify-center">
+			<button id="btnXRayToggle"
+				class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border transition-all duration-200 cursor-pointer focus:outline-none"
+				style="background:transparent;border-color:transparent;opacity:0.5;"
+				title="X-Ray Modu: Tüm vektör verileri 3B modelin önünde göster (derinlik testini devre dışı bırak)">
+				<span class="xray-icon"><svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960"
+						width="18px" fill="currentColor" style="opacity:0.8;">
+						<path
+							d="m880-194-80-80v-286H514l-80-80h366q33 0 56.5 23.5T880-560v366ZM560-720v-80H274l-80-80h366q33 0 56.5 23.5T640-800v80h-80Zm97 303ZM400-160h286L400-446v286ZM823-23l-57-57H400q-34 0-57-23t-23-57v-366L160-686v286h80v80h-80q-34 0-57-23t-23-57v-366l-57-57 57-57L880-80l-57 57ZM543-303Z" />
+					</svg></span>
+				<span class="text-[10px] font-bold tracking-wider hidden sm:inline"
+					style="letter-spacing:0.08em;">X-RAY</span>
+			</button>
+		</div>
+
 		<div class="ml-auto flex items-center gap-1">
 			<!-- Globe Dropdown (click-toggle, sabit kalır) -->
 			<div class="relative mr-1" id="globeDropdownContainer">
@@ -942,22 +980,6 @@
 						</button>
 					</div>
 
-					<!-- Yükseklik Kontrolü -->
-					<div class="border-t border-slate-700/50 pt-2">
-						<div class="flex items-center gap-2">
-							<span class="text-[10px] font-bold text-slate-500 tracking-wider w-14">KOT</span>
-							<input id="heightSlider" type="range" min="-500" max="500" value="0" step="1"
-								class="w-16 h-1 accent-primary cursor-pointer" title="Yükseklik Ofseti (metre)">
-							<input id="heightInput" type="number" value="0" step="1"
-								class="w-16 px-1.5 py-1 bg-slate-900 border border-slate-600 rounded text-xs text-slate-200 text-center focus:outline-none focus:border-primary"
-								title="Metre cinsinden yükseklik ofseti">
-							<span class="text-slate-500 text-xs">m</span>
-							<button id="btnHeightReset" class="text-slate-500 hover:text-white transition-colors"
-								title="Sıfırla">
-								<span class="material-symbols-outlined text-[16px]">restart_alt</span>
-							</button>
-						</div>
-					</div>
 				</div>
 			</div>
 
@@ -1150,6 +1172,12 @@
 								</div>
 							</button>
 							<div class="h-[1px] w-full bg-border-subtle"></div>
+							<!-- ═══ CLIPBOX BUTONU ═══ -->
+							<button id="btnClipBox"
+								class="tool-btn w-10 h-10 flex items-center justify-center rounded bg-transparent hover:bg-slate-800 text-slate-400 border border-transparent transition-colors"
+								title="Kırpma Kutusu (ClipBox)">
+								<span class="material-symbols-outlined text-xl">content_cut</span>
+							</button>
 						</div>
 						<!-- Bottom: Performans / Kalite -->
 						<div class="flex flex-col gap-1">
@@ -1177,9 +1205,192 @@
 			</div>
 		</div>
 
+
+		<!-- ═══ CLIPBOX MİNİ PANEL ═══ -->
+		<style>
+			#clipMiniPanel {
+				position: fixed;
+				bottom: 70px;
+				right: 20px;
+				z-index: 800;
+				background: var(--bg-surface);
+				border: 1px solid var(--border);
+				border-radius: 12px;
+				box-shadow: 0 8px 32px var(--shadow);
+				padding: 12px 16px;
+				min-width: 220px;
+				opacity: 0;
+				visibility: hidden;
+				transform: translateY(10px);
+				transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+				pointer-events: none;
+			}
+
+			#clipMiniPanel.show {
+				opacity: 1;
+				visibility: visible;
+				transform: translateY(0);
+				pointer-events: auto;
+			}
+
+			.clip-mini-row {
+				display: flex;
+				align-items: center;
+				gap: 6px;
+				margin-bottom: 4px;
+			}
+
+			.clip-mini-label {
+				font-size: 10px;
+				font-weight: 700;
+				width: 12px;
+				text-align: center;
+				flex-shrink: 0;
+			}
+
+			.clip-mini-slider {
+				flex: 1;
+				-webkit-appearance: none;
+				appearance: none;
+				height: 3px;
+				border-radius: 2px;
+				background: var(--bg-elevated);
+				outline: none;
+				cursor: pointer;
+			}
+
+			.clip-mini-slider::-webkit-slider-thumb {
+				-webkit-appearance: none;
+				width: 12px;
+				height: 12px;
+				border-radius: 50%;
+				background: #06b6d4;
+				border: 2px solid var(--bg-surface);
+				box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+				cursor: grab;
+			}
+
+			.clip-mini-slider::-moz-range-thumb {
+				width: 12px;
+				height: 12px;
+				border-radius: 50%;
+				background: #06b6d4;
+				border: 2px solid var(--bg-surface);
+				box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+				cursor: grab;
+			}
+
+			.clip-mini-val {
+				font-family: 'JetBrains Mono', monospace;
+				font-size: 9px;
+				font-weight: 600;
+				color: var(--text-secondary);
+				width: 30px;
+				text-align: right;
+				flex-shrink: 0;
+			}
+
+			.clip-mini-btn {
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				gap: 3px;
+				padding: 4px 8px;
+				border-radius: 6px;
+				border: 1px solid var(--border);
+				background: var(--bg-elevated);
+				color: var(--text-secondary);
+				font-size: 9px;
+				font-weight: 600;
+				cursor: pointer;
+				transition: all 0.15s;
+			}
+
+			.clip-mini-btn:hover {
+				background: var(--bg-hover);
+				color: var(--text-primary);
+			}
+
+			.clip-pm-btn {
+				width: 18px;
+				height: 18px;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				border-radius: 4px;
+				border: 1px solid var(--border);
+				background: var(--bg-elevated);
+				color: var(--text-secondary);
+				font-size: 11px;
+				font-weight: 700;
+				cursor: pointer;
+				flex-shrink: 0;
+				transition: all 0.15s;
+				padding: 0;
+				line-height: 1;
+			}
+
+			.clip-pm-btn:hover {
+				background: #06b6d4;
+				color: #fff;
+				border-color: #06b6d4;
+			}
+
+			.clip-mini-btn.danger:hover {
+				background: rgba(239, 68, 68, 0.15);
+				border-color: rgba(239, 68, 68, 0.3);
+				color: #ef4444;
+			}
+		</style>
+		<div id="clipMiniPanel">
+			<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+				<div style="display:flex;align-items:center;gap:5px">
+					<span class="material-symbols-outlined text-[14px]" style="color:#06b6d4">content_cut</span>
+					<span
+						style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-primary)">Kırpma
+						Kutusu</span>
+				</div>
+				<button id="clipMiniClose" class="clip-mini-btn danger" style="padding:2px 5px">
+					<span class="material-symbols-outlined text-[12px]">close</span>
+				</button>
+			</div>
+			<div
+				style="font-size:7px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:3px">
+				Boyut (metre)</div>
+			<div class="clip-mini-row">
+				<span class="clip-mini-label" style="color:#ef4444">X</span>
+				<button class="clip-pm-btn" data-axis="X" data-dir="-1">−</button>
+				<input type="range" class="clip-mini-slider" id="clipMiniX" min="5" max="100" value="30">
+				<button class="clip-pm-btn" data-axis="X" data-dir="1">+</button>
+				<span class="clip-mini-val" id="clipMiniXVal">30m</span>
+			</div>
+			<div class="clip-mini-row">
+				<span class="clip-mini-label" style="color:#22c55e">Y</span>
+				<button class="clip-pm-btn" data-axis="Y" data-dir="-1">−</button>
+				<input type="range" class="clip-mini-slider" id="clipMiniY" min="5" max="100" value="30">
+				<button class="clip-pm-btn" data-axis="Y" data-dir="1">+</button>
+				<span class="clip-mini-val" id="clipMiniYVal">30m</span>
+			</div>
+			<div class="clip-mini-row">
+				<span class="clip-mini-label" style="color:#3b82f6">Z</span>
+				<button class="clip-pm-btn" data-axis="Z" data-dir="-1">−</button>
+				<input type="range" class="clip-mini-slider" id="clipMiniZ" min="5" max="100" value="30">
+				<button class="clip-pm-btn" data-axis="Z" data-dir="1">+</button>
+				<span class="clip-mini-val" id="clipMiniZVal">30m</span>
+			</div>
+			<div style="display:flex;gap:4px;margin-top:6px">
+				<button id="clipMiniReset" class="clip-mini-btn" style="flex:1">
+					<span class="material-symbols-outlined text-[12px]">restart_alt</span> Sıfırla
+				</button>
+				<button id="clipMiniFlyTo" class="clip-mini-btn" style="flex:1">
+					<span class="material-symbols-outlined text-[12px]">flight</span> Odakla
+				</button>
+			</div>
+		</div>
+
 		<!-- Bottom Center Floating Panel: Result Display -->
 		<div id="resultDisplay"
-			class="absolute bottom-6 left-1/2 -translate-x-1/2 z-40 glass-panel rounded-full px-6 py-3 flex items-center justify-center min-w-[300px] max-w-[600px] transition-opacity duration-300 shadow-xl border border-white/10"
+			class="absolute bottom-6 left-1/2 -translate-x-1/2 z-40 glass-panel rounded-full px-6 py-3 flex items-center justify-center w-[480px] transition-opacity duration-300 shadow-xl border border-white/10"
 			style="background-color: var(--bg-surface);">
 			<div
 				class="text-[14px] md:text-[15px] font-medium text-slate-100 text-center leading-relaxed tracking-wide">
@@ -1331,6 +1542,13 @@
 										<span>DXF</span>
 										<input type="file" id="btnImportDXF" accept=".dxf" class="hidden">
 									</label>
+									<label
+										class="flex-1 px-2 py-1.5 bg-slate-800/40 border border-slate-700/50 rounded-md text-[10px] font-bold text-slate-400 hover:bg-slate-700 hover:text-white cursor-pointer transition-all flex items-center justify-center gap-1"
+										title="KML/KMZ İçe Aktar">
+										<span class="material-symbols-outlined text-[14px]">location_on</span>
+										<span>KML</span>
+										<input type="file" id="btnImportKML" accept=".kml,.kmz" class="hidden">
+									</label>
 								</div>
 							</div>
 
@@ -1353,6 +1571,11 @@
 										class="flex-1 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md text-[10px] font-bold text-slate-300 hover:bg-slate-700 hover:text-white transition-colors flex items-center justify-center gap-1">
 										<span class="material-symbols-outlined text-[14px]">architecture</span>
 										<span>DXF</span>
+									</button>
+									<button id="btnExportKML"
+										class="flex-1 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md text-[10px] font-bold text-slate-300 hover:bg-slate-700 hover:text-white transition-colors flex items-center justify-center gap-1">
+										<span class="material-symbols-outlined text-[14px]">location_on</span>
+										<span>KML</span>
 									</button>
 								</div>
 							</div>
@@ -1394,6 +1617,38 @@
 		// Store original renderList function if needed, or override it here
 		// Actually, main.js has `measureList.innerHTML = ...`. I will edit main.js to use tailwind classes for the generated rows.
 	</script>
+	<!-- ═══ IMPORT LOADING OVERLAY ═══ -->
+	<div id="importLoadingOverlay" class="hidden fixed inset-0 z-[10000] flex items-center justify-center"
+		style="pointer-events:all">
+		<div class="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
+		<div class="relative flex flex-col items-center gap-4 p-8 rounded-2xl"
+			style="background:var(--bg-surface);border:1px solid var(--border);min-width:280px">
+			<!-- Spinner -->
+			<div class="import-spinner"></div>
+			<!-- Dosya adı -->
+			<div id="importLoadingFileName" class="text-sm font-semibold truncate max-w-[240px]"
+				style="color:var(--text-primary)"></div>
+			<!-- Durum mesajı -->
+			<div id="importLoadingStatus" class="text-xs" style="color:var(--text-muted)">Dosya okunuyor…</div>
+		</div>
+	</div>
+	<style>
+		.import-spinner {
+			width: 40px;
+			height: 40px;
+			border: 3px solid var(--border-subtle, #1e293b);
+			border-top-color: #14B8A6;
+			border-radius: 50%;
+			animation: importSpin 0.8s linear infinite;
+		}
+
+		@keyframes importSpin {
+			to {
+				transform: rotate(360deg);
+			}
+		}
+	</style>
+
 	<!-- Import Z-Offset Diyaloğu -->
 	<div id="importZDialog" class="hidden fixed inset-0 z-[9999] flex items-center justify-center">
 		<!-- Backdrop -->
@@ -1401,8 +1656,19 @@
 		<!-- Dialog -->
 		<div class="relative rounded-2xl shadow-2xl w-80 p-5 space-y-4 animate-fadeIn"
 			style="background:var(--bg-surface);border:1px solid var(--border)">
-			<div class="flex items-center gap-2 text-sm font-semibold" style="color:var(--text-primary)">
-				<span class="text-lg">📐</span> Yükseklik (Z) Ayarı
+			<div class="flex items-center justify-between">
+				<div class="flex items-center gap-2 text-sm font-semibold" style="color:var(--text-primary)">
+					<span class="text-lg">📐</span> Yükseklik (Z) Ayarı
+				</div>
+				<button id="importZCancel"
+					class="w-6 h-6 flex items-center justify-center rounded-full hover:bg-red-500/20 text-slate-400 hover:text-red-400 transition-colors"
+					title="İptal — İçe aktarmayı iptal et">
+					<span class="material-symbols-outlined text-[16px]">close</span>
+				</button>
+			</div>
+			<!-- Dinamik format bilgisi -->
+			<div id="importFormatInfo" class="text-[10px] leading-relaxed px-3 py-1.5 rounded-lg"
+				style="background:rgba(20,184,166,0.08);color:var(--text-secondary);border:1px solid rgba(20,184,166,0.15);display:none">
 			</div>
 			<div class="text-xs leading-relaxed" style="color:var(--text-muted)">
 				İçe aktarılan verilerin Z değerlerini modele uydurmak için ofset ekleyebilirsiniz.
@@ -1543,7 +1809,7 @@
 			<div class="absolute bottom-6 left-0 w-full flex items-center justify-center gap-3">
 				<span class="text-[11px] text-slate-400 font-mono">© 2026 Coğrafi Bilgi Sistemleri</span>
 				<span class="text-slate-700">·</span>
-				<span class="text-[11px] font-bold uppercase tracking-wider text-amber-500/60">Demo v0.9.1-beta</span>
+				<span class="text-[11px] font-bold uppercase tracking-wider text-amber-500/60">Demo v0.9.2-beta</span>
 			</div>
 		</div>
 	</div>
@@ -1619,7 +1885,7 @@
 			<div class="text-center mt-8">
 				<span class="text-[9px] text-slate-400 font-mono">© 2026 Coğrafi Bilgi Sistemleri</span>
 				<span class="text-slate-700 mx-1">·</span>
-				<span class="text-[9px] font-bold uppercase tracking-wider text-amber-500/60">Demo v0.9.1-beta</span>
+				<span class="text-[9px] font-bold uppercase tracking-wider text-amber-500/60">Demo v0.9.2-beta</span>
 			</div>
 		</div>
 	</div>
@@ -2238,17 +2504,35 @@
 			<!-- Timeline -->
 			<div class="p-5 overflow-y-auto flex-1 hide-scrollbar">
 				<div class="relative border-l border-slate-700 ml-3 space-y-6 pb-4">
-					<!-- v0.9.1 — YENİ -->
+					<!-- v0.9.2 — YENİ -->
 					<div class="relative pl-6">
 						<div
 							class="absolute -left-[5px] top-1.5 w-[9px] h-[9px] rounded-full bg-primary ring-4 ring-slate-900">
 						</div>
 						<div class="flex items-center gap-2 mb-1">
-							<span class="text-sm font-bold text-white">v0.9.1</span>
+							<span class="text-sm font-bold text-white">v0.9.2</span>
 							<span
 								class="px-1.5 py-0.5 rounded bg-primary/20 text-primary text-[8px] font-black uppercase tracking-wider">YENİ</span>
 						</div>
 						<p class="text-[11px] text-slate-400 leading-relaxed">
+							• ClipBox dinamik düzenleme: slider'lı mini panel ile interaktif kırpma kutusu kontrolü.<br>
+							• Geri bildirim sistemi: hata/öneri/genel kategorili, ekran görüntülü e-posta gönderimi.<br>
+							• İçe aktarma (CSV/GeoJSON/DXF/KML) için tam ekran loading overlay ve hata yönetimi.<br>
+							• Solid View render optimizasyonu: HDR düzeltmesi, gölge iyileştirmeleri.<br>
+							• X-Ray modu kapalıyken çizgilerin gizlenmeme sorunu giderildi.<br>
+							• Ölçüm paneli hata düzeltmeleri: toggle, çift tıklama ve inline isim düzenleme.<br>
+							• Koyu tema okunurluğu ve panel opaklığı iyileştirmeleri.
+						</p>
+					</div>
+					<!-- v0.9.1 -->
+					<div class="relative pl-6">
+						<div
+							class="absolute -left-[4px] top-1.5 w-[7px] h-[7px] rounded-full bg-slate-600 ring-4 ring-slate-900">
+						</div>
+						<div class="flex items-center gap-2 mb-1">
+							<span class="text-xs font-bold text-slate-300">v0.9.1</span>
+						</div>
+						<p class="text-[11px] text-slate-400/80 leading-relaxed">
 							• UI iyileştirmeleri, klavye kısayolları paneli ve genel hata düzeltmeleri yapıldı.<br>
 							• İçe bükey (C-tipi) poligon çizimlerinde yaşanan üçgenleme yırtılmaları giderildi.
 						</p>

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Veri Temizle</title>
+</head>
+
+<body style="background:#111;color:#0f0;font-family:monospace;padding:40px;font-size:18px">
+    <h2>🧹 Veri Temizleme (localStorage + IndexedDB)</h2>
+    <pre id="log"></pre>
+    <script>
+        var log = document.getElementById('log');
+
+        function addLog(msg) { log.textContent += msg + '\n'; }
+
+        // 1. localStorage temizle
+        try {
+            var key = 'merinos_measurements';
+            var data = localStorage.getItem(key);
+            var size = data ? (data.length / 1024 / 1024).toFixed(2) + ' MB' : '0 MB';
+            addLog('localStorage veri boyutu: ' + size);
+            localStorage.removeItem(key);
+            localStorage.removeItem('_storage_cleared_v2');
+            addLog('✅ localStorage temizlendi');
+        } catch (e) {
+            addLog('⚠️ localStorage hatası: ' + e.message);
+        }
+
+        // 2. IndexedDB temizle
+        var dbName = 'cbs_merinos';
+        try {
+            var delReq = indexedDB.deleteDatabase(dbName);
+            delReq.onsuccess = function () {
+                addLog('✅ IndexedDB ("' + dbName + '") silindi');
+                addLog('\n✅ Tüm veriler temizlendi. Yönlendiriliyor...');
+                setTimeout(function () { window.location.href = 'index.html'; }, 3000);
+            };
+            delReq.onerror = function (e) {
+                addLog('❌ IndexedDB silme hatası: ' + e.target.error);
+            };
+            delReq.onblocked = function () {
+                addLog('⚠️ IndexedDB kullanımda — tüm sekmeleri kapatıp tekrar deneyin');
+            };
+        } catch (e) {
+            addLog('❌ IndexedDB hatası: ' + e.message);
+        }
+    </script>
+</body>
+
+</html>
