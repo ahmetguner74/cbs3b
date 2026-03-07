@@ -55,6 +55,16 @@
                 <div class="search-box">
                     <input type="text" id="session-search" placeholder="Session ID Ara...">
                 </div>
+                <div class="device-filter" style="display:flex; gap:5px; margin-bottom:10px; padding:0 5px;">
+                    <button class="filter-btn active" data-filter="all" onclick="setDeviceFilter('all')"
+                        style="flex:1; font-size:0.7rem; padding:4px; border-radius:4px; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); cursor:pointer;">Hepsi</button>
+                    <button class="filter-btn" data-filter="Desktop" onclick="setDeviceFilter('Desktop')"
+                        style="flex:1; font-size:0.7rem; padding:4px; border-radius:4px; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); cursor:pointer;">💻
+                        Masaüstü</button>
+                    <button class="filter-btn" data-filter="Mobile" onclick="setDeviceFilter('Mobile')"
+                        style="flex:1; font-size:0.7rem; padding:4px; border-radius:4px; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); cursor:pointer;">📱
+                        Mobil</button>
+                </div>
                 <ul id="session-list">
                     <!-- Session items will be injected here -->
                 </ul>
@@ -103,6 +113,22 @@
         let sessionActivity = {}; // Track last seen time
         let logs = [];
         let selectedSession = null;
+        let deviceFilter = 'all';
+
+        function setDeviceFilter(filter) {
+            deviceFilter = filter;
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.getAttribute('data-filter') === filter);
+                if (btn.classList.contains('active')) {
+                    btn.style.background = 'rgba(56, 189, 248, 0.2)';
+                    btn.style.borderColor = '#38bdf8';
+                } else {
+                    btn.style.background = 'rgba(255,255,255,0.05)';
+                    btn.style.borderColor = 'rgba(255,255,255,0.1)';
+                }
+            });
+            updateSessionList();
+        }
         let map, markers = {};
 
         window.checkAccess = function (manualKey) {
@@ -193,10 +219,11 @@
             const fpsColor = log.fps < 30 ? '#ff4d4d' : (log.fps < 50 ? '#ffcc00' : '#00ff88');
             const sourceClass = log.system_info?.source === 'Local' ? 'badge-local' : 'badge-live';
 
+            const deviceIcon = log.system_info?.deviceType === 'Mobile' ? '📱' : '💻';
             tr.innerHTML = `
                 <td>${time}</td>
                 <td><span class="badge ${sourceClass}">${log.system_info?.source || 'N/A'}</span></td>
-                <td class="session-cell" title="${log.session_id}">${log.session_id.substring(8, 16)}...</td>
+                <td class="session-cell" title="${log.session_id}">${deviceIcon} ${log.session_id.substring(8, 16)}...</td>
                 <td><strong>${log.action}</strong></td>
                 <td><span style="color:${fpsColor}">${log.fps} FPS</span> | ${log.system_info?.gpu?.split('(')[0] || 'N/A'}</td>
                 <td><button class="btn-info" onclick='showDetails(${JSON.stringify(log)})'>🔍 İncele</button></td>
@@ -305,10 +332,11 @@
             const fpsColor = l.fps < 30 ? '#ff4d4d' : (l.fps < 50 ? '#ffcc00' : '#00ff88');
             const sourceClass = l.system_info?.source === 'Local' ? 'badge-local' : 'badge-live';
 
+            const deviceIcon = l.system_info?.deviceType === 'Mobile' ? '📱' : '💻';
             tr.innerHTML = `
                 <td>${time}</td>
                 <td><span class="badge ${sourceClass}">${l.system_info?.source || 'N/A'}</span></td>
-                <td class="session-cell" title="${l.session_id}">${l.session_id.substring(8, 16)}...</td>
+                <td class="session-cell" title="${l.session_id}">${deviceIcon} ${l.session_id.substring(8, 16)}...</td>
                 <td><strong>${l.action}</strong></td>
                 <td><span style="color:${fpsColor}">${l.fps} FPS</span> | ${l.system_info?.gpu?.split('(')[0] || 'N/A'}</td>
                 <td><button class="btn-info" onclick='showDetails(${JSON.stringify(l)})'>🔍 İncele</button></td>
@@ -325,7 +353,7 @@
             const sessionMap = {};
             logs.forEach(l => {
                 if (!sessionMap[l.session_id]) {
-                    sessionMap[l.session_id] = { hasError: false, lastSeen: new Date(l.created_at).getTime() };
+                    sessionMap[l.session_id] = { hasError: false, lastSeen: new Date(l.created_at).getTime(), deviceType: l.system_info?.deviceType };
                 }
                 if (l.is_error) sessionMap[l.session_id].hasError = true;
                 const logTime = new Date(l.created_at).getTime();
@@ -338,12 +366,18 @@
                 .sort((a, b) => sessionMap[b].lastSeen - sessionMap[a].lastSeen)
                 .forEach(sid => {
                     if (search && !sid.toLowerCase().includes(search)) {
-                        if (markers[sid]) markers[sid].remove(); // Hide marker if searched
+                        if (markers[sid]) markers[sid].remove();
+                        return;
+                    }
+
+                    if (deviceFilter !== 'all' && sessionMap[sid].deviceType !== deviceFilter) {
                         return;
                     }
 
                     const li = document.createElement('li');
                     li.className = sid === selectedSession ? 'active' : '';
+
+                    const deviceIcon = sessionMap[sid].deviceType === 'Mobile' ? '📱' : '💻';
 
                     const timeDiff = now - sessionMap[sid].lastSeen;
                     const isActive = timeDiff < 60000; // 1 dakika
@@ -351,8 +385,12 @@
                     const statusColor = isActive ? '#22c55e' : (isPassive ? '#94a3b8' : '#4b5563');
                     const statusDot = `<span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${statusColor}; margin-right:8px;"></span>`;
 
-                    const errorIcon = sessionMap[sid].hasError ? '⚠️ ' : '';
-                    li.innerHTML = `${statusDot}${errorIcon}${sid.substring(8, 20)}...`;
+                    li.innerHTML = `
+                        <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+                            <span>${statusDot} ${deviceIcon} ${sid.substring(8, 14)}...</span>
+                            ${sessionMap[sid].hasError ? '<span title="Hata Var">⚠️</span>' : ''}
+                        </div>
+                    `;
                     li.onclick = () => filterSession(sid);
                     list.appendChild(li);
                 });
@@ -395,12 +433,13 @@
         window.showDetails = function (log) {
             const panel = document.getElementById('system-details-content');
             const errorInfo = log.is_error ? getTurkishError(log.details.message || '') : null;
+            const info = log.system_info;
 
             panel.innerHTML = `
                 <div class="detail-group">
                     <div class="source-header">
-                        <span class="badge ${log.system_info?.source === 'Local' ? 'badge-local' : 'badge-live'}">${log.system_info?.source}</span>
-                        <span>${log.system_info?.host}</span>
+                        <span class="badge ${info?.source === 'Local' ? 'badge-local' : 'badge-live'}">${info?.source}</span>
+                        <span>${info?.host}</span>
                     </div>
                 </div>
 
@@ -423,43 +462,47 @@
                 <div class="detail-group">
                     <h4>💻 Sistem & Cihaz Gücü</h4>
                     <div class="info-grid">
-                        <div class="info-item"><span>İşletim Sistemi</span><strong>${log.system_info?.platform || 'Bilinmiyor'}</strong></div>
-                        <div class="info-item"><span>İşlemci Gücü</span><strong>${log.system_info?.cores} Çekirdek</strong></div>
-                        <div class="info-item"><span>Bellek Kapasitesi</span><strong>${log.system_info?.memory} GB</strong></div>
-                        <div class="info-item"><span>Ekran Çözünürlüğü</span><strong>${log.system_info?.screen}</strong></div>
-                        <div class="info-item" style="grid-column: span 2;"><span>Ekran Kartı (GPU)</span><strong>${log.system_info?.gpu?.substring(0, 60)}...</strong></div>
+                        <div class="info-item"><span>İşletim Sistemi</span><strong>${info?.platform || 'Bilinmiyor'}</strong></div>
+                        <div class="info-item"><span>İşlemci Gücü</span><strong>${info?.cores} Çekirdek</strong></div>
+                        <div class="info-item"><span>Bellek Kapasitesi</span><strong>${info?.memory} GB</strong></div>
+                        <div class="info-item"><span>Ekran Çözünürlüğü</span><strong>${info?.screen}</strong></div>
+                        <div class="info-item" style="grid-column: span 2;"><span>Ekran Kartı (GPU)</span><strong>${info?.gpu?.split('(')[0] || 'N/A'}</strong></div>
                     </div>
                 </div>
                 
                 <div class="detail-group">
                     <h4>🌐 İnternet & Bağlantı</h4>
                     <div class="info-grid">
-                        <div class="info-item"><span>Durum</span><strong>${log.system_info?.connection?.status === 'Online' ? 'Bağlı' : 'Çevrimdışı'}</strong></div>
-                        <div class="info-item"><span>Bağlantı Tipi</span><strong>${log.system_info?.connection?.type || 'Bilinmiyor'}</strong></div>
-                        <div class="info-item"><span>Tahmini Hız</span><strong>${log.system_info?.connection?.downlink} Mbps</strong></div>
-                        <div class="info-item"><span>Gecikme (Ping)</span><strong>${log.system_info?.connection?.rtt} ms</strong></div>
-                        <div class="info-item" style="grid-column: span 2;"><span>Konum</span><strong>${log.system_info?.location?.city || (log.system_info?.location?.isApprox ? 'Yaklaşık' : 'N/A')} ${log.system_info?.location?.country ? `(${log.system_info.location.country})` : ''}</strong></div>
+                        <div class="info-item"><span>Durum</span><strong>${info?.connection?.status === 'Online' ? 'Bağlı' : 'Çevrimdışı'}</strong></div>
+                        <div class="info-item"><span>Bağlantı Tipi</span><strong>${info?.connection?.type || 'Bilinmiyor'}</strong></div>
+                        <div class="info-item"><span>Tahmini Hız</span><strong>${info?.connection?.downlink} Mbps</strong></div>
+                        <div class="info-item"><span>Gecikme (Ping)</span><strong>${info?.connection?.rtt} ms</strong></div>
+                        <div class="info-item" style="grid-column: span 2;"><span>Konum</span><strong>${info?.location?.city || (info?.location?.isApprox ? 'Yaklaşık' : 'N/A')} ${info?.location?.country ? `(${info.location.country})` : ''}</strong></div>
                     </div>
                 </div>
-
+                <div class="card">
+                    <div class="card-label">Cihaz / GPU</div>
+                    <div class="card-value">${info.deviceType === 'Mobile' ? '📱 Mobil' : '💻 Masaüstü'}</div>
+                    <div class="card-sub">${info.gpu || 'N/A'}</div>
+                </div>
                 <div class="detail-group">
                     <h4>📦 Hafıza & Uygulama Durumu</h4>
                     <div class="info-grid">
-                        <div class="info-item"><span>Tarayıcı Depolama</span><strong>${log.system_info?.storage?.localStorage}</strong></div>
-                        <div class="info-item"><span>Veritabanı (IDB)</span><strong>${log.system_info?.storage?.indexedDB ? 'Çalışıyor' : 'Durduruldu'}</strong></div>
-                        <div class="info-item"><span>Sayfa Konumu</span><strong>${log.system_info?.page?.visible ? 'Ön Planda (Aktif)' : 'Sekme Arkasında'}</strong></div>
-                        <div class="info-item"><span>Oturum Süresi</span><strong>${log.system_info?.page?.duration}</strong></div>
+                        <div class="info-item"><span>Tarayıcı Depolama</span><strong>${info?.storage?.localStorage}</strong></div>
+                        <div class="info-item"><span>Veritabanı (IDB)</span><strong>${info?.storage?.indexedDB ? 'Çalışıyor' : 'Durduruldu'}</strong></div>
+                        <div class="info-item"><span>Sayfa Konumu</span><strong>${info?.page?.visible ? 'Ön Planda (Aktif)' : 'Sekme Arkasında'}</strong></div>
+                        <div class="info-item"><span>Oturum Süresi</span><strong>${info?.page?.duration}</strong></div>
                     </div>
                 </div>
 
-                ${log.system_info?.scene ? `
+                ${info?.scene ? `
                 <div class="detail-group">
                     <h4>🎮 3D Harita Detayları</h4>
                     <div class="info-grid">
-                        <div class="info-item"><span>Temel Çizimler</span><strong>${log.system_info.scene.primitives} Adet</strong></div>
-                        <div class="info-item"><span>Zemin Kaplamaları</span><strong>${log.system_info.scene.groundPrimitives}</strong></div>
-                        <div class="info-item"><span>Toplam Nesne</span><strong>${log.system_info.scene.objects}</strong></div>
-                        <div class="info-item"><span>Video Bellek (Tex)</span><strong>${log.system_info.scene.vram}</strong></div>
+                        <div class="info-item"><span>Temel Çizimler</span><strong>${info.scene.primitives} Adet</strong></div>
+                        <div class="info-item"><span>Zemin Kaplamaları</span><strong>${info.scene.groundPrimitives}</strong></div>
+                        <div class="info-item"><span>Toplam Nesne</span><strong>${info.scene.objects}</strong></div>
+                        <div class="info-item"><span>Video Bellek (Tex)</span><strong>${info.scene.vram}</strong></div>
                     </div>
                 </div>
                 ` : ''}

@@ -90,7 +90,9 @@
         },
 
         cacheStaticInfo: function () {
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
             staticInfo = {
+                deviceType: isMobile ? 'Mobile' : 'Desktop',
                 platform: navigator.platform,
                 cores: navigator.hardwareConcurrency || 'N/A',
                 memory: navigator.deviceMemory || 'N/A',
