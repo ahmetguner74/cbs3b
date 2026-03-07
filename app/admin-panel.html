@@ -61,6 +61,7 @@
                         <thead>
                             <tr>
                                 <th>Zaman</th>
+                                <th>Kaynak</th>
                                 <th>Oturum</th>
                                 <th>Eylem</th>
                                 <th>Sistem / FPS</th>
@@ -138,13 +139,15 @@
 
             const time = new Date(log.created_at).toLocaleTimeString();
             const fpsColor = log.fps < 30 ? '#ff4d4d' : (log.fps < 50 ? '#ffcc00' : '#00ff88');
+            const sourceClass = log.system_info?.source === 'Local' ? 'badge-local' : 'badge-live';
 
             tr.innerHTML = `
                 <td>${time}</td>
+                <td><span class="badge ${sourceClass}">${log.system_info?.source || 'N/A'}</span></td>
                 <td class="session-cell" title="${log.session_id}">${log.session_id.substring(8, 16)}...</td>
                 <td><strong>${log.action}</strong></td>
                 <td><span style="color:${fpsColor}">${log.fps} FPS</span> | ${log.system_info?.gpu?.split('(')[0] || 'N/A'}</td>
-                <td><button class="btn-info" onclick='showDetails(${JSON.stringify(log)})'>İncele</button></td>
+                <td><button class="btn-info" onclick='showDetails(${JSON.stringify(log)})'>🔍 İncele</button></td>
             `;
 
             tbody.insertBefore(tr, tbody.firstChild);
@@ -156,56 +159,112 @@
             updateErrorRate();
         }
 
-        function updateSessionList() {
-            const list = document.getElementById('session-list');
-            const currentCount = list.children.length;
-            if (currentCount === sessions.size) return;
-
-            list.innerHTML = `<li class="${!selectedSession ? 'active' : ''}" onclick="filterSession(null)">Tüm Akış</li>`;
-            Array.from(sessions).reverse().forEach(sid => {
-                const li = document.createElement('li');
-                li.className = sid === selectedSession ? 'active' : '';
-                li.innerText = sid.substring(8, 20) + '...';
-                li.onclick = () => filterSession(sid);
-                list.appendChild(li);
-            });
-        }
-
         function filterSession(sid) {
             selectedSession = sid;
             document.getElementById('current-session-title').innerText = sid ? `Oturum: ${sid}` : 'Genel Akış (Tüm Oturumlar)';
             document.getElementById('log-body').innerHTML = '';
-            logs.filter(l => !sid || l.session_id === sid).forEach(l => {
-                // Re-add logs (simple implementation)
+
+            // Mevcut logları temizle ve filtreye göre yeniden ekle
+            const filteredLogs = logs.filter(l => !sid || l.session_id === sid);
+            filteredLogs.forEach(l => {
                 const tbody = document.getElementById('log-body');
                 const tr = document.createElement('tr');
                 if (l.is_error) tr.classList.add('error-row');
+
                 const time = new Date(l.created_at).toLocaleTimeString();
-                tr.innerHTML = `<td>${time}</td><td class="session-cell">${l.session_id.substring(8, 16)}...</td><td><strong>${l.action}</strong></td><td>${l.fps} FPS</td><td><button class="btn-info" onclick='showDetails(${JSON.stringify(l)})'>İncele</button></td>`;
+                const fpsColor = l.fps < 30 ? '#ff4d4d' : (l.fps < 50 ? '#ffcc00' : '#00ff88');
+                const sourceClass = l.system_info?.source === 'Local' ? 'badge-local' : 'badge-live';
+
+                tr.innerHTML = `
+                    <td>${time}</td>
+                    <td><span class="badge ${sourceClass}">${l.system_info?.source || 'N/A'}</span></td>
+                    <td class="session-cell" title="${l.session_id}">${l.session_id.substring(8, 16)}...</td>
+                    <td><strong>${l.action}</strong></td>
+                    <td><span style="color:${fpsColor}">${l.fps} FPS</span> | ${l.system_info?.gpu?.split('(')[0] || 'N/A'}</td>
+                    <td><button class="btn-info" onclick='showDetails(${JSON.stringify(l)})'>🔍 İncele</button></td>
+                `;
                 tbody.appendChild(tr);
             });
             updateSessionList();
         }
 
+        function updateSessionList() {
+            const list = document.getElementById('session-list');
+            list.innerHTML = `<li class="${!selectedSession ? 'active' : ''}" onclick="filterSession(null)">🌐 Tüm Akış</li>`;
+
+            // Oturumları haritalandır (son durumu ve hata var mı bilgisini tut)
+            const sessionMap = {};
+            logs.forEach(l => {
+                if (!sessionMap[l.session_id]) {
+                    sessionMap[l.session_id] = { hasError: false, lastSeen: l.created_at };
+                }
+                if (l.is_error) sessionMap[l.session_id].hasError = true;
+                if (new Date(l.created_at) > new Date(sessionMap[l.session_id].lastSeen)) {
+                    sessionMap[l.session_id].lastSeen = l.created_at;
+                }
+            });
+
+            Object.keys(sessionMap).sort((a, b) => new Date(sessionMap[b].lastSeen) - new Date(sessionMap[a].lastSeen)).forEach(sid => {
+                const li = document.createElement('li');
+                li.className = sid === selectedSession ? 'active' : '';
+                const statusIcon = sessionMap[sid].hasError ? '⚠️' : '👤';
+                li.innerHTML = `${statusIcon} ${sid.substring(8, 20)}...`;
+                li.onclick = () => filterSession(sid);
+                list.appendChild(li);
+            });
+        }
+
+        const ERROR_DICTIONARY = {
+            'Uncaught ReferenceError': { tr: 'Tanımlanmamış Değişken Hatası', solution: 'Kod içerisinde var olmayan bir değişkene erişilmeye çalışılıyor. Değişkenin tanımlandığından emin olun.' },
+            'Uncaught TypeError': { tr: 'Tip Hatası', solution: 'Null veya undefined bir değer üzerinde işlem yapılmaya çalışılıyor. (örn: obj.prop yazarken obj null olabilir)' },
+            'Failed to fetch': { tr: 'Ağ Bağlantı Hatası', solution: 'API veya veritabanı sunucusuna erişilemiyor. İnternet bağlantısını veya servis durumunu kontrol edin.' },
+            'Cesium failed to load': { tr: 'Cesium Yükleme Hatası', solution: '3D motoru dosyaları yüklenemedi. Asset yollarını veya token süresini kontrol edin.' },
+            'QuotaExceededError': { tr: 'Depolama Dolu', solution: 'Tarayıcı yerel depolama alanı dolmuş. Kayıtlı verileri temizlemeyi deneyin.' }
+        };
+
+        function getTurkishError(msg) {
+            for (let key in ERROR_DICTIONARY) {
+                if (msg.includes(key)) return ERROR_DICTIONARY[key];
+            }
+            return { tr: 'Bilinmeyen Hata', solution: 'Lütfen hata detaylarındaki "stack" bilgisini teknik ekibe iletin.' };
+        }
+
         window.showDetails = function (log) {
             const panel = document.getElementById('system-details-content');
+            const errorInfo = log.is_error ? getTurkishError(log.details.message || '') : null;
+
             panel.innerHTML = `
+                <div class="detail-group">
+                    <div class="source-header">
+                        <span class="badge ${log.system_info?.source === 'Local' ? 'badge-local' : 'badge-live'}">${log.system_info?.source}</span>
+                        <span>${log.system_info?.host}</span>
+                    </div>
+                </div>
+
+                ${log.is_error ? `
+                <div class="error-analysis active">
+                    <h4>⚠️ Hata Analizi (Türkçe)</h4>
+                    <p><strong>Hata Türü:</strong> ${errorInfo.tr}</p>
+                    <p><strong>Açıklama:</strong> ${log.details.message}</p>
+                    <div class="solution-box">
+                        <strong>💡 Çözüm Önerisi:</strong><br>${errorInfo.solution}
+                    </div>
+                </div>
+                ` : ''}
+
                 <div class="detail-group">
                     <h4>Eylem Detayı</h4>
                     <pre>${JSON.stringify(log.details, null, 2)}</pre>
                 </div>
+
                 <div class="detail-group">
                     <h4>Sistem Bilgisi</h4>
-                    <ul>
-                        <li><strong>GPU:</strong> ${log.system_info?.gpu}</li>
-                        <li><strong>Ekran:</strong> ${log.system_info?.screen}</li>
-                        <li><strong>Bellek:</strong> ${log.system_info?.memory}</li>
-                        <li><strong>Platform:</strong> ${log.system_info?.platform}</li>
-                    </ul>
-                </div>
-                <div class="detail-group">
-                    <h4>Hata Bilgisi</h4>
-                    <p>${log.is_error ? '❌ KRİTİK HATA' : '✔ Normal İşleyiş'}</p>
+                    <div class="info-grid">
+                        <div class="info-item"><span>Platform</span><strong>${log.system_info?.platform}</strong></div>
+                        <div class="info-item"><span>Ekran</span><strong>${log.system_info?.screen}</strong></div>
+                        <div class="info-item"><span>GPU</span><strong>${log.system_info?.gpu?.substring(0, 30)}...</strong></div>
+                        <div class="info-item"><span>Bellek</span><strong>${log.system_info?.memory}</strong></div>
+                    </div>
                 </div>
             `;
         };

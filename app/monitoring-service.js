@@ -20,6 +20,16 @@
             supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
             console.log('🚀 Monitoring Service ID:', sessionId);
 
+            window.onerror = (msg, url, line, col, error) => {
+                this.log('CRITICAL_ERROR', {
+                    message: msg,
+                    url: url,
+                    line: line,
+                    col: col,
+                    stack: error ? error.stack : 'N/A'
+                }, true);
+            };
+
             // İlk açılış logu ve sistem bilgisi
             this.log('SESSION_START', {
                 referrer: document.referrer,
@@ -45,7 +55,7 @@
                         user_id: 'guest', // Gelecekte auth ile bağlanabilir
                         action: action,
                         details: details,
-                        system_info: systemInfo,
+                        system_info: this.getSystemInfo(),
                         fps: currentFps,
                         is_error: isError
                     }]);
