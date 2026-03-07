@@ -2,6 +2,34 @@
 (function () {
     'use strict';
 
+    // ─── TELEMETRY ───
+    var TelemetryManager = {
+        addLog: function (action, details, isError) {
+            if (window.MonitoringService && window.MonitoringService.log) {
+                window.MonitoringService.log(action, details, isError);
+            }
+        },
+        getSystemInfo: function () {
+            return {
+                ua: navigator.userAgent,
+                platform: navigator.platform,
+                screen: screen.width + 'x' + screen.height + ' (Mobile)',
+                gpu: 'Mobile GPU',
+                memory: navigator.deviceMemory ? navigator.deviceMemory + ' GB' : 'N/A',
+                language: navigator.language
+            };
+        }
+    };
+    window.TelemetryManager = TelemetryManager;
+
+    // Global Hata Yakalayıcılar
+    window.addEventListener('error', function (e) {
+        TelemetryManager.addLog('MOBILE_CRITICAL_ERROR', { message: e.message, stack: e.error ? e.error.stack : null }, true);
+    });
+    window.addEventListener('unhandledrejection', function (e) {
+        TelemetryManager.addLog('MOBILE_PROMISE_REJECTION', { reason: e.reason }, true);
+    });
+
     // ─── UTILS ───
     function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 
@@ -106,6 +134,7 @@
         btn.addEventListener('click', function (e) {
             haptic(12);
             var toolId = this.dataset.tool;
+            TelemetryManager.addLog('MOBILE_TOOL_SELECT', { tool: toolId });
             var isSub = this.classList.contains('sub');
             var wasActive = this.classList.contains('active');
 
@@ -499,7 +528,9 @@
         haptic(12);
         var icon = this.querySelector('.material-symbols-outlined');
         document.documentElement.classList.toggle('light-theme');
-        icon.textContent = document.documentElement.classList.contains('light-theme') ? 'dark_mode' : 'light_mode';
+        var theme = document.documentElement.classList.contains('light-theme') ? 'light' : 'dark';
+        TelemetryManager.addLog('MOBILE_THEME_CHANGE', { theme: theme });
+        icon.textContent = theme === 'light' ? 'dark_mode' : 'light_mode';
     });
 
     // ─── DOUBLE TAP → HOME VIEW (on map area) ───

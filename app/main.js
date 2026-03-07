@@ -10,10 +10,16 @@ var _isMunicipality = true;
 var TelemetryManager = {
 	logs: [],
 	maxLogs: 100,
-	addLog: function (action) {
+	addLog: function (action, details, isError) {
 		var t = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-		this.logs.push('[' + t + '] ' + action);
+		var logEntry = '[' + t + '] ' + action;
+		this.logs.push(logEntry);
 		if (this.logs.length > this.maxLogs) this.logs.shift();
+
+		// Cloud Logging Bridge (monitoring-service.js tarafından doldurulur)
+		if (window.MonitoringService && window.MonitoringService.log) {
+			window.MonitoringService.log(action, details, isError);
+		}
 	},
 	getSystemInfo: function () {
 		var gl = null;
@@ -26,13 +32,24 @@ var TelemetryManager = {
 			var ext = gl.getExtension('WEBGL_debug_renderer_info');
 			if (ext) gpu = gl.getParameter(ext.UNMASKED_RENDERER_WEBGL);
 		}
+		return {
+			ua: navigator.userAgent,
+			platform: navigator.platform,
+			screen: screen.width + 'x' + screen.height + ' (' + (window.devicePixelRatio || 1) + 'x)',
+			gpu: gpu,
+			memory: navigator.deviceMemory ? navigator.deviceMemory + ' GB' : 'Bilinmiyor',
+			language: navigator.language
+		};
+	},
+	getSystemInfoString: function () {
+		var info = this.getSystemInfo();
 		return [
-			'Tarayıcı: ' + navigator.userAgent,
-			'Platform: ' + navigator.platform,
-			'Ekran: ' + screen.width + 'x' + screen.height + ' (' + (window.devicePixelRatio || 1) + 'x)',
-			'GPU: ' + gpu,
-			'Bellek: ' + (navigator.deviceMemory ? navigator.deviceMemory + ' GB' : 'Bilinmiyor'),
-			'Dil: ' + navigator.language
+			'Tarayıcı: ' + info.ua,
+			'Platform: ' + info.platform,
+			'Ekran: ' + info.screen,
+			'GPU: ' + info.gpu,
+			'Bellek: ' + info.memory,
+			'Dil: ' + info.language
 		].join('\n');
 	},
 	takeScreenshot: function () {
@@ -45,6 +62,14 @@ var TelemetryManager = {
 		return null;
 	}
 };
+
+// Global Hata Yakalayıcılar
+window.addEventListener('error', function (e) {
+	TelemetryManager.addLog('CRITICAL_ERROR', { message: e.message, stack: e.error ? e.error.stack : null }, true);
+});
+window.addEventListener('unhandledrejection', function (e) {
+	TelemetryManager.addLog('PROMISE_REJECTION', { reason: e.reason }, true);
+});
 
 // 2. Protokol tespiti: file:// → Ion/terrain kullanma (CORS hatası verir)
 var isLocalFile = window.location.protocol === 'file:';

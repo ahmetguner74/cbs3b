@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D CBS | Yönetim Paneli - Live Monitoring</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="admin-style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+
+<body>
+    <!-- Access Key Overlay -->
+    <div id="access-overlay"
+        style="position:fixed;top:0;left:0;width:100%;height:100%;background:#0f172a;z-index:9999;display:flex;justify-content:center;align-items:center;">
+        <div
+            style="background:rgba(30,41,59,0.8);padding:2rem;border-radius:12px;border:1px solid rgba(255,255,255,0.1);text-align:center;backdrop-filter:blur(10px);">
+            <h2 style="color:#fff;margin-bottom:1.5rem;">Yönetici Girişi</h2>
+            <input type="password" id="admin-key" placeholder="Erişim Anahtarı"
+                style="background:rgba(0,0,0,0.3);border:1px solid #38bdf8;padding:0.8rem;border-radius:6px;color:#fff;margin-bottom:1rem;display:block;width:200px;">
+            <button onclick="checkAccess()"
+                style="background:#38bdf8;color:#000;border:none;padding:0.8rem 2rem;border-radius:6px;cursor:pointer;font-weight:600;">Giriş
+                Yap</button>
+            <p id="access-error" style="color:#ef4444;margin-top:1rem;font-size:0.8rem;display:none;">Hatalı Anahtar!
+            </p>
+        </div>
+    </div>
+
+    <div class="admin-container" id="admin-content" style="display:none;">
+        <header>
+            <div class="logo">
+                <span class="pulse"></span>
+                <h1>Canlı İzleme Paneli</h1>
+            </div>
+            <div class="stats-bar">
+                <div class="stat-item">Aktif Oturumlar: <span id="session-count">0</span></div>
+                <div class="stat-item">Hata Oranı: <span id="error-rate">0%</span></div>
+            </div>
+        </header>
+
+        <main>
+            <aside class="sidebar">
+                <h3>Oturumlar</h3>
+                <div class="search-box">
+                    <input type="text" id="session-search" placeholder="Session ID Ara...">
+                </div>
+                <ul id="session-list">
+                    <!-- Session items will be injected here -->
+                </ul>
+            </aside>
+
+            <section class="log-viewer">
+                <div class="viewer-header">
+                    <h2 id="current-session-title">Genel Akış (Tüm Oturumlar)</h2>
+                    <button id="clear-logs" class="btn-secondary">Temizle</button>
+                </div>
+
+                <div class="log-table-container">
+                    <table id="log-table">
+                        <thead>
+                            <tr>
+                                <th>Zaman</th>
+                                <th>Oturum</th>
+                                <th>Eylem</th>
+                                <th>Sistem / FPS</th>
+                                <th>Detay</th>
+                            </tr>
+                        </thead>
+                        <tbody id="log-body">
+                            <!-- Logs will be injected here -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <aside class="details-panel" id="details-panel">
+                <h3>Sistem Detayları</h3>
+                <div id="system-details-content">
+                    <p class="placeholder">Bir log seçerek detayları görüntüleyin.</p>
+                </div>
+            </aside>
+        </main>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://qnobscsbcsrhizqcraif.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_VmFm70pf-3g3xDfXNBxcpw_ji_Dj-Ee';
+        const supabaseAdmin = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        let sessions = new Set();
+        let logs = [];
+        let selectedSession = null;
+
+        window.checkAccess = function () {
+            const key = document.getElementById('admin-key').value;
+            // Şimdilik basit bir anahtar, canlıda Supabase Auth ile değiştirilmeli
+            if (key === 'bursa16') {
+                document.getElementById('access-overlay').style.display = 'none';
+                document.getElementById('admin-content').style.display = 'flex';
+                init();
+            } else {
+                document.getElementById('access-error').style.display = 'block';
+            }
+        };
+
+        async function init() {
+            // Mevcut verileri çek
+            const { data, error } = await supabaseAdmin
+                .from('telemetry_logs')
+                .select('*')
+                .order('created_at', { ascending: false })
+                .limit(100);
+
+            if (data) {
+                data.reverse().forEach(log => addLogToUI(log));
+            }
+
+            // Realtime dinle
+            supabaseAdmin
+                .channel('telemetry_logs')
+                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'telemetry_logs' }, payload => {
+                    addLogToUI(payload.new);
+                })
+                .subscribe();
+        }
+
+        function addLogToUI(log) {
+            logs.push(log);
+            sessions.add(log.session_id);
+            updateSessionList();
+
+            if (selectedSession && log.session_id !== selectedSession) return;
+
+            const tbody = document.getElementById('log-body');
+            const tr = document.createElement('tr');
+            if (log.is_error) tr.classList.add('error-row');
+
+            const time = new Date(log.created_at).toLocaleTimeString();
+            const fpsColor = log.fps < 30 ? '#ff4d4d' : (log.fps < 50 ? '#ffcc00' : '#00ff88');
+
+            tr.innerHTML = `
+                <td>${time}</td>
+                <td class="session-cell" title="${log.session_id}">${log.session_id.substring(8, 16)}...</td>
+                <td><strong>${log.action}</strong></td>
+                <td><span style="color:${fpsColor}">${log.fps} FPS</span> | ${log.system_info?.gpu?.split('(')[0] || 'N/A'}</td>
+                <td><button class="btn-info" onclick='showDetails(${JSON.stringify(log)})'>İncele</button></td>
+            `;
+
+            tbody.insertBefore(tr, tbody.firstChild);
+
+            // Limit UI items
+            if (tbody.children.length > 200) tbody.removeChild(tbody.lastChild);
+
+            document.getElementById('session-count').innerText = sessions.size;
+            updateErrorRate();
+        }
+
+        function updateSessionList() {
+            const list = document.getElementById('session-list');
+            const currentCount = list.children.length;
+            if (currentCount === sessions.size) return;
+
+            list.innerHTML = `<li class="${!selectedSession ? 'active' : ''}" onclick="filterSession(null)">Tüm Akış</li>`;
+            Array.from(sessions).reverse().forEach(sid => {
+                const li = document.createElement('li');
+                li.className = sid === selectedSession ? 'active' : '';
+                li.innerText = sid.substring(8, 20) + '...';
+                li.onclick = () => filterSession(sid);
+                list.appendChild(li);
+            });
+        }
+
+        function filterSession(sid) {
+            selectedSession = sid;
+            document.getElementById('current-session-title').innerText = sid ? `Oturum: ${sid}` : 'Genel Akış (Tüm Oturumlar)';
+            document.getElementById('log-body').innerHTML = '';
+            logs.filter(l => !sid || l.session_id === sid).forEach(l => {
+                // Re-add logs (simple implementation)
+                const tbody = document.getElementById('log-body');
+                const tr = document.createElement('tr');
+                if (l.is_error) tr.classList.add('error-row');
+                const time = new Date(l.created_at).toLocaleTimeString();
+                tr.innerHTML = `<td>${time}</td><td class="session-cell">${l.session_id.substring(8, 16)}...</td><td><strong>${l.action}</strong></td><td>${l.fps} FPS</td><td><button class="btn-info" onclick='showDetails(${JSON.stringify(l)})'>İncele</button></td>`;
+                tbody.appendChild(tr);
+            });
+            updateSessionList();
+        }
+
+        window.showDetails = function (log) {
+            const panel = document.getElementById('system-details-content');
+            panel.innerHTML = `
+                <div class="detail-group">
+                    <h4>Eylem Detayı</h4>
+                    <pre>${JSON.stringify(log.details, null, 2)}</pre>
+                </div>
+                <div class="detail-group">
+                    <h4>Sistem Bilgisi</h4>
+                    <ul>
+                        <li><strong>GPU:</strong> ${log.system_info?.gpu}</li>
+                        <li><strong>Ekran:</strong> ${log.system_info?.screen}</li>
+                        <li><strong>Bellek:</strong> ${log.system_info?.memory}</li>
+                        <li><strong>Platform:</strong> ${log.system_info?.platform}</li>
+                    </ul>
+                </div>
+                <div class="detail-group">
+                    <h4>Hata Bilgisi</h4>
+                    <p>${log.is_error ? '❌ KRİTİK HATA' : '✔ Normal İşleyiş'}</p>
+                </div>
+            `;
+        };
+
+        function updateErrorRate() {
+            const errorCount = logs.filter(l => l.is_error).length;
+            const rate = logs.length > 0 ? ((errorCount / logs.length) * 100).toFixed(1) : 0;
+            document.getElementById('error-rate').innerText = rate + '%';
+        }
+
+        init();
+    </script>
+</body>
+
+</html>
