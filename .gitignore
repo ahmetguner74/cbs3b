@@ -4,8 +4,8 @@ logo/
 # Lokal çalıştırma scripti
 serve.bat
 
-# CesiumJS kütüphanesi (CDN'den yükleniyor)
-app/Cesium/
+# CesiumJS kütüphanesi (17.4MB, git'e alınıyor — yerel loader için zorunlu)
+# app/Cesium/
 
 # Lokal araçlar
 Chrome_ile_Ac.bat
