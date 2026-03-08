@@ -69,7 +69,7 @@ git push origin master
 | `import/` (örnek veri) | ✅ Evet |
 | `DEPLOY_ONCESI_KONTROL.md` | ✅ Evet |
 | `README.md` | ✅ Evet |
-| `app/Cesium/` | ❌ Hayır — ~50MB, git'e büyük. Sunucuya elle kopyala ⚠️ |
+| `app/Cesium/` | ✅ Evet — yerel loader için zorunlu, git'e alındı |
 | `app/dev-panel.js` | ❌ Hayır — sadece geliştirme aracı |
 | `app/design-system.html` | ❌ Hayır — sadece tasarım referansı |
 | `app/analyze.js` | ❌ Hayır — analiz aracı |
@@ -99,11 +99,10 @@ app/
 ├── admin-style.css     ← admin panel stili
 ├── cbs-logo.png        ← logo ve favicon
 ├── clear.html          ← önbellek temizleme sayfası
-└── Cesium/             ← zorunlu
+└── Cesium/             ← zorunlu (git'ten geliyor, ayrıca kopyalamana gerek yok)
 ```
 
 > ⚠️ `dev-panel.js`, `design-system.html`, `main_original.js`, `*.bak`, `analyze.js`, `audit_results.txt` **kesinlikle sunucuya gitmemeli.**
-> ✅ `app/Cesium/` klasörü artık **zorunlu** — olmadan uygulama açılmaz.
 
 ---
 
@@ -123,6 +122,7 @@ app/
 | 0.9.0 | 2026-03 | İlk canlı sürüm |
 | 0.9.1 | 2026-03 | Splash ekranı, ClipBox, ENU refactor |
 | 0.9.2 | 2026-03 | Snap loupe, mobil arayüz, monitoring paneli |
-| **0.9.2.3** | **2026-03-08** | Performans & güvenlik düzeltmeleri + cache busting |
+| 0.9.2.3 | 2026-03-08 | Performans & güvenlik düzeltmeleri + cache busting |
+| **0.9.2.4** | **2026-03-08** | Snap performans (2D kutu filtresi), rubber-band (globe.pick güvenliği), mobil snap öncelik mantığı, edit→çizim geçiş commit |
 
 > Yeni sürüm çıkınca bu tabloya bir satır ekle ve Adım 1'deki VER numarasını güncelle.

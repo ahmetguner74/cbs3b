@@ -31,7 +31,7 @@ window.AppMessages = {
 
     // Splash / Başlangıç İpuçları
     SPLASH_TITLE: '3D SAYISAL VERİ ÜRETİM VE ANALİZ PORTALI',
-    SPLASH_SLOGAN: 'Şehrimizi dijitalleştiriyoruz.',
+    SPLASH_SLOGAN: 'BİLGİ İŞLEM DAİRESİ BAŞKANLIĞI',
     SPLASH_LOAD_3D: '3D model yükleniyor...',
     SPLASH_LOAD_FAILED: 'Model yüklenemedi!',
     SPLASH_LOAD_READY: 'Hazır!',

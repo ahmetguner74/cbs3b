@@ -362,6 +362,25 @@ var EditManager = {
 var _dragSmooth = null;    // Lerp için önceki düzleştirilmiş pozisyon (sürüklenen vertex)
 var _dragSmoothMid = null; // pMid için ayrı lerp geçmişi (height ölçümü)
 
+// ─── Sürükleme önizleme entity — bir kez oluşturulur, her drag'de yeniden kullanılır ──
+// CallbackProperty → editPoints'ı canlı okur; sürükleme sırasında sıfır GPU rebuild.
+// Karşılaştırma: _rebuildEditLine = 60×/sn GPU upload/destroy → bu = 0.
+var _dragPreviewEntity = drawLayer.entities.add({
+    show: false,
+    polyline: {
+        positions: new Cesium.CallbackProperty(function () {
+            var pts = EditManager.editPoints;
+            if (!pts || pts.length < 2) return [];
+            var mType = EditManager.activeMeasure ? EditManager.activeMeasure.type : null;
+            if (mType === 'polygon' && pts.length > 2) return pts.concat([pts[0]]);
+            return pts.slice(); // line ve height: noktalar sırayla
+        }, false),
+        width: 3,
+        material: new Cesium.ColorMaterialProperty(Cesium.Color.CYAN.withAlpha(0.8)),
+        clampToGround: false
+    }
+});
+
 // ─── Yardımcı: Picked objeyi edit grip olarak çöz ───────────────
 // Entity API (PropertyBag) ve Primitive API (düz obje) her ikisini destekler.
 function _resolveGrip(pickedObject) {
@@ -408,6 +427,11 @@ handler.setInputAction(function (click) {
         _dragSmooth = null;
         _dragSmoothMid = null;
         viewer.scene.screenSpaceCameraController.enableInputs = false;
+        // Sabit Primitive'i gizle → drag boyunca CallbackProperty entity gösterir (0 GPU rebuild)
+        if (EditManager._editLinePrim) EditManager._editLinePrim.show = false;
+        if (EditManager._editPolyPrim) EditManager._editPolyPrim.show = false;
+        _dragPreviewEntity.show = true;
+        viewer.scene.requestRender();
     };
 
     if (grip.isVertex) {
@@ -438,7 +462,6 @@ handler.setInputAction(function (click) {
 (function () {
     var _originalMouseMove = handler.getInputAction(Cesium.ScreenSpaceEventType.MOUSE_MOVE);
     var LERP_ALPHA = 0.6;    // 0=çok yumuşak, 1=anlık. 0.6 iyi denge
-    var DEAD_ZONE_SQ = 9;    // 3px dead-zone (kare) — sadece çok küçük titremeler
 
     handler.setInputAction(function (movement) {
         // Önce mevcut snap/crosshair mantığını çalıştır
@@ -450,26 +473,31 @@ handler.setInputAction(function (click) {
         }
 
         var endPos = movement.endPosition;
-        var startPos = movement.startPosition;
 
-        // ── Dead-zone: 3px ──
-        if (startPos && endPos) {
-            var dx = endPos.x - startPos.x;
-            var dy = endPos.y - startPos.y;
-            if ((dx * dx + dy * dy) < DEAD_ZONE_SQ) return;
-        }
+        // Dead-zone kaldırıldı: grip'e bilinçli tıklanmış → her hareket geçerli
 
         var cartesian = null;
 
-        // ── 1. Snap öncelikli (’vektör’ snap) ──
-        if (typeof snappedCartesian !== 'undefined' && snappedCartesian) {
+        // ── 1. Snap öncelikli ──
+        if (typeof snappedCartesian !== 'undefined' && Cesium.defined(snappedCartesian)) {
             cartesian = Cesium.Cartesian3.clone(snappedCartesian);
-            _dragSmooth = null;
+            _dragSmooth = null; // Snap yakalandıysa lerp geçmişini sıfırla
 
-            // ── 2. pickPosition: derinlik buffer → 3D tile + terrain ──
-            // Boş gökyüzüne denk gelirse undefined döner → vertex taşınmaz (doğru davranış)
+            // ── 2. globe.pick → ray-ellipsoid matematik (CPU, GPU yok) ──
         } else {
-            try { cartesian = viewer.scene.pickPosition(endPos); } catch (e) { }
+            try {
+                var _dRay = viewer.camera.getPickRay(endPos);
+                if (_dRay) {
+                    var _dGlobe = viewer.scene.globe.pick(_dRay, viewer.scene);
+                    if (Cesium.defined(_dGlobe)) {
+                        cartesian = _dGlobe;
+                    } else {
+                        // Globe miss: terrain kapalı veya 3D model → GPU fallback
+                        var _dScene = viewer.scene.pickPosition(endPos);
+                        if (Cesium.defined(_dScene)) cartesian = _dScene;
+                    }
+                }
+            } catch (e) { /* frustum / context kaybı — sessizce atla */ }
         }
 
         // ── Lerp smooth (sadece mobilde, snap yokken) ──
@@ -498,8 +526,8 @@ handler.setInputAction(function (click) {
                     }
                 }
             }
-            // Çizgiyi yeniden oluştur (ENU stabil Primitive — jitter yok)
-            EditManager._rebuildEditLine();
+            // _rebuildEditLine() KALDIRILD! — drag boyunca _dragPreviewEntity (CallbackProperty)
+            // editPoints'ı canlı okur. LEFT_UP'ta tek seferlik rebuild yapılır.
             viewer.scene.requestRender();
         }
 
@@ -517,8 +545,9 @@ handler.setInputAction(function () {
         EditManager.isDragging = false;
         EditManager.draggedIndex = -1;
         viewer.scene.screenSpaceCameraController.enableInputs = true;
-        // Ara noktaları (midpoints) yeni konumlara göre yenile
-        EditManager.drawEditGrips();
+        // Drag preview'ı kapat → sabit Primitive'i tek seferlik yeniden oluştur
+        _dragPreviewEntity.show = false;
+        EditManager.drawEditGrips(); // _rebuildEditLine dahil — yalnızca burada çalışır
     }
 }, Cesium.ScreenSpaceEventType.LEFT_UP);
 

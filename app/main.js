@@ -187,10 +187,23 @@ viewer.scene.requestRenderMode = true;
 viewer.scene.maximumRenderTimeChange = 0.0; // Etkileşimde anında render et
 
 // ─── RENDER HATASI YAKALAYICI ───────────────────────────────────
-// Geçersiz geometri (self-intersecting polygon vb.) render döngüsünü çökertmesin.
-// Bu listener varsa CesiumJS hatayı yutup render'ı durdurmak yerine devam eder.
+// CesiumJS renderError sonrası render döngüsünü durdurur.
+// Bu listener: hata panelini kaldırır + render döngüsünü yeniden başlatır.
 viewer.scene.renderError.addEventListener(function (scene, error) {
-	console.warn('CesiumJS render hatası yakalandı (çalışmaya devam ediyor):', error);
+	console.warn('[CBS] Cesium render hatası (otomatik kurtarma):', error && error.message || error);
+	// Hata panelini DOM'dan kaldır (Cesium bunu 200ms sonra ekler)
+	setTimeout(function () {
+		var panel = document.querySelector('.cesium-widget-errorPanel');
+		if (panel && panel.parentNode) panel.parentNode.removeChild(panel);
+		// Render döngüsünü yeniden başlat
+		try {
+			viewer.useDefaultRenderLoop = false;
+			viewer.useDefaultRenderLoop = true;
+			viewer.scene.requestRender();
+		} catch (restartErr) {
+			console.warn('[CBS] Render yeniden başlatılamadı:', restartErr);
+		}
+	}, 250);
 });
 
 // ─── GEZİNME AYARLARI (Camera Controller) ───
@@ -1049,193 +1062,180 @@ function initSplashProgress(ts) {
 	var splash = document.getElementById('splashScreen');
 	if (!splash) return;
 
-	var progressBar = document.getElementById('splashProgressBar');
 	var percentText = document.getElementById('splashPercent');
+	var progressBar = document.getElementById('splashProgressBar');
 	var statusText = document.getElementById('splashStatusText');
+
 	var startTime = Date.now();
-	var MIN_SHOW = 3000;   // Min 3sn göster (fontlar + ikonlar yüklensin)
-	var MAX_SHOW = 20000;  // Max 20sn (yüklenmese bile kapat)
+	var MIN_SHOW = 3500;
+	var MAX_SHOW = 22000;
 	var dismissed = false;
 	var modelReady = false;
 	var fontsReady = false;
-	var zoomReady = false;  // zoomTo tamamlandı mı?
+	var zoomReady = false;
 	var currentPercent = 5;
+
+	function setStatus(msg) {
+		if (statusText) statusText.textContent = msg;
+	}
 
 	function updateProgress(pct) {
 		currentPercent = Math.min(Math.max(pct, currentPercent), 100);
-		if (progressBar) progressBar.style.width = currentPercent + '%';
-		if (percentText) percentText.textContent = Math.round(currentPercent) + '%';
+		var rounded = Math.round(currentPercent);
+		if (percentText) percentText.textContent = rounded + '%';
+		if (progressBar) progressBar.style.width = rounded + '%';
 	}
 
 	function dismiss() {
 		if (dismissed) return;
 		dismissed = true;
-		// [FIX-4] Splash kapanırken font poll timer'ını temizle (DOM kaldırıldıktan sonra çalışmasın)
+		// Cesium listener'larını temizle — memory leak önleme
+		if (typeof removeTileLoad === 'function') removeTileLoad();
+		if (typeof removeLoadProgress === 'function') removeLoadProgress();
+		if (typeof removeInitialTiles === 'function') removeInitialTiles();
 		if (typeof _fontPollTimer !== 'undefined' && _fontPollTimer) {
 			clearInterval(_fontPollTimer);
 			_fontPollTimer = null;
 		}
+		// %100 ve "Hazır!" mesajını göster, sonra kapat
 		updateProgress(100);
-		if (statusText) statusText.textContent = window.AppMessages.SPLASH_LOAD_READY || 'Hazır!';
+		setStatus('✓ Sistem hazır!');
+		if (statusText) {
+			statusText.style.cssText = 'background:#4ade80;color:#fff;font-weight:700;padding:2px 10px;border-radius:999px;font-size:12px;';
+		}
+		// Tema geçişini splash opakken yap — kullanıcı görmez
+		document.documentElement.classList.remove('dark');
+		document.documentElement.classList.add('light');
+		// 1000ms "Hazır!" göster, sonra kapat
 		setTimeout(function () {
 			splash.style.opacity = '0';
 			setTimeout(function () {
 				splash.remove();
-				// Splash bitti — yardım modalı açılabilir
 				document.dispatchEvent(new CustomEvent('splashDismissed'));
 			}, 1000);
-		}, 300);
+		}, 2000);
 	}
 
 	function tryDismiss() {
 		if (dismissed) return;
 		var elapsed = Date.now() - startTime;
-		// Tüm koşullar: model + fontlar + kamera + ölçümler + importlar
 		var storageOK = window._splashMeasuresReady && window._splashImportsReady;
 		if (modelReady && fontsReady && zoomReady && storageOK && elapsed >= MIN_SHOW) dismiss();
 	}
 
-	// ─── Site tam hazırlık kontrolü (fontlar + ikonlar + CSS) ───
+	// ── Başlangıç mesajı ──
+	setStatus(window.AppMessages && window.AppMessages.SPLASH_LOAD_3D || '3D model yükleniyor...');
+
+	// ── Font / pencere hazırlık kontrolü ──
 	var _windowLoaded = false;
+	window.addEventListener('load', function () { _windowLoaded = true; checkAllReady(); });
 
-	// 1) window.onload → Tüm harici kaynaklar (CSS, fontlar, resimler) indirildi
-	window.addEventListener('load', function () {
-		_windowLoaded = true;
-		checkAllReady();
-	});
-
-	// 2) Material Symbols ikonlarının gerçekten renderlanıp renderlanmadığını kontrol et
 	function checkIconFont() {
-		try {
-			return document.fonts.check('48px "Material Symbols Outlined"');
-		} catch (e) { return false; }
+		try { return document.fonts.check('48px "Material Symbols Outlined"'); } catch (e) { return false; }
 	}
 
 	function checkAllReady() {
 		if (fontsReady) return;
 		if (_windowLoaded && checkIconFont()) {
 			fontsReady = true;
-			if (statusText && !modelReady) statusText.textContent = window.AppMessages.SPLASH_LOAD_UI_READY || 'Arayüz hazır, model bekleniyor...';
 			tryDismiss();
 		}
 	}
 
-	// Her 200ms'de ikon fontunu kontrol et
 	var _fontPollTimer = setInterval(function () {
 		checkAllReady();
 		if (fontsReady) clearInterval(_fontPollTimer);
 	}, 200);
 
-	// Fallback: 8sn içinde yüklenmezse hazır say
 	setTimeout(function () {
-		if (!fontsReady) {
-			fontsReady = true;
-			tryDismiss();
-		}
+		if (!fontsReady) { fontsReady = true; tryDismiss(); }
 		clearInterval(_fontPollTimer);
 	}, 8000);
 
-	// fromUrl ile yüklenen tileset zaten hazır — ilerlemeyi %50'ye al
-	updateProgress(50);
-	if (statusText) statusText.textContent = window.AppMessages.SPLASH_LOAD_DETAILS || 'Detaylar yükleniyor...';
+	// ── Başlangıç ilerleme: 5 → 45  (model parse edilirken) ──
+	var _rampTimer = setInterval(function () {
+		if (dismissed || currentPercent >= 45) { clearInterval(_rampTimer); return; }
+		updateProgress(currentPercent + 1);
+	}, 120);
 
-	// ─── Tileset yüklenme durumunu izle ───
+	// ── Tile yükleme: 45 → 88 ──
 	var tilesLoaded = 0;
 	var tilesTotal = 0;
 
-	ts.tileLoad.addEventListener(function () {
+	var removeTileLoad = ts.tileLoad.addEventListener(function () {
 		tilesLoaded++;
+		if (currentPercent < 46) setStatus('3D veriler yükleniyor...');
 		if (tilesTotal > 0) {
-			updateProgress(50 + (tilesLoaded / tilesTotal) * 35); // %50-%85 arası
+			updateProgress(45 + (tilesLoaded / tilesTotal) * 43);
 		} else {
-			updateProgress(Math.min(50 + tilesLoaded * 3, 80));
+			updateProgress(Math.min(45 + tilesLoaded * 2, 80));
 		}
 	});
 
-	// loadProgress: tile indirme/işleme takibi
-	ts.loadProgress.addEventListener(function (pending, processing) {
+	var removeLoadProgress = ts.loadProgress.addEventListener(function (pending, processing) {
 		tilesTotal = Math.max(tilesTotal, tilesLoaded + pending + processing);
-		if (statusText && !modelReady) {
-			if (pending > 0 || processing > 0) {
-				statusText.textContent = (window.AppMessages.SPLASH_LOAD_DETAILS || 'Detaylar yükleniyor...') + ' (' + tilesLoaded + '/' + tilesTotal + ')';
-			}
-		}
 	});
 
-	// ─── initialTilesLoaded: Görünür tüm tile'lar yüklendi ───
-	// loadProgress pending=0'dan daha güvenilir — kamera uçuşu sonrası
-	// yeni tile'ların da yüklenmesini bekler
-	ts.initialTilesLoaded.addEventListener(function () {
+	// ── initialTilesLoaded: 88 → 90 ──
+	var removeInitialTiles = ts.initialTilesLoaded.addEventListener(function () {
 		if (!modelReady) {
 			modelReady = true;
+			setStatus(window.AppMessages && window.AppMessages.SPLASH_LOAD_MODEL_READY || 'Model hazır, açılıyor...');
 			updateProgress(90);
-			if (statusText) statusText.textContent = fontsReady
-				? (window.AppMessages.SPLASH_LOAD_MODEL_READY || 'Model hazır, açılıyor...')
-				: (window.AppMessages.SPLASH_LOAD_MODEL_WAIT_UI || 'Model hazır, arayüz hazırlanıyor...');
 			tryDismiss();
 		}
 	});
 
-	// ─── zoomTo tamamlanmasını bekle ───
-	// Bu sayede kamera hedef konumuna ulaşmadan splash kapanmaz
+	// ── zoomTo: 90 → 95 ──
 	viewer.zoomTo(ts).then(function () {
 		zoomReady = true;
-		updateProgress(Math.max(currentPercent, 85));
-		if (statusText && !modelReady) statusText.textContent = window.AppMessages.SPLASH_LOAD_DETAILS || 'Detaylar yükleniyor...';
+		setStatus('Harita konumlandırılıyor...');
+		updateProgress(Math.max(currentPercent, 93));
 		tryDismiss();
 	}).catch(function () {
-		// zoomTo başarısız olursa bile devam et
 		zoomReady = true;
 		tryDismiss();
 	});
 
-	// ─── Storage yüklenince tekrar kontrol et ───
+	// ── Storage: 95 → 99 ──
 	document.addEventListener('splashStorageReady', function () {
-		var msg = (!window._splashImportsReady)
-			? 'Referanslar yükleniyor...'
-			: (window.AppMessages.SPLASH_LOAD_MODEL_READY || 'Hazırlanıyor...');
-		if (statusText && !dismissed) statusText.textContent = msg;
-		updateProgress(Math.max(currentPercent, 92));
+		setStatus('Kayıtlı veriler geri yükleniyor...');
+		updateProgress(Math.max(currentPercent, 97));
 		tryDismiss();
 	});
 
-	// Min süre geçtikten sonra tekrar kontrol
 	setTimeout(tryDismiss, MIN_SHOW);
-
-	// Max fallback — ne olursa olsun kapat
 	setTimeout(dismiss, MAX_SHOW);
 }
 
-// SPLASH: RASTGELE 3 KISAYOL İPUCU
+// SPLASH: RASTGELE KISAYOL İPUÇLARI
 document.addEventListener('DOMContentLoaded', function () {
-	// (Global _isMob kullanılıyor)
-
 	var container = document.getElementById('splashTips');
 	if (!container) return;
 
-	if (_isMob) {
-		var tips = [];
-		if (window.AppMessages && window.AppMessages.SPLASH_TIPS_MOBILE) {
-			tips = window.AppMessages.SPLASH_TIPS_MOBILE.slice();
-		}
-		// Rastgele 3 tane seç (Fisher-Yates shuffle, ilk 3)
-		for (var i = tips.length - 1; i > 0; i--) {
-			var j = Math.floor(Math.random() * (i + 1));
-			var tmp = tips[i]; tips[i] = tips[j]; tips[j] = tmp;
-		}
-		// Mobilde emoji badge stili
-		for (var k = 0; k < Math.min(3, tips.length); k++) {
-			var div = document.createElement('div');
-			div.className = 'flex items-center gap-2';
-			div.innerHTML = '<span style="background:rgba(30,41,59,0.8);border:1px solid #334155;color:#94a3b8;font-size:12px;padding:2px 8px;border-radius:9999px;white-space:nowrap;">' + tips[k].key + '</span><span style="color:#cbd5e1;">' + tips[k].text + '</span>';
-			container.appendChild(div);
-		}
-	} else {
-		// Masaüstünde kullanıcının istediği sabit, okunaklı, yatay çizgili stil
-		container.className = 'flex flex-col items-start gap-3 mb-10 text-[15px] font-medium px-8';
-		if (window.AppMessages && window.AppMessages.SPLASH_TIPS_DESKTOP) {
-			container.innerHTML = window.AppMessages.SPLASH_TIPS_DESKTOP;
-		}
+	// Önce placeholder'ları temizle
+	container.innerHTML = '';
+
+	var tips = [];
+	if (window.AppMessages && window.AppMessages.SPLASH_TIPS_MOBILE) {
+		tips = window.AppMessages.SPLASH_TIPS_MOBILE.slice();
+	}
+
+	// Fisher-Yates shuffle → ilk 3 tane
+	for (var i = tips.length - 1; i > 0; i--) {
+		var j = Math.floor(Math.random() * (i + 1));
+		var tmp = tips[i]; tips[i] = tips[j]; tips[j] = tmp;
+	}
+
+	for (var k = 0; k < Math.min(3, tips.length); k++) {
+		var row = document.createElement('div');
+		row.className = 'flex items-center justify-between';
+		row.innerHTML =
+			'<span style="background:rgba(74,222,128,0.08);border:1px solid rgba(74,222,128,0.25);'
+			+ 'color:#4ade80;font-size:10px;padding:1px 7px;border-radius:4px;white-space:nowrap;letter-spacing:0.05em">'
+			+ tips[k].key + '</span>'
+			+ '<span style="color:#94a3b8;font-size:11px">' + tips[k].text + '</span>';
+		container.appendChild(row);
 	}
 });
 document.getElementById('btnHomeView').addEventListener('click', function () {
@@ -1269,10 +1269,13 @@ if (btnFullscreen) {
 // ─── THEME TOGGLE ──────────────────────────────────────────────
 var btnThemeToggle = document.getElementById('btnThemeToggle');
 var themeIcon = document.getElementById('themeIcon');
-// Her zaman açık tema ile başla
-document.documentElement.classList.remove('dark');
-document.documentElement.classList.add('light');
+// themeIcon metnini güncelle (tema geçişi dismiss() içinde yapılıyor)
 if (themeIcon) themeIcon.textContent = 'light_mode';
+// Splash yoksa (yeniden yüklemede zaten kapanmışsa) hemen light moda geç
+if (!document.getElementById('splashScreen')) {
+	document.documentElement.classList.remove('dark');
+	document.documentElement.classList.add('light');
+}
 if (btnThemeToggle) {
 	btnThemeToggle.addEventListener('click', function () {
 		var html = document.documentElement;
@@ -1590,25 +1593,27 @@ function toggleXRay() {
 }
 
 // Tek bir primitive/collection/entity'ye X-Ray uygula veya kaldır
+// X-Ray stratejisi:
+//   A) PointPrimitiveCollection → disableDepthTestDistance = Infinity
+//   B) LabelCollection          → disableDepthTestDistance = Infinity
+//   C) Cesium.Primitive         → renderState.depthTest (polyline: tek draw-call)
+//                                 depthFailAppearance    (polygon: standart yol)
+//   D) Cesium.Entity            → ConstantProperty ile disableDepthTestDistance
 function applyXRayToPrimitive(prim, enable) {
 	if (!prim) return;
-	// Yıkılmış (destroyed) primitive'lere dokunma
 	if (typeof prim.isDestroyed === 'function' && prim.isDestroyed()) return;
 	try {
-		// A) PointPrimitiveCollection — her point'e disableDepthTestDistance
-		//    + bağlı .label (LabelCollection) varsa onu da X-Ray'le
+		// ── A) PointPrimitiveCollection ──────────────────────────────────────
 		if (prim instanceof Cesium.PointPrimitiveCollection) {
 			for (var i = 0; i < prim.length; i++) {
 				prim.get(i).disableDepthTestDistance = enable ? Number.POSITIVE_INFINITY : 0;
 			}
-			// addPointLabel() fonksiyonu label'ı .label olarak bağlar — onu da işle
-			if (prim.label) {
-				applyXRayToPrimitive(prim.label, enable);
-			}
+			// addPointLabel() fonksiyonu label'ı .label olarak bağlar
+			if (prim.label) applyXRayToPrimitive(prim.label, enable);
 			return;
 		}
 
-		// B) LabelCollection — her label'a disableDepthTestDistance
+		// ── B) LabelCollection ───────────────────────────────────────────────
 		if (prim instanceof Cesium.LabelCollection) {
 			for (var j = 0; j < prim.length; j++) {
 				prim.get(j).disableDepthTestDistance = enable ? Number.POSITIVE_INFINITY : 0;
@@ -1616,28 +1621,52 @@ function applyXRayToPrimitive(prim, enable) {
 			return;
 		}
 
-		// C) Cesium.Primitive (Polyline veya Polygon) — depthFailAppearance
+		// ── C) Cesium.Primitive ──────────────────────────────────────────────
 		if (prim instanceof Cesium.Primitive) {
-			if (enable) {
-				if (prim.appearance && !prim.depthFailAppearance) {
-					prim.depthFailAppearance = prim.appearance;
+			if (!prim.appearance) return;
+
+			// Polygon fill tespiti: Manuel → _isPolygonFill, Batch import → _isFillBatch
+			var isPolygonType = prim._isPolygonFill || prim._isFillBatch;
+
+			if (isPolygonType) {
+				// Polygon (MaterialAppearance): depthFailAppearance yolu
+				// Aynı appearance obje referansı: CesiumJS tek-pass shader, temiz ON/OFF
+				if (enable) {
+					if (!prim.depthFailAppearance) {
+						prim.depthFailAppearance = prim.appearance;
+					}
+				} else {
+					prim.depthFailAppearance = null;
 				}
 			} else {
-				prim.depthFailAppearance = undefined;
+				// Polyline (PolylineMaterialAppearance): renderState.depthTest yolu
+				// async batch primitive'lerde .material henüz null olabilir
+				if (!prim.appearance.material) return;
+				var currentMaterial = prim.appearance.material;
+				prim.appearance = new Cesium.PolylineMaterialAppearance({
+					material: currentMaterial,
+					translucent: false,
+					renderState: {
+						depthTest: { enabled: !enable }
+					}
+				});
+				if (!enable) prim.depthFailAppearance = null;
 			}
 			return;
 		}
 
-		// D) Cesium.Entity (restoreHeight'teki P_mid noktası gibi)
+		// ── D) Cesium.Entity (P_mid gibi entity API ile oluşturulanlar) ──────
+		// Entity property'leri için düz sayı değil ConstantProperty kullan
 		if (prim instanceof Cesium.Entity) {
-			var ddt = enable ? Number.POSITIVE_INFINITY : 0;
+			var ddt = new Cesium.ConstantProperty(enable ? Number.POSITIVE_INFINITY : 0);
 			if (prim.point) prim.point.disableDepthTestDistance = ddt;
 			if (prim.label) prim.label.disableDepthTestDistance = ddt;
 			if (prim.billboard) prim.billboard.disableDepthTestDistance = ddt;
 			return;
 		}
+
 	} catch (e) {
-		// Sessizce geç — bazı primitive tipleri desteklemeyebilir
+		console.warn('[XRay] applyXRayToPrimitive hata:', e, prim);
 	}
 }
 
@@ -2673,7 +2702,12 @@ setTimeout(function () {
 // ─── KAYDEDILMIŞ IMPORT'LARI GERİ YÜKLE ───
 function restoreImports() {
 	CbsStorage.loadImports().then(function (importRecords) {
-		if (!importRecords || importRecords.length === 0) return;
+		if (!importRecords || importRecords.length === 0) {
+			// Kaydedilmiş import yok — splash'i bekletme
+			window._splashImportsReady = true;
+			document.dispatchEvent(new CustomEvent('splashStorageReady'));
+			return;
+		}
 		console.info('CbsStorage: ' + importRecords.length + ' kaydedilmiş import geri yükleniyor...');
 
 		importRecords.forEach(function (rec) {
@@ -2691,6 +2725,10 @@ function restoreImports() {
 				groups.push(newGroup);
 				if (rec.groupId > groupCount) groupCount = rec.groupId;
 				existingGroup = newGroup;
+			} else {
+				// ID çakışması önlemi: mevcut grup bulunsa bile import grubuna ait olduğunu işaretle.
+				// isReferans eksik veya false ise snap mantığı grubu kendi ölçümü gibi görür.
+				existingGroup.isReferans = true;
 			}
 
 			var hexColor = existingGroup.color || '#14B8A6';
@@ -2825,6 +2863,15 @@ function restoreImports() {
 
 			if (existingGroup) {
 				existingGroup._batchPrimitives = batchPrimitives;
+				// Sayfa yenilendiğinde grup kapalıysa (checked:false) primitive'leri gizle
+				if (existingGroup.checked === false) {
+					batchPrimitives.forEach(function (p) { p.show = false; });
+					measurements.forEach(function (m) {
+						if (m.groupId === existingGroup.id && m.isImported && !m.isBatched) {
+							m.entities.forEach(function (ent) { ent.show = false; if (ent.label) ent.label.show = false; });
+						}
+					});
+				}
 			}
 		});
 
@@ -3113,10 +3160,29 @@ function rebuildBatchPrimitives(group) {
 
 	group._batchPrimitives = batchPrimitives;
 
-	// X-Ray aktifse yeni batch primitiflere de uygula
+	// ─── Görünürlük state'ini geri yükle ───────────────────────────────────────
+	// rebuildBatchPrimitives yeni primitive'ler oluşturur (show=true).
+	// Kullanıcı daha önce etiket/alan/çizgiyi kapattıysa bunu hatırlaması gerekir.
+	// group.checked, group.labelsVisible, group.fillVisible, group.linesVisible
+	// flag'lerini okuyarak her primitife doğru show değerini ata.
+	batchPrimitives.forEach(function (p) {
+		if (!group.checked) {
+			// Grup tamamen kapalı — hepsini gizle
+			p.show = false;
+		} else if (p._isImportBatch && p instanceof Cesium.LabelCollection) {
+			p.show = group.labelsVisible !== false;
+		} else if (p._isImportBatch && p._isPolylineBatch) {
+			p.show = group.linesVisible !== false;
+		} else if (p._isImportBatch && p._isFillBatch) {
+			p.show = group.fillVisible !== false;
+		}
+		// else: diğer tipler default show=true kalır
+	});
+
+	// X-Ray aktifse yeni batch primitiflere de uygula (visibility hesabının üstüne)
 	if (_xrayActive) {
 		batchPrimitives.forEach(function (p) {
-			applyXRayToPrimitive(p, true);
+			if (p.show !== false) applyXRayToPrimitive(p, true);
 		});
 	}
 }
@@ -3941,6 +4007,30 @@ var snapIndicator = snapCollection.add({
 	show: false
 });
 
+// ─── RUBBER-BAND (Kauçuk İp) ÖNİZLEME ────────────────────────
+// Startup'ta bir kez oluşturulur, ASLA yeniden yaratılmaz (sıfır allocation).
+// ÖNEMLİ: PolylineDashMaterialProperty + iç içe CallbackProperty kombinasyonu
+// Cesium'da GPU shader uniform bağlama hatası (_target undefined) üretiyor.
+// Bu nedenle: sade ColorMaterialProperty + _rubberColor değişkeni kullanıyoruz.
+// Renk MOUSE_MOVE'da (zaten çalışan kod) tek satırda güncellenir.
+var _rubberEnd = null;   // Son fare konumu (Cartesian3)
+var _rubberColor = Cesium.Color.fromCssColorString('#14B8A6').withAlpha(0.65);
+var _rubberBandLine = drawLayer.entities.add({
+	show: false,
+	polyline: {
+		positions: new Cesium.CallbackProperty(function () {
+			if (!clickPoints.length || !_rubberEnd) return [];
+			return [clickPoints[clickPoints.length - 1], _rubberEnd];
+		}, false),
+
+		width: VEC_STYLE.line.width,
+		material: new Cesium.ColorMaterialProperty(
+			new Cesium.CallbackProperty(function () { return _rubberColor; }, false)
+		),
+		clampToGround: false
+	}
+});
+
 function clearTempDrawing() {
 	// Henüz kaydedilmemiş geçici çizimleri temizle
 	tempEntities.forEach(function (item) { safeRemoveItem(item); });
@@ -3950,6 +4040,9 @@ function clearTempDrawing() {
 	pointCounter = 0;
 	if (snapIndicator) snapIndicator.show = false;
 	snappedCartesian = null;
+	// Rubber-band temizle
+	_rubberBandLine.show = false;
+	_rubberEnd = null;
 	clearZOverlays();
 }
 
@@ -4208,6 +4301,12 @@ function redrawFromClickPoints() {
 // ─── MOBİL ALGILAMA SİLİNDİ (Üstte tek bir _isMob tanımlandı) ───
 
 function setActiveTool(toolId) {
+	// Edit modu açıksa otomatik commit et — iki overlay aynı anda aktif olamaz.
+	// Standart CAD/GIS: yeni araç açılınca mevcut edit kayıt edilir.
+	if (typeof EditManager !== 'undefined' && EditManager.activeMeasure) {
+		EditManager.stopEdit();
+	}
+
 	// Önceki aracın tamamlanmamış çizimlerini temizle
 	clearTempDrawing();
 
@@ -4277,6 +4376,13 @@ function setActiveTool(toolId) {
 	}
 
 	document.querySelector('#resultDisplay > div').innerHTML = message;
+
+	// Rubber-band rengini araç aktif edildiğinde bir kez güncelle (MOUSE_MOVE'da değil)
+	if (typeof _rubberColor !== 'undefined') {
+		var _rbGrp = groups.find(function (g) { return g.id === activeGroupId; });
+		var _rbHex = _rbGrp && _rbGrp.color ? _rbGrp.color : '#14B8A6';
+		_rubberColor = Cesium.Color.fromCssColorString(_rbHex).withAlpha(0.65);
+	}
 
 	// Mobil floating butonları göster/gizle
 	updateMobileDrawButtons();
@@ -4387,8 +4493,12 @@ function undoLastPoint() {
 		var prevHad = !!_snapCand;
 		_snapCand = null;
 		var bestD = 9999, bestPt = null;
+
+		// [P2a] Geçiş 1: KENDİ ölçümler + aktif çizim (referans gruplar bu geçişte atlanır)
 		measurements.forEach(function (m) {
 			if (!m.points) return;
+			var mGroup = groups.find(function (g) { return g.id === m.groupId; });
+			if (isRefGroup(mGroup) || m.isImported) return; // Referans bu geçişte atla
 			m.points.forEach(function (cp) {
 				var sp = _toScreen(cp);
 				if (!sp) return;
@@ -4402,6 +4512,22 @@ function undoLastPoint() {
 			var d = Math.hypot(sp.x - _touchX, sp.y - _touchY);
 			if (d < bestD) { bestD = d; bestPt = { pos: cp, sp: sp }; }
 		});
+
+		// [P2a] Geçiş 2: Geçiş 1'de snap bulunamazsa snapEnabled referans gruplar
+		if (!bestPt || bestD >= SNAP_PX) {
+			measurements.forEach(function (m) {
+				if (!m.points) return;
+				var mGroup = groups.find(function (g) { return g.id === m.groupId; });
+				if (!mGroup || !isRefGroup(mGroup) || !mGroup.snapEnabled) return;
+				m.points.forEach(function (cp) {
+					var sp = _toScreen(cp);
+					if (!sp) return;
+					var d = Math.hypot(sp.x - _touchX, sp.y - _touchY);
+					if (d < bestD) { bestD = d; bestPt = { pos: cp, sp: sp }; }
+				});
+			});
+		}
+
 		if (bestPt && bestD < SNAP_PX) {
 			_snapCand = bestPt;
 			var carto = Cesium.Cartographic.fromCartesian(bestPt.pos);
@@ -4525,9 +4651,17 @@ areaModeBtns.forEach(function (btn) {
 });
 
 
+// ─── Referans grup tespiti (çift kontrol: flag + isim prefix) ─────────────
+// 'isReferans' flag'i olmayan eski IndexedDB kayıtları için 📌 prefix fallback
+function isRefGroup(grp) {
+	if (!grp) return false;
+	return grp.isReferans === true || grp.name.indexOf('📌') === 0;
+}
+
 // ─── EKLENEN ÖZELLİK: FARE HAREKETİ İLE NOKTA YAKALAMA (SNAP) ───
-// Optimizasyon: 1) 33ms throttle, 2) Vertex önceliği, 3) Globe pick yok, 4) Viewport clipping
+// Optimizasyon: 1) 33ms throttle, 2) Vertex önceliği, 3) Globe pick yok, 4) Viewport+kutu clipping
 var _lastSnapTime = 0;
+var _prevSnapState = null; // [P3] 'vertex' | 'edge' | null — gereksiz requestRender'ı önler
 handler.setInputAction(function (movement) {
 	// EditManager sürükleme sırasında snap aktif kalmalı
 	var _editDragging = (typeof EditManager !== 'undefined' && EditManager.isDragging);
@@ -4553,34 +4687,54 @@ handler.setInputAction(function (movement) {
 	var viewH = viewer.canvas.clientHeight;
 	var margin = 50; // px — ekran kenarı toleransı
 
-	// ─── PASS 1: VERTEX SNAP (Köşe — en yüksek öncelik) ───
+	// ─── PASS 1: VERTEX SNAP — Öncelik: Kendi Vektör > Referans > Snap Yok ─────
 	var vertexDist = threshold + 1;
 	var vertexCartesian = null;
 
-	// Kayıtlı ölçüm noktaları
+	// 1a. KENDİ ölçüm noktaları (referans olmayan — en yüksek öncelik)
 	measurements.forEach(function (m) {
 		if (!m.checked) return;
 		var mGroup = groups.find(function (g) { return g.id === m.groupId; });
-		if (mGroup && mGroup.name.indexOf('📌') === 0 && !mGroup.snapEnabled) return;
-
+		if (isRefGroup(mGroup) || m.isImported) return; // Referans grupları bu geçişte atla
 		m.points.forEach(function (p) {
 			var winPos = Cesium.SceneTransforms.wgs84ToWindowCoordinates(viewer.scene, p);
-			// [OPT-4] Viewport clipping — ekran dışındaki noktaları atla
 			if (!winPos) return;
 			if (winPos.x < -margin || winPos.x > viewW + margin || winPos.y < -margin || winPos.y > viewH + margin) return;
+			// [P1] 2D kutu filtresi: threshold dışındakiler distance hesabına girmez
+			if (Math.abs(winPos.x - mousePos.x) > threshold || Math.abs(winPos.y - mousePos.y) > threshold) return;
 			var dist = Cesium.Cartesian2.distance(winPos, mousePos);
 			if (dist < vertexDist) { vertexDist = dist; vertexCartesian = p; }
 		});
 	});
 
-	// Aktif çizim noktaları
+	// 1b. Aktif çizim noktaları (kendi verisi)
 	clickPoints.forEach(function (p) {
 		var winPos = Cesium.SceneTransforms.wgs84ToWindowCoordinates(viewer.scene, p);
 		if (!winPos) return;
 		if (winPos.x < -margin || winPos.x > viewW + margin || winPos.y < -margin || winPos.y > viewH + margin) return;
+		// [P1] 2D kutu filtresi
+		if (Math.abs(winPos.x - mousePos.x) > threshold || Math.abs(winPos.y - mousePos.y) > threshold) return;
 		var dist = Cesium.Cartesian2.distance(winPos, mousePos);
 		if (dist < vertexDist) { vertexDist = dist; vertexCartesian = p; }
 	});
+
+	// 1c. REFERANS ölçüm noktaları — SADECE kendi verisinde snap bulunamazsa
+	if (!vertexCartesian) {
+		measurements.forEach(function (m) {
+			if (!m.checked) return;
+			var mGroup = groups.find(function (g) { return g.id === m.groupId; });
+			if (!mGroup || !isRefGroup(mGroup) || !mGroup.snapEnabled) return; // snapEnabled kapalıysa atla
+			m.points.forEach(function (p) {
+				var winPos = Cesium.SceneTransforms.wgs84ToWindowCoordinates(viewer.scene, p);
+				if (!winPos) return;
+				if (winPos.x < -margin || winPos.x > viewW + margin || winPos.y < -margin || winPos.y > viewH + margin) return;
+				// [P1] 2D kutu filtresi
+				if (Math.abs(winPos.x - mousePos.x) > threshold || Math.abs(winPos.y - mousePos.y) > threshold) return;
+				var dist = Cesium.Cartesian2.distance(winPos, mousePos);
+				if (dist < vertexDist) { vertexDist = dist; vertexCartesian = p; }
+			});
+		});
+	}
 
 	// [OPT-2] Vertex bulunduysa edge aramayı ATLA — titreşim önlenir
 	if (vertexCartesian) {
@@ -4589,7 +4743,8 @@ handler.setInputAction(function (movement) {
 		snapIndicator.color = Cesium.Color.fromCssColorString('#ef4444').withAlpha(VEC_STYLE.snap.vertexAlpha);
 		snapIndicator.pixelSize = VEC_STYLE.snap.vertexSize;
 		snapIndicator.show = true;
-		viewer.scene.requestRender();
+		// [P3] Sadece durum değişince render iste
+		if (_prevSnapState !== 'vertex') { _prevSnapState = 'vertex'; viewer.scene.requestRender(); }
 		return;
 	}
 
@@ -4608,6 +4763,8 @@ handler.setInputAction(function (movement) {
 			if ((w1.x < -margin && w2.x < -margin) || (w1.x > viewW + margin && w2.x > viewW + margin)) continue;
 			if ((w1.y < -margin && w2.y < -margin) || (w1.y > viewH + margin && w2.y > viewH + margin)) continue;
 			var closest2D = getClosestPointOnSegment(mousePos, w1, w2);
+			// [P1] Edge 2D kutu filtresi: closest point fare kutusunda değilse atla
+			if (Math.abs(closest2D.x - mousePos.x) > threshold || Math.abs(closest2D.y - mousePos.y) > threshold) continue;
 			var d = Cesium.Cartesian2.distance(mousePos, closest2D);
 			if (d < edgeDist) {
 				edgeDist = d;
@@ -4618,19 +4775,31 @@ handler.setInputAction(function (movement) {
 		}
 	}
 
-	// Kayıtlı ölçüm kenarları
+	// 2a. KENDİ ölçüm kenarları (önce)
 	measurements.forEach(function (m) {
 		if (!m.checked) return;
 		var mGroup = groups.find(function (g) { return g.id === m.groupId; });
-		if (mGroup && mGroup.name.indexOf('📌') === 0 && !mGroup.snapEnabled) return;
+		if (isRefGroup(mGroup) || m.isImported) return; // Referans bu geçişte atla
 		if (m.type === 'line' || m.type === 'polygon' || m.type === 'height') {
 			checkEdges(m.points, m.type === 'polygon');
 		}
 	});
 
-	// Aktif çizim kenarları
+	// 2b. Aktif çizim kenarları (kendi verisi)
 	if (clickPoints.length > 1) {
 		checkEdges(clickPoints, false);
+	}
+
+	// 2c. REFERANS kenarları — sadece kendi verisinde edge bulunamazsa
+	if (!edgeCartesian) {
+		measurements.forEach(function (m) {
+			if (!m.checked) return;
+			var mGroup = groups.find(function (g) { return g.id === m.groupId; });
+			if (!mGroup || !isRefGroup(mGroup) || !mGroup.snapEnabled) return;
+			if (m.type === 'line' || m.type === 'polygon' || m.type === 'height') {
+				checkEdges(m.points, m.type === 'polygon');
+			}
+		});
 	}
 
 	if (edgeCartesian) {
@@ -4639,13 +4808,52 @@ handler.setInputAction(function (movement) {
 		snapIndicator.color = Cesium.Color.fromCssColorString('#3b82f6').withAlpha(VEC_STYLE.snap.edgeAlpha);
 		snapIndicator.pixelSize = VEC_STYLE.snap.edgeSize;
 		snapIndicator.show = true;
-		viewer.scene.requestRender();
+		// [P3] Sadece durum değişince render iste
+		if (_prevSnapState !== 'edge') { _prevSnapState = 'edge'; viewer.scene.requestRender(); }
 	} else {
 		snappedCartesian = null;
 		if (snapIndicator && snapIndicator.show) {
 			snapIndicator.show = false;
+			// [P3] Sadece durum değişince render iste
+			if (_prevSnapState !== null) { _prevSnapState = null; viewer.scene.requestRender(); }
+		}
+	}
+
+	// ─── RUBBER-BAND GÜNCELLE ───────────────────────────────────
+	// 33ms throttle içindeyiz.
+	// Not: requestRenderMode=true'da CallbackProperty değeri ancak render'da
+	// okunur. Rubber-band aktifken her MOUSE_MOVE'da requestRender şart.
+	var _rbActive = (activeTool === 'btnDistance' ||
+		activeTool === 'btnArea' ||
+		activeTool === 'btnHeight') &&
+		clickPoints.length > 0;
+	if (_rbActive) {
+		var _rbCartesian = snappedCartesian;
+		if (!Cesium.defined(_rbCartesian)) {
+			// P0: Tek try/catch zinciri — globe.pick önce (CPU matematik, GPU yok),
+			// başarısızsa pickPosition (GPU), asla ikisi aynı anda çalışmaz.
+			try {
+				var _rbRay = viewer.camera.getPickRay(movement.endPosition);
+				if (_rbRay) {
+					var _globePt = viewer.scene.globe.pick(_rbRay, viewer.scene);
+					if (Cesium.defined(_globePt)) {
+						_rbCartesian = _globePt;
+					} else {
+						// globe.pick miss: terrain kapalı veya model üzerinde — GPU fallback
+						var _scenePt = viewer.scene.pickPosition(movement.endPosition);
+						if (Cesium.defined(_scenePt)) _rbCartesian = _scenePt;
+					}
+				}
+			} catch (e) { /* Context kaybı veya frustum hatası — sessizce atla */ }
+		}
+		if (Cesium.defined(_rbCartesian)) {
+			_rubberEnd = _rbCartesian;
+			_rubberBandLine.show = true;
 			viewer.scene.requestRender();
 		}
+	} else if (_rubberBandLine.show) {
+		_rubberBandLine.show = false;
+		viewer.scene.requestRender();
 	}
 }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
 
@@ -6551,4 +6759,8 @@ document.addEventListener('keydown', function (e) {
 			TelemetryManager.addLog('RENDER HATA: ' + (error.message || error));
 		});
 	}
+
+	// ── Tüm araç/header init tamamlandı ──
+	window._appReady = true;
+	document.dispatchEvent(new CustomEvent('appReady'));
 })();
