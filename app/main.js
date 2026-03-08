@@ -93,6 +93,15 @@ if (window.MonitoringService) {
 var _isMob = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1);
 var isMobile = _isMob; // Geriye dönük uyumluluk için
 
+// ── iOS uzun basış: metin seçim balonu + callout menü engeli (YALNIZCA MOBİL) ──
+(function () {
+	if (!_isMob) return; // Desktop'ta sağ tık menüsü ve metin seçimi korunur
+	document.addEventListener('selectstart', function (e) { e.preventDefault(); });
+	document.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+	document.body && (document.body.style.webkitUserSelect = 'none');
+	document.body && (document.body.style.webkitTouchCallout = 'none');
+})();
+
 // ═══════════════════════════════════════════════════════════════
 // MERKEZ VEKTÖR STİL YAPILANDIRMASI
 // Tüm ölçüm çizimlerinin görsel parametreleri tek yerden yönetilir.
@@ -2588,11 +2597,9 @@ function restoreHeight(m) {
 	m.entities.push(addPointLabel(p1, 1, hexColor));
 	m.entities.push(addPointLabel(p2, 2, hexColor));
 
-	// P_mid noktası (3. nokta)
-	m.entities.push(drawLayer.entities.add({
-		position: pMid,
-		point: { pixelSize: VEC_STYLE.height.midPointSize, color: hColor, outlineColor: VEC_STYLE.point.outlineColor, outlineWidth: VEC_STYLE.point.outline, disableDepthTestDistance: Number.POSITIVE_INFINITY }
-	}));
+	// P_mid noktası — ENU pivot ile render (Float32 jitter yok, derinlik testi çalışır)
+	m.entities.push(addPointLabel(pMid, null, hexColor));
+
 
 	// Yatay çizgi (P1 → P_mid)
 	var hSegH = createStablePolyline([p1, pMid], VEC_STYLE.height.horizontalWidth, hColor);
@@ -3761,7 +3768,21 @@ function deleteMeasurement(id) {
 	var idx = measurements.findIndex(function (m) { return m.id === id; });
 	if (idx === -1) return;
 	var m = measurements[idx];
-	// Sahneneden entity/primitive'leri kaldır
+
+	// ── Edit modundaysa ÖNCE durdur ──
+	// Aksi hâlde stopEdit() silinmiş objeyi restore etmeye çalışır
+	if (typeof EditManager !== 'undefined' && EditManager.activeMeasure && EditManager.activeMeasure.id === id) {
+		// activeMeasure'ı manuel sıfırla (stopEdit kaydetmeye çalışır, biz istemiyoruz)
+		EditManager.tempEntities.forEach(function (ent) { drawLayer.entities.remove(ent); });
+		EditManager.tempEntities = [];
+		EditManager.activeMeasure = null;
+		EditManager.editPoints = [];
+		EditManager.draggedIndex = -1;
+		EditManager.isDragging = false;
+		viewer.scene.screenSpaceCameraController.enableInputs = true;
+	}
+
+	// Sahneden entity/primitive'leri kaldır
 	m.entities.forEach(function (item) { safeRemoveItem(item); });
 	measurements.splice(idx, 1);
 	if (activeHighlightId === id) activeHighlightId = null;
@@ -4245,6 +4266,179 @@ function undoLastPoint() {
 		}
 	}
 }
+
+// ─── MOBİL LONG-PRESS SNAP ─────────────────────────────────────────────────
+(function () {
+	var LONG_MS = 500;
+	var SNAP_PX = 80;
+	var LOUPE_OFFSET = 145;
+
+	// ── Web Audio haptic (iOS Safari navigator.vibrate desteklemiyor) ──
+	function _tick(freq, durMs, gain) {
+		try {
+			var ac = new (window.AudioContext || window.webkitAudioContext)();
+			var o = ac.createOscillator();
+			var g = ac.createGain();
+			o.connect(g); g.connect(ac.destination);
+			o.type = 'sine';
+			o.frequency.value = freq;
+			g.gain.setValueAtTime(gain, ac.currentTime);
+			g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + durMs / 1000);
+			o.start(); o.stop(ac.currentTime + durMs / 1000);
+			setTimeout(function () { ac.close(); }, durMs + 50);
+		} catch (e) { }
+	}
+	function _hapticActivate() { _tick(320, 40, 0.18); }              // long-press: orta buzz
+	function _hapticSnapFound() { _tick(800, 28, 0.22); }             // vertex snap: güçlü TINK
+	function _hapticSnapLost() { _tick(380, 20, 0.10); }             // snap kayboldu: hafif tik
+	function _hapticPlace() {                                          // nokta eklendi: tink-tink
+		_tick(800, 22, 0.22);
+		setTimeout(function () { _tick(1050, 20, 0.18); }, 55);
+	}
+
+	var _pressTimer = null;
+	var _inSnap = false;
+	var _snapCand = null;
+	var _touchX = 0, _touchY = 0;
+	var _scanTimer = null;
+
+	function _toScreen(cart) {
+		try { return Cesium.SceneTransforms.wgs84ToWindowCoordinates(viewer.scene, cart); }
+		catch (e) { return null; }
+	}
+
+	function _positionLoupe(tx, ty) {
+		var loupe = document.getElementById('snapLoupe');
+		if (!loupe) return;
+		loupe.style.left = (tx - 60) + 'px';
+		loupe.style.top = Math.max(4, ty - LOUPE_OFFSET - 120) + 'px';
+	}
+
+	function _scan() {
+		var label = document.getElementById('snapLoupeLabel');
+		var coord = document.getElementById('snapLoupeCoord');
+		var ring = document.getElementById('snapLoupeRing');
+		var dot = document.getElementById('snapLoupeDot');
+		var lc = document.getElementById('snapLoupeCanvas');
+		if (!label) return;
+
+		// ── Parmak altını 2× büyüterek loupe canvas'ına çiz ──
+		// Cesium canvas size = CSS size * devicePixelRatio (DPR)
+		// Touch koordinatları CSS piksel → DPR ile fiziksel piksele çevir
+		if (lc) {
+			try {
+				var dpr = window.devicePixelRatio || 1;
+				var src = viewer.scene.canvas;
+				var ctx = lc.getContext('2d');
+				var SRC_CSS = 70; // CSS piksel cinsinden yakalama yarıçapı
+				var SRC = SRC_CSS * dpr; // Fiziksel piksel
+				var sx = (_touchX * dpr) - SRC;
+				var sy = (_touchY * dpr) - SRC;
+				ctx.clearRect(0, 0, 140, 140);
+				ctx.drawImage(src, sx, sy, SRC * 2, SRC * 2, 0, 0, 140, 140);
+			} catch (e) { /* WebGL context kaybı gibi uç durumlar */ }
+		}
+
+		var prevHad = !!_snapCand;
+		_snapCand = null;
+		var bestD = 9999, bestPt = null;
+		measurements.forEach(function (m) {
+			if (!m.points) return;
+			m.points.forEach(function (cp) {
+				var sp = _toScreen(cp);
+				if (!sp) return;
+				var d = Math.hypot(sp.x - _touchX, sp.y - _touchY);
+				if (d < bestD) { bestD = d; bestPt = { pos: cp, sp: sp }; }
+			});
+		});
+		clickPoints.forEach(function (cp) {
+			var sp = _toScreen(cp);
+			if (!sp) return;
+			var d = Math.hypot(sp.x - _touchX, sp.y - _touchY);
+			if (d < bestD) { bestD = d; bestPt = { pos: cp, sp: sp }; }
+		});
+		if (bestPt && bestD < SNAP_PX) {
+			_snapCand = bestPt;
+			var carto = Cesium.Cartographic.fromCartesian(bestPt.pos);
+			label.textContent = '⚡ SNAP';
+			label.style.color = '#22d3ee';
+			label.style.borderColor = 'rgba(6,182,212,0.4)';
+			coord.textContent = Cesium.Math.toDegrees(carto.longitude).toFixed(5) +
+				' / ' + Cesium.Math.toDegrees(carto.latitude).toFixed(5);
+			if (ring) { ring.style.borderColor = 'rgba(6,182,212,1)'; ring.style.boxShadow = '0 0 0 6px rgba(6,182,212,0.28),0 8px 28px rgba(0,0,0,0.6)'; }
+			if (dot) { dot.style.background = '#22d3ee'; dot.style.boxShadow = '0 0 8px rgba(6,182,212,0.9)'; }
+			if (!prevHad) _hapticSnapFound();
+		} else {
+			label.textContent = 'Snap Yok';
+			label.style.color = '#f87171';
+			label.style.borderColor = 'rgba(239,68,68,0.3)';
+			coord.textContent = '—';
+			if (ring) { ring.style.borderColor = 'rgba(239,68,68,0.7)'; ring.style.boxShadow = '0 0 0 5px rgba(239,68,68,0.1),0 8px 28px rgba(0,0,0,0.55)'; }
+			if (dot) { dot.style.background = '#f87171'; dot.style.boxShadow = '0 0 6px rgba(239,68,68,0.6)'; }
+			if (prevHad) _hapticSnapLost();
+		}
+		viewer.scene.requestRender();
+	}
+
+	function _enterSnap() {
+		_inSnap = true;
+		var loupe = document.getElementById('snapLoupe');
+		if (loupe) { loupe.style.display = 'flex'; _positionLoupe(_touchX, _touchY); }
+		_hapticActivate();
+		_scan();
+		_scanTimer = setInterval(_scan, 150);
+	}
+
+	function _exitSnap(place) {
+		clearInterval(_scanTimer); _scanTimer = null;
+		_inSnap = false;
+		var loupe = document.getElementById('snapLoupe');
+		if (loupe) loupe.style.display = 'none';
+		if (!place || !activeTool) { _snapCand = null; return; }
+		var leftClick = handler.getInputAction(Cesium.ScreenSpaceEventType.LEFT_CLICK);
+		if (!leftClick) { _snapCand = null; return; }
+		if (_snapCand) {
+			var sp = _snapCand.sp || _toScreen(_snapCand.pos);
+			if (sp) {
+				leftClick({ position: new Cesium.Cartesian2(sp.x, sp.y) });
+				_hapticPlace(); // Snap ile nokta eklendi: tink-tink
+			}
+		} else {
+			leftClick({ position: new Cesium.Cartesian2(_touchX, _touchY) });
+			_hapticSnapLost(); // Normal ekleme: hafif tik
+		}
+		_snapCand = null;
+	}
+
+	window.addEventListener('load', function () {
+		var canvas = document.getElementById('cesiumContainer');
+		if (!canvas) return;
+		canvas.addEventListener('touchstart', function (e) {
+			if (!_isMob || !activeTool) return;
+			var t = e.touches[0];
+			_touchX = t.clientX; _touchY = t.clientY;
+			_inSnap = false; _snapCand = null;
+			clearTimeout(_pressTimer);
+			_pressTimer = setTimeout(_enterSnap, LONG_MS);
+		}, { passive: true });
+		canvas.addEventListener('touchmove', function (e) {
+			if (!_isMob) return;
+			var t = e.touches[0];
+			_touchX = t.clientX; _touchY = t.clientY;
+			if (!_inSnap) { clearTimeout(_pressTimer); _pressTimer = null; return; }
+			_positionLoupe(_touchX, _touchY);
+		}, { passive: true });
+		canvas.addEventListener('touchend', function (e) {
+			if (!_isMob) return;
+			clearTimeout(_pressTimer); _pressTimer = null;
+			if (_inSnap) { e.preventDefault(); _exitSnap(true); }
+		}, { passive: false });
+		canvas.addEventListener('touchcancel', function () {
+			clearTimeout(_pressTimer); _pressTimer = null;
+			if (_inSnap) _exitSnap(false);
+		}, { passive: true });
+	});
+})();
 
 ['btnDistance', 'btnHeight', 'btnCoord'].forEach(function (id) {
 	var el = document.getElementById(id);
@@ -6110,16 +6304,103 @@ document.getElementById('btnExportKML').addEventListener('click', function () {
 });
 
 // ─── YAKINLAŞ / UZAKLAŞ KONTROLLERİ ─────────────────────────
+// factor: büyük değer = küçük adım (daha hassas)
 function doZoom(direction, factor) {
 	if (!viewer || !viewer.camera) return;
 	var cameraHeight = viewer.camera.positionCartographic.height;
-	var moveRate = cameraHeight / (factor || 2.0);
+	var moveRate = cameraHeight / (factor || 20.0);
 	if (direction === 'in') viewer.camera.zoomIn(moveRate);
 	else viewer.camera.zoomOut(moveRate);
+	viewer.scene.requestRender();
 }
 
-document.getElementById('btnZoomIn').addEventListener('click', function () { doZoom('in', 2.0); });
-document.getElementById('btnZoomOut').addEventListener('click', function () { doZoom('out', 2.0); });
+// ─── PRESS-AND-HOLD: SİNEMATİK ZOOM ─────────────────────────
+// Tek tık: çok hassas küçük adım (factor 20)
+// 2 saniye basılı tutunca: yavaş başlayan sinematik döngü
+(function () {
+	var _zoomRaf = null;
+	var _zoomDir = null;
+	var _holdTimer = null;       // 2s bekleme timer
+	var _holdStartTime = null;   // döngü başlama zamanı
+	var HOLD_DELAY = 2000;       // ms — kaç ms sonra döngü başlar
+	var FACTOR_START = 15.0;     // hold başlangıç hızı (yavaş)
+	var FACTOR_MAX = 5.0;        // hold max hız (3s sonra)
+
+	function zoomLoop() {
+		if (!_zoomDir) return;
+		// Döngü başladıktan bu yana geçen süre → giderek hızlan (0→3s)
+		var elapsed = Date.now() - _holdStartTime;
+		var t = Math.min(elapsed / 3000, 1.0);
+		var factor = FACTOR_START - (FACTOR_START - FACTOR_MAX) * t;
+		doZoom(_zoomDir, factor);
+		_zoomRaf = requestAnimationFrame(zoomLoop);
+	}
+
+	function cancelHold() {
+		if (_holdTimer) { clearTimeout(_holdTimer); _holdTimer = null; }
+		if (_zoomRaf) { cancelAnimationFrame(_zoomRaf); _zoomRaf = null; }
+		_zoomDir = null;
+	}
+
+	function attachZoomBtn(btnId, dir) {
+		var btn = document.getElementById(btnId);
+		if (!btn) return;
+		var _pressStart = 0;
+
+		// ── TOUCH ──
+		btn.addEventListener('touchstart', function (e) {
+			e.preventDefault();
+			_pressStart = Date.now();
+			_zoomDir = dir;
+			// 2 saniye sonra sinematik döngüyü başlat
+			_holdTimer = setTimeout(function () {
+				_holdStartTime = Date.now();
+				_zoomRaf = requestAnimationFrame(zoomLoop);
+			}, HOLD_DELAY);
+		}, { passive: false });
+
+		btn.addEventListener('touchend', function (e) {
+			e.preventDefault();
+			var elapsed = Date.now() - _pressStart;
+			var wasTap = elapsed < HOLD_DELAY; // 2s dolmadıysa tek tık
+			cancelHold();
+			if (wasTap) doZoom(dir, 20.0); // tek tık: hassas adım
+		}, { passive: false });
+
+		btn.addEventListener('touchcancel', function () { cancelHold(); });
+
+		// ── MOUSE (masaüstü) ──
+		btn.addEventListener('mousedown', function (e) {
+			if (e.button !== 0) return;
+			_pressStart = Date.now();
+			_zoomDir = dir;
+			_holdTimer = setTimeout(function () {
+				_holdStartTime = Date.now();
+				_zoomRaf = requestAnimationFrame(zoomLoop);
+			}, HOLD_DELAY);
+		});
+
+		btn.addEventListener('mouseup', function (e) {
+			if (e.button !== 0) return;
+			var elapsed = Date.now() - _pressStart;
+			var wasClick = elapsed < HOLD_DELAY;
+			cancelHold();
+			if (wasClick) doZoom(dir, 20.0);
+		});
+
+		btn.addEventListener('mouseleave', function () { cancelHold(); });
+
+		// click'i devre dışı bırak (mousedown/up yönetiyor)
+		btn.addEventListener('click', function (e) { e.stopImmediatePropagation(); });
+	}
+
+	attachZoomBtn('btnZoomIn', 'in');
+	attachZoomBtn('btnZoomOut', 'out');
+})();
+
+
+
+
 
 // Klavye +/- tuşları (biraz daha az hassas: /3 oranı)
 document.addEventListener('keydown', function (e) {

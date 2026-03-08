@@ -138,10 +138,9 @@
             var isSub = this.classList.contains('sub');
             var wasActive = this.classList.contains('active');
 
-            // Handle Area Submenu toggle
+            // ── Alan butonu: sadece alt menüyü aç/kapat, paneli kapatma ──
             if (toolId === 'area') {
                 submenuArea.classList.toggle('show');
-                // Don't deactivate area if it was active, just toggle submenu
                 if (!wasActive) {
                     toolBtns.forEach(function (b) { if (!b.classList.contains('sub')) b.classList.remove('active'); });
                     this.classList.add('active');
@@ -149,13 +148,13 @@
                 return;
             }
 
-            // Normal tool selection
+            // ── Tüm aktif durumları temizle ──
             toolBtns.forEach(function (b) { b.classList.remove('active'); });
 
-            // If it's a sub-tool, keep parent (area) active visually if needed, 
-            // but the CSS already handles .active on the button itself.
             if (isSub) {
+                // Alt araç: üst (alan) butonu aktif kalsın
                 document.getElementById('btnToolArea').classList.add('active');
+                submenuArea.classList.remove('show');
             } else {
                 submenuArea.classList.remove('show');
             }
@@ -164,19 +163,20 @@
                 this.classList.add('active');
                 state.activeTool = toolId;
                 measOverlay.style.display = 'block';
+
                 var toolNames = {
-                    coord: window.AppMessages.HINT_POINT,
-                    distance: window.AppMessages.HINT_DISTANCE,
-                    area_free: window.AppMessages.HINT_AREA_FREE,
-                    area_box3p: window.AppMessages.HINT_AREA_BOX3P,
-                    height: window.AppMessages.HINT_HEIGHT,
-                    line_l: window.AppMessages.HINT_LINE_L
+                    coord: window.AppMessages ? window.AppMessages.HINT_POINT : 'Haritaya dokunarak nokta koyun.',
+                    distance: window.AppMessages ? window.AppMessages.HINT_DISTANCE : 'Haritaya dokunarak mesafe ölçün.',
+                    area_free: window.AppMessages ? window.AppMessages.HINT_AREA_FREE : 'Serbest alan çizin.',
+                    area_box3p: window.AppMessages ? window.AppMessages.HINT_AREA_BOX3P : '3 nokta ile alan ölçün.',
+                    height: window.AppMessages ? window.AppMessages.HINT_HEIGHT : 'Yükseklik ölçün.',
+                    line_l: window.AppMessages ? window.AppMessages.HINT_LINE_L : 'L-mesafe ölçün.',
+                    clipbox: '✂️ Kırpma Kutusu aktif.'
                 };
-                var name = toolNames[toolId] || 'Araç seçildi';
-                resultBar.textContent = name;
+                resultBar.textContent = toolNames[toolId] || 'Araç seçildi';
                 resultBar.style.borderColor = 'rgba(59,130,246,0.3)';
 
-                // L-Line Specific Overlay Refinement
+                // L-Line overlay
                 var isLineL = toolId === 'line_l';
                 measOverlay.querySelectorAll('.meas-point, .meas-line, .meas-label-float').forEach(function (el) {
                     el.style.display = isLineL ? 'none' : '';
@@ -190,7 +190,13 @@
                     measOverlay.querySelector('.lbl-horiz').style.display = 'block';
                     measOverlay.querySelector('.lbl-vert').style.display = 'block';
                 }
+
+                // ── Panel kapat, harita moduna geç ──
+                closeToolPanel();
+                setActiveNav('map');
+
             } else {
+                // Aynı araca tekrar basıldı → kapat
                 state.activeTool = null;
                 measOverlay.style.display = 'none';
                 resultBar.textContent = 'Araç seçin ve haritaya tıklayın.';
@@ -550,4 +556,229 @@
         lastTap = now;
     }, { passive: true });
 
+    // ═══════════════════════════════════════
+    //  CLIPBOX MOBİL PANEL (v0.9.2+)
+    // ═══════════════════════════════════════
+
+    var clipMobilePanel = document.getElementById('clipMiniPanelMobile');
+    var clipBtnMobile = document.getElementById('btnClipBoxMobile');
+    var clipMobileClose = document.getElementById('clipMobileClose');
+    var clipMobileReset = document.getElementById('clipMobileReset');
+    var clipMobileFlyTo = document.getElementById('clipMobileFlyTo');
+
+    // Eksen state'i (standalone mod — ClipBoxManager yoksa)
+    var clipMobileState = { X: 30, Y: 30, Z: 30 };
+    var CLIP_MIN = 5, CLIP_MAX = 100, CLIP_STEP = 5;
+
+    function updateClipAxisUI(axis) {
+        var val = clipMobileState[axis];
+        var fill = document.getElementById('clipMobileFill' + axis);
+        var label = document.getElementById('clipMobileVal' + axis);
+        if (fill) fill.style.width = ((val - CLIP_MIN) / (CLIP_MAX - CLIP_MIN) * 100) + '%';
+        if (label) label.textContent = val + 'm';
+    }
+
+    function openClipPanel() {
+        if (!clipMobilePanel) return;
+        clipMobilePanel.classList.add('show');
+        clipMobilePanel.setAttribute('aria-hidden', 'false');
+        haptic(12);
+        TelemetryManager.addLog('MOBILE_CLIPBOX_OPEN', {});
+    }
+
+    function closeClipPanel() {
+        if (!clipMobilePanel) return;
+        clipMobilePanel.classList.remove('show');
+        clipMobilePanel.setAttribute('aria-hidden', 'true');
+        // ClipBoxManager varsa kapat
+        if (window.ClipBoxManager && window.ClipBoxManager.deactivate) {
+            window.ClipBoxManager.deactivate();
+        }
+        // Araç butonunu pasifleştir
+        if (clipBtnMobile) clipBtnMobile.classList.remove('active');
+        haptic(8);
+    }
+
+    // ClipBox butonuna tıklama
+    if (clipBtnMobile) {
+        clipBtnMobile.addEventListener('click', function () {
+            haptic(12);
+            var isActive = this.classList.contains('active');
+
+            // Diğer araçları kapat
+            toolBtns.forEach(function (b) { b.classList.remove('active'); });
+
+            if (!isActive) {
+                this.classList.add('active');
+                state.activeTool = 'clipbox';
+                // Ana ClipBoxManager varsa kullan
+                if (window.ClipBoxManager && window.ClipBoxManager.activate) {
+                    window.ClipBoxManager.activate();
+                    resultBar.textContent = 'Haritaya tıklayarak kırpma kutusunu yerleştirin.';
+                } else {
+                    resultBar.textContent = '✂️ Kırpma Kutusu aktif (masaüstünde tam destek).';
+                }
+                openClipPanel();
+                // Axisleri güncelle
+                ['X', 'Y', 'Z'].forEach(updateClipAxisUI);
+            } else {
+                state.activeTool = null;
+                closeClipPanel();
+                resultBar.textContent = 'Araç seçin ve haritaya tıklayın.';
+            }
+        });
+    }
+
+    // Kapat butonu
+    if (clipMobileClose) {
+        clipMobileClose.addEventListener('click', function () {
+            closeClipPanel();
+            state.activeTool = null;
+            resultBar.textContent = 'Araç seçin ve haritaya tıklayın.';
+        });
+    }
+
+    // +/- butonları
+    document.querySelectorAll('.clip-axis-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var axis = this.dataset.axis;
+            var dir = parseInt(this.dataset.dir, 10);
+            clipMobileState[axis] = Math.max(CLIP_MIN, Math.min(CLIP_MAX, clipMobileState[axis] + dir * CLIP_STEP));
+            updateClipAxisUI(axis);
+            haptic(8);
+            // Ana ClipBoxManager'a ilet
+            if (window.ClipBoxManager && window.ClipBoxManager._updateSize) {
+                window.ClipBoxManager._updateSize(axis.toLowerCase(), clipMobileState[axis], true);
+            }
+            TelemetryManager.addLog('MOBILE_CLIPBOX_RESIZE', { axis: axis, val: clipMobileState[axis] });
+        });
+    });
+
+    // Sıfırla
+    if (clipMobileReset) {
+        clipMobileReset.addEventListener('click', function () {
+            clipMobileState = { X: 30, Y: 30, Z: 30 };
+            ['X', 'Y', 'Z'].forEach(updateClipAxisUI);
+            haptic(10);
+            if (window.ClipBoxManager) {
+                if (window.ClipBoxManager._halfSize) {
+                    window.ClipBoxManager._halfSize = { x: 15, y: 15, z: 15 };
+                }
+                if (window.ClipBoxManager._applyClipping) window.ClipBoxManager._applyClipping();
+            }
+        });
+    }
+
+    // Odakla
+    if (clipMobileFlyTo) {
+        clipMobileFlyTo.addEventListener('click', function () {
+            haptic(10);
+            if (window.ClipBoxManager && window.ClipBoxManager._flyToBox && window.ClipBoxManager._worldCenter) {
+                window.ClipBoxManager._flyToBox(window.ClipBoxManager._worldCenter);
+            } else {
+                resultBar.textContent = '📍 Önce kırpma kutusunu haritaya yerleştirin.';
+            }
+        });
+    }
+
+    // ═══════════════════════════════════════
+    //  KML MOBİL IMPORT (v0.9.2+)
+    // ═══════════════════════════════════════
+    var btnImportKMLMobile = document.getElementById('btnImportKMLMobile');
+    if (btnImportKMLMobile) {
+        btnImportKMLMobile.addEventListener('click', function () {
+            haptic(10);
+            if (window.ImportManager && window.ImportManager.importKML) {
+                window.ImportManager.importKML();
+            } else {
+                resultBar.textContent = '⚠️ KML importu masaüstü görünümünde desteklenir.';
+                setTimeout(function () {
+                    resultBar.textContent = 'Araç seçin ve haritaya tıklayın.';
+                }, 3000);
+            }
+            TelemetryManager.addLog('MOBILE_KML_IMPORT_ATTEMPT', {});
+        });
+    }
+
+    // ═══════════════════════════════════════
+    //  DELETE SELECTED FAB (seçili objeyi sil butonu)
+    // ═══════════════════════════════════════
+    var deleteSelFab = document.getElementById('deleteSelFab');
+    if (deleteSelFab) {
+        deleteSelFab.addEventListener('click', function () {
+            haptic(20);
+            // Edit modundaysa önce kapat
+            if (window.EditManager && window.EditManager.activeMeasure) {
+                window.EditManager.stopEdit();
+            }
+            // Seçili ölçümü sil
+            if (window.activeHighlightId !== null && window.activeHighlightId !== undefined
+                && window.deleteMeasurement) {
+                window.deleteMeasurement(window.activeHighlightId);
+                TelemetryManager.addLog('MOBILE_FAB_DELETE', { id: window.activeHighlightId });
+            }
+            deleteSelFab.style.display = 'none';
+        });
+    }
+
+    // ═══════════════════════════════════════
+    //  DRAWER — ÖLÇÜM SİLME (event delegation)
+    // ═══════════════════════════════════════
+    // Drawer kapsamında tek event listener ile tüm m-row-delete butonlarını yakalar.
+    // Not: renderList(), m-row elementlerine data-id="<measureId>" atar (main.js).
+    drawer.addEventListener('click', function (e) {
+        // ── Tek satır sil ──
+        var delBtn = e.target.closest('.m-row-delete');
+        if (delBtn) {
+            e.stopPropagation();
+            haptic(15);
+            var row = delBtn.closest('.m-row');
+            var measureId = row ? row.dataset.id : null;
+
+            if (measureId && window.safeRemoveItem && window.measurements) {
+                // Edit modundaysa önce kapat
+                if (window.EditManager && window.EditManager.activeMeasure) {
+                    window.EditManager.stopEdit();
+                }
+                var idx = window.measurements.findIndex(function (m) { return m.id === measureId; });
+                if (idx !== -1) {
+                    var m = window.measurements[idx];
+                    m.entities.forEach(function (ent) { window.safeRemoveItem(ent); });
+                    window.measurements.splice(idx, 1);
+                    if (window.renderList) window.renderList();
+                    if (window.debouncedSave) window.debouncedSave();
+                    resultBar.textContent = '🗑️ Ölçüm silindi.';
+                    setTimeout(function () { resultBar.textContent = 'Araç seçin ve haritaya tıklayın.'; }, 1500);
+                    TelemetryManager.addLog('MOBILE_MEASURE_DELETE', { id: measureId });
+                }
+            } else if (!measureId) {
+                // Statik demo satır — sadece DOM'dan kaldır
+                if (row) row.remove();
+            }
+            return;
+        }
+
+        // ── Tümünü Sil butonu ──
+        var allDelBtn = e.target.closest('.drawer-toolbar-btn.danger');
+        if (allDelBtn) {
+            e.stopPropagation();
+            haptic(20);
+            if (window.measurements && window.measurements.length > 0) {
+                if (window.EditManager && window.EditManager.activeMeasure) {
+                    window.EditManager.stopEdit();
+                }
+                window.measurements.forEach(function (m) {
+                    m.entities.forEach(function (ent) { if (window.safeRemoveItem) window.safeRemoveItem(ent); });
+                });
+                window.measurements.length = 0;
+                if (window.renderList) window.renderList();
+                if (window.debouncedSave) window.debouncedSave();
+                resultBar.textContent = '🗑️ Tüm ölçümler silindi.';
+                setTimeout(function () { resultBar.textContent = 'Araç seçin ve haritaya tıklayın.'; }, 2000);
+                TelemetryManager.addLog('MOBILE_MEASURE_DELETE_ALL', {});
+            }
+        }
+    });
+
 })();
+

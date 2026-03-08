@@ -1,4 +1,12 @@
 /* ═══ CBS MOBİL — TASARIM SİSTEMİ ═══ */
+/* iOS uzun basış: metin seçim balonu + callout menü engeli */
+html,
+body {
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
 :root {
   --bg-app: #0b0f19;
   --bg-surface: #111827;
@@ -903,7 +911,8 @@ body {
   bottom: 16px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 50;
+  z-index: 45;
+  /* Araçlar paneli (60) ve drawer'ın (70) altında kalmalı */
   padding: 10px 24px;
   border-radius: 99px;
   min-width: 240px;
@@ -1240,4 +1249,165 @@ body {
   font-size: 9px;
   font-weight: 600;
   letter-spacing: 0.3px;
+}
+
+/* ═══ CLIPBOX MOBİL BOTTOM SHEET (v0.9.2+) ═══ */
+.clip-mobile-sheet {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  /* result-bar (bottom-nav ~80px + result-bar ~44px) üstünde durur */
+  bottom: calc(80px + 56px + env(safe-area-inset-bottom, 0px) + 8px);
+  z-index: 75;
+  border-radius: 16px;
+  padding: 0;
+  transform: translateY(120%);
+  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+  will-change: transform;
+}
+
+.clip-mobile-sheet.show {
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+/* Sürükleme tutamacı */
+.clip-sheet-handle {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  margin: 10px auto 0;
+}
+
+/* Başlık satırı */
+.clip-sheet-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px 6px;
+}
+
+.clip-sheet-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex: 1;
+}
+
+.clip-sheet-action-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: var(--bg-elevated);
+  border-radius: 8px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.clip-sheet-action-btn:active {
+  background: rgba(6, 182, 212, 0.15);
+  color: #06b6d4;
+  transform: scale(0.92);
+}
+
+.clip-sheet-close:active {
+  background: rgba(239, 68, 68, 0.15) !important;
+  color: #ef4444 !important;
+}
+
+/* Gövde */
+.clip-sheet-body {
+  padding: 4px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.clip-sheet-label {
+  font-size: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+/* Eksen satırı */
+.clip-axis-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.clip-axis-name {
+  font-size: 11px;
+  font-weight: 800;
+  width: 12px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* +/- Butonları — minimum 44px dokunma hedefi (iOS HIG) */
+.clip-axis-btn {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: 20px;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s;
+  -webkit-tap-highlight-color: transparent;
+  /* Ekstra dokunma alanı güvencesi */
+  touch-action: manipulation;
+}
+
+.clip-axis-btn:active {
+  background: #06b6d4;
+  color: #fff;
+  border-color: #06b6d4;
+  transform: scale(0.92);
+}
+
+/* Görsel ilerleme çubuğu */
+.clip-axis-track {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-elevated);
+  overflow: hidden;
+  position: relative;
+}
+
+.clip-axis-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #06b6d4, #3b82f6);
+  transition: width 0.2s ease;
+}
+
+/* Değer etiketi */
+.clip-axis-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  width: 32px;
+  text-align: right;
+  flex-shrink: 0;
 }

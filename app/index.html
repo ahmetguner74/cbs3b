@@ -895,7 +895,32 @@
 				right: 60px !important;
 				/* Mobilde çok solda kalmaması için sağa yaklaştırıldı */
 			}
+
+			/* ─── MOBİL: Zoom butonları → sağ tarafa, result-bar üstüne ─── */
+			#zoomControls {
+				left: auto !important;
+				right: 12px !important;
+				bottom: 52px !important;
+				/* result-bar (4px) + zoom panel yüksekliği ≈ 52px */
+			}
+
+			/* ─── MOBİL: Bilgilendirme barını 20px aşağıya al ─── */
+			#resultDisplay {
+				bottom: 4px !important;
+			}
+
+			/* ─── MOBİL: Performans/Kalite wrapper'ı bilgi barının üstüne ─── */
+			#toolPanel .flex.flex-col.gap-1:last-child {
+				transform: translateY(-65px) !important;
+			}
+
+			/* ─── MOBİL: İlk araç butonlarını header altından aşağıya it ─── */
+			#toolPanel .flex.flex-col.gap-1:first-child {
+				padding-top: 42px !important;
+			}
+
 		}
+
 
 		/* ─── MOBİL: Header alt yazısı taşmasın ─── */
 		@media (max-width: 480px) {
@@ -1200,6 +1225,39 @@
 		<!-- Cesium Map Container -->
 		<div id="cesiumContainer"></div>
 
+		<!-- DELETE SELECTED FAB — Mobilde seçili objeyi sil (main.js highlightMeasurement tarafından kontrol edilir) -->
+		<button id="deleteSelFab" style="
+			display:none;
+			position:fixed;
+			bottom:80px;
+			left:50%;
+			transform:translateX(-50%);
+			z-index:9999;
+			align-items:center;
+			justify-content:center;
+			gap:6px;
+			padding:10px 20px;
+			background:rgba(239,68,68,0.92);
+			border:none;
+			border-radius:99px;
+			color:#fff;
+			font-size:13px;
+			font-weight:700;
+			font-family:'Inter',sans-serif;
+			box-shadow:0 4px 20px rgba(239,68,68,0.4);
+			cursor:pointer;
+			backdrop-filter:blur(8px);
+			letter-spacing:0.3px;
+			-webkit-tap-highlight-color:transparent;
+		" onclick="
+			if(typeof EditManager!=='undefined'&&EditManager.activeMeasure){EditManager.stopEdit();}
+			if(activeHighlightId!==null&&typeof deleteMeasurement==='function'){deleteMeasurement(activeHighlightId);}
+			this.style.display='none';
+		">
+			<span class="material-symbols-outlined" style="font-size:18px;vertical-align:middle">delete</span>
+			Seçiliyi Sil
+		</button>
+
 		<!-- Left Floating Panel: Tools + Attached Tab (collapsed by default) -->
 		<div id="toolPanel"
 			class="absolute top-4 left-0 z-40 pointer-events-auto transition-transform duration-300 ease-in-out"
@@ -1282,6 +1340,14 @@
 					title="Araçlar Paneli">
 					<span id="toolToggleIcon"
 						class="material-symbols-outlined text-[16px] text-slate-400 group-hover:text-primary transition-colors">chevron_right</span>
+					<!-- Dikey ARAÇLAR yazısı — panel kapalıyken görünür -->
+					<span id="toolToggleLabel" style="writing-mode:vertical-rl;text-orientation:mixed;transform:rotate(180deg);
+							font-size:8px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;
+							color:var(--text-muted,#64748b);margin-top:4px;
+							transition:opacity 0.2s;pointer-events:none;
+							display:none">
+						ARAÇLAR
+					</span>
 				</button>
 			</div>
 		</div>
@@ -1827,11 +1893,11 @@
 
 	<!-- ═══ MOBİL ÇİZİM BUTONLARI (FAB) ═══ -->
 	<div id="mobileFab" style="display:none; position:fixed; bottom:calc(80px + env(safe-area-inset-bottom, 0px)); left:50%; transform:translateX(-50%); z-index:900;
-		gap:12px; align-items:center;">
+		gap:16px; align-items:center;">
 		<!-- Geri Al (Undo) -->
 		<button onclick="undoLastPoint()" title="Geri Al" style="width:48px;height:48px;border-radius:50%;border:none;
 			background:rgba(239,68,68,0.85);backdrop-filter:blur(10px);
-			color:#fff;font-size:22px;cursor:pointer;
+			color:#fff;cursor:pointer;
 			box-shadow:0 4px 20px rgba(0,0,0,0.4);
 			display:flex;align-items:center;justify-content:center;
 			transition:transform 0.15s ease">
@@ -1840,13 +1906,85 @@
 		<!-- Bitir (Finalize) -->
 		<button onclick="finalizeMeasurement()" title="Çizimi Bitir" style="width:56px;height:56px;border-radius:50%;border:none;
 			background:rgba(16,185,129,0.9);backdrop-filter:blur(10px);
-			color:#fff;font-size:28px;cursor:pointer;
+			color:#fff;cursor:pointer;
 			box-shadow:0 4px 24px rgba(16,185,129,0.4);
 			display:flex;align-items:center;justify-content:center;
 			transition:transform 0.15s ease">
 			<span style="font-family:'Material Symbols Outlined';font-size:30px">check</span>
 		</button>
 	</div>
+
+	<!-- ═══ SNAP BÜYÜTEÇ (parmak takipli, long-press ile açılır) ═══ -->
+	<style>
+		/* iOS uzun basış: metin seçimi + callout balonu engel */
+		* {
+			-webkit-tap-highlight-color: transparent;
+		}
+
+		#snapLoupeRing canvas,
+		#snapLoupeRing img {
+			display: block;
+		}
+	</style>
+	<div id="snapLoupe" style="
+		display:none;
+		position:fixed;
+		top:0; left:0;
+		z-index:9998;
+		pointer-events:none;
+		flex-direction:column;
+		align-items:center;
+		gap:6px;
+	">
+		<!-- Çember -->
+		<div id="snapLoupeRing" style="
+			width:140px; height:140px;
+			border-radius:50%;
+			border:3px solid rgba(6,182,212,0.95);
+			overflow:hidden;
+			position:relative;
+			box-shadow:0 0 0 5px rgba(6,182,212,0.12), 0 8px 28px rgba(0,0,0,0.6);
+			transition:border-color 0.18s ease, box-shadow 0.18s ease;
+			background:#070f1f;
+		">
+			<!-- Gerçek harita snapshot'ı -->
+			<canvas id="snapLoupeCanvas" width="140" height="140"
+				style="position:absolute;top:0;left:0;width:140px;height:140px;"></canvas>
+			<!-- Crosshair yatay -->
+			<div
+				style="position:absolute;top:50%;left:8%;right:8%;height:1px;background:rgba(255,255,255,0.55);transform:translateY(-50%);pointer-events:none;">
+			</div>
+			<!-- Crosshair dikey -->
+			<div
+				style="position:absolute;left:50%;top:8%;bottom:8%;width:1px;background:rgba(255,255,255,0.55);transform:translateX(-50%);pointer-events:none;">
+			</div>
+			<!-- Merkez nokta -->
+			<div style="position:absolute;top:50%;left:50%;width:6px;height:6px;border-radius:50%;background:#22d3ee;transform:translate(-50%,-50%);box-shadow:0 0 6px rgba(6,182,212,0.9);pointer-events:none;transition:background 0.18s;"
+				id="snapLoupeDot"></div>
+		</div>
+		<!-- Durum rozeti (snap var/yok) -->
+		<div id="snapLoupeLabel" style="
+			background:rgba(6,15,35,0.9);
+			border:1px solid rgba(6,182,212,0.3);
+			border-radius:99px; padding:3px 10px;
+			font-size:9px; font-weight:800;
+			font-family:'Inter',sans-serif;
+			color:#67e8f9; letter-spacing:1.2px;
+			text-transform:uppercase; white-space:nowrap;
+			backdrop-filter:blur(8px);
+			transition:color 0.18s, border-color 0.18s;
+		">Aranıyor</div>
+		<!-- Koordinat -->
+		<div id="snapLoupeCoord" style="
+			background:rgba(6,15,35,0.88);
+			border:1px solid rgba(6,182,212,0.2);
+			border-radius:99px; padding:3px 10px;
+			font-size:8.5px; font-family:'JetBrains Mono',monospace,'Courier New';
+			color:#94a3b8; white-space:nowrap;
+		">—</div>
+	</div>
+
+
 
 	<!-- ═══ SEÇİLİ ÖLÇÜM SİL BUTONU (FAB) ═══ -->
 	<div id="deleteSelFab"
@@ -3104,6 +3242,42 @@
 	</script>
 	<!-- Dev Panel: localhost/file:// ortamında Ctrl+Shift+D ile açılır, üretimde otomatik gizlenir -->
 	<script src="dev-panel.js"></script>
+
+	<!-- ─── ARAÇLAR TOGGLE DİKEY ETİKET ─── -->
+	<script>
+		(function () {
+			var toolPanel = document.getElementById('toolPanel');
+			var toggleIcon = document.getElementById('toolToggleIcon');
+			var toggleLabel = document.getElementById('toolToggleLabel');
+			if (!toolPanel || !toggleLabel || !toggleIcon) return;
+
+			// Panel açık mı?
+			function isPanelOpen() {
+				// Açıkken transform = translateX(0) ya da içermiyor -100%
+				return !toolPanel.style.transform.includes('-100%');
+			}
+
+			function updateLabel() {
+				if (isPanelOpen()) {
+					// Açık: ikon görünür, yazı gizli
+					toggleIcon.style.display = '';
+					toggleLabel.style.display = 'none';
+				} else {
+					// Kapalı: yazı görünür, ikon gizli
+					toggleIcon.style.display = 'none';
+					toggleLabel.style.display = '';
+				}
+			}
+
+			// İlk durum ayarı
+			// toolPanel başlangıçta kapalı (transform = calc(-100% + 28px))
+			updateLabel();
+
+			// style.transform değişikliğini izle (JS animasyon sonrası)
+			var observer = new MutationObserver(function () { updateLabel(); });
+			observer.observe(toolPanel, { attributes: true, attributeFilter: ['style'] });
+		})();
+	</script>
 </body>
 
 </html>

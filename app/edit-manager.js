@@ -20,6 +20,9 @@ var EditManager = {
     tempEntities: [],      // Tutamaklar ve geçici çizgiler (Entity API)
     draggedIndex: -1,      // Sürüklenen noktanın index'i
     isDragging: false,     // Sürükleme durumu
+    _gripCols: [],         // ENU PointPrimitiveCollection'lar (jitter-free grip noktaları)
+    _preRender: null,      // preRender listener referansı (cleanup için)
+    _editLinePrim: null,   // Stabil edit çizgisi Primitive (createStablePolyline pattern)
 
     // ─── 1. EDİT MODUNU BAŞLAT ──────────────────────────────────
     startEdit: function (measureId) {
@@ -51,76 +54,58 @@ var EditManager = {
     },
 
     // ─── 2. TUTAMAKLARI VE GEÇİCİ ÇİZGİYİ ÇİZ ─────────────────
+    // Çizgi → Entity API (CallbackProperty, görsel esneklik)
+    // Tutamak noktaları → ENU PointPrimitiveCollection (Float32 jitter yok)
     drawEditGrips: function () {
         var self = this;
 
-        // Eski geçici tutamakları temizle
+        // ── Eski Entity çizgilerini temizle ──
         this.tempEntities.forEach(function (ent) {
             drawLayer.entities.remove(ent);
         });
         this.tempEntities = [];
+
+        // ── Eski ENU grip primitiflerini temizle ──
+        if (this._preRender) {
+            viewer.scene.preRender.removeEventListener(this._preRender);
+            this._preRender = null;
+        }
+        this._gripCols.forEach(function (g) {
+            if (viewer.scene.primitives.contains(g.col)) {
+                viewer.scene.primitives.remove(g.col);
+            }
+        });
+        this._gripCols = [];
 
         if (!this.activeMeasure) return;
 
         var mType = this.activeMeasure.type;
         var isHeight = (mType === 'height');
 
-        // ── A) ESNEK GEOMETRİ (CallbackProperty) ──
-        if (mType === 'line' || mType === 'polygon') {
-            // Polyline
-            var dynPolyline = drawLayer.entities.add({
-                polyline: {
-                    positions: new Cesium.CallbackProperty(function () {
-                        if (mType === 'polygon' && self.editPoints.length > 2) {
-                            return self.editPoints.concat([self.editPoints[0]]);
-                        }
-                        return self.editPoints;
-                    }, false),
-                    width: 4,
-                    material: Cesium.Color.CYAN.withAlpha(0.8),
-                    clampToGround: false,
-                    disableDepthTestDistance: Number.POSITIVE_INFINITY
-                }
-            });
-            this.tempEntities.push(dynPolyline);
+        // ── A) ESNEK GEOMETRİ — createStablePolyline (ENU Primitive, jitter yok) ──
+        // Her editPoints değişiminde _rebuildEditLine() çağrılır.
+        // Polygon fill: Entity API CallbackProperty (sadece dolgu, az kritik)
+        this._rebuildEditLine();
 
-            // Polygon fill (sadece polygon için)
-            if (mType === 'polygon') {
-                var dynPolygon = drawLayer.entities.add({
-                    polygon: {
-                        hierarchy: new Cesium.CallbackProperty(function () {
-                            return new Cesium.PolygonHierarchy(self.editPoints);
-                        }, false),
-                        material: Cesium.Color.CYAN.withAlpha(0.25),
-                        perPositionHeight: true
-                    }
-                });
-                this.tempEntities.push(dynPolygon);
-            }
-        } else if (isHeight) {
-            // Height: L-şeklinde çizgi P1→pMid→P2
-            var dynHeightLine = drawLayer.entities.add({
-                polyline: {
-                    positions: new Cesium.CallbackProperty(function () {
-                        if (self.editPoints.length >= 3) {
-                            return [self.editPoints[0], self.editPoints[1], self.editPoints[2]];
-                        }
-                        return self.editPoints;
+        if (mType === 'polygon') {
+            var dynPolygon = drawLayer.entities.add({
+                polygon: {
+                    hierarchy: new Cesium.CallbackProperty(function () {
+                        return new Cesium.PolygonHierarchy(self.editPoints);
                     }, false),
-                    width: 3,
-                    material: Cesium.Color.CYAN.withAlpha(0.8),
-                    clampToGround: false,
-                    disableDepthTestDistance: Number.POSITIVE_INFINITY
+                    material: Cesium.Color.CYAN.withAlpha(0.15),
+                    perPositionHeight: true
                 }
             });
-            this.tempEntities.push(dynHeightLine);
+            this.tempEntities.push(dynPolygon);
         }
 
-        // ── B) KÖŞE TUTAMAKLARI (Vertex Grips) ──
+
+        // ── B) KÖŞE TUTAMAKLARI — ENU PointPrimitiveCollection ──
+        // Entity API'de ECEF Float32 → jitter. ENU modelMatrix → yerel (0,0,0) → jitter yok.
         var vertexIndices = [];
         if (isHeight) {
-            // Height: sadece P1 (index 0) ve P2 (index 2) sürüklenebilir, pMid (index 1) otomatik
-            vertexIndices = [0, 2];
+            vertexIndices = [0, 2]; // pMid (index 1) sürüklenemez
         } else {
             for (var vi = 0; vi < this.editPoints.length; vi++) {
                 vertexIndices.push(vi);
@@ -128,28 +113,24 @@ var EditManager = {
         }
 
         vertexIndices.forEach(function (index) {
-            var grip = drawLayer.entities.add({
-                position: new Cesium.CallbackProperty(function () {
-                    return self.editPoints[index];
-                }, false),
-                point: {
-                    pixelSize: 14,
-                    color: Cesium.Color.WHITE,
-                    outlineColor: Cesium.Color.CYAN,
-                    outlineWidth: 3,
-                    disableDepthTestDistance: Number.POSITIVE_INFINITY
-                },
-                properties: new Cesium.PropertyBag({
-                    _editGrip: true,
-                    _isVertex: true,
-                    _index: index
-                })
+            var pos = self.editPoints[index];
+            var enuMat = Cesium.Transforms.eastNorthUpToFixedFrame(pos);
+            var col = new Cesium.PointPrimitiveCollection({ modelMatrix: enuMat });
+            var pt = col.add({
+                position: Cesium.Cartesian3.ZERO,
+                pixelSize: 14,
+                color: Cesium.Color.WHITE,
+                outlineColor: Cesium.Color.CYAN,
+                outlineWidth: 3,
+                disableDepthTestDistance: Number.POSITIVE_INFINITY
             });
-            self.tempEntities.push(grip);
+            // Picking için düz obje id (LEFT_DOWN + RIGHT_CLICK tarafından okunur)
+            pt.id = { _editGrip: true, _isVertex: true, _index: index };
+            viewer.scene.primitives.add(col);
+            self._gripCols.push({ col: col, pt: pt, type: 'vertex', index: index });
         });
 
-        // ── C) ARA TUTAMAKLAR (Midpoint — Vertex Ekleme) ──
-        // Sadece line ve polygon için
+        // ── C) ARA TUTAMAKLAR (Midpoint) — ENU PointPrimitiveCollection ──
         if (mType === 'line' || mType === 'polygon') {
             var len = (mType === 'polygon')
                 ? this.editPoints.length
@@ -157,49 +138,68 @@ var EditManager = {
 
             for (var mi = 0; mi < len; mi++) {
                 (function (i) {
-                    var midGrip = drawLayer.entities.add({
-                        position: new Cesium.CallbackProperty(function () {
-                            var p1 = self.editPoints[i];
-                            var p2 = self.editPoints[(i + 1) % self.editPoints.length];
-                            return Cesium.Cartesian3.midpoint(p1, p2, new Cesium.Cartesian3());
-                        }, false),
-                        point: {
-                            pixelSize: 10,
-                            color: Cesium.Color.CYAN.withAlpha(0.4),
-                            outlineColor: Cesium.Color.WHITE.withAlpha(0.5),
-                            outlineWidth: 2,
-                            disableDepthTestDistance: Number.POSITIVE_INFINITY
-                        },
-                        properties: new Cesium.PropertyBag({
-                            _editGrip: true,
-                            _isMidpoint: true,
-                            _insertAfterIndex: i
-                        })
+                    var p1 = self.editPoints[i];
+                    var p2 = self.editPoints[(i + 1) % self.editPoints.length];
+                    var midPt = Cesium.Cartesian3.midpoint(p1, p2, new Cesium.Cartesian3());
+                    var enuMat = Cesium.Transforms.eastNorthUpToFixedFrame(midPt);
+                    var col = new Cesium.PointPrimitiveCollection({ modelMatrix: enuMat });
+                    var pt = col.add({
+                        position: Cesium.Cartesian3.ZERO,
+                        pixelSize: 10,
+                        color: Cesium.Color.CYAN.withAlpha(0.4),
+                        outlineColor: Cesium.Color.WHITE.withAlpha(0.5),
+                        outlineWidth: 2,
+                        disableDepthTestDistance: Number.POSITIVE_INFINITY
                     });
-                    self.tempEntities.push(midGrip);
+                    pt.id = { _editGrip: true, _isMidpoint: true, _insertAfterIndex: i };
+                    viewer.scene.primitives.add(col);
+                    self._gripCols.push({ col: col, pt: pt, type: 'midpoint', segStart: i });
                 })(mi);
             }
         }
 
-        // Height: pMid göstergesi (küçük, sürüklenemez)
+        // ── D) pMid GÖSTERGESİ — ENU PointPrimitiveCollection ──
         if (isHeight && this.editPoints.length >= 3) {
-            var pMidIndicator = drawLayer.entities.add({
-                position: new Cesium.CallbackProperty(function () {
-                    return self.editPoints[1];
-                }, false),
-                point: {
-                    pixelSize: 8,
-                    color: Cesium.Color.YELLOW.withAlpha(0.6),
-                    outlineColor: Cesium.Color.WHITE.withAlpha(0.4),
-                    outlineWidth: 1,
-                    disableDepthTestDistance: Number.POSITIVE_INFINITY
+            var pMidPos = this.editPoints[1];
+            var enuMat = Cesium.Transforms.eastNorthUpToFixedFrame(pMidPos);
+            var col = new Cesium.PointPrimitiveCollection({ modelMatrix: enuMat });
+            col.add({
+                position: Cesium.Cartesian3.ZERO,
+                pixelSize: 8,
+                color: Cesium.Color.YELLOW.withAlpha(0.6),
+                outlineColor: Cesium.Color.WHITE.withAlpha(0.4),
+                outlineWidth: 1
+                // disableDepthTestDistance YOK — bina arkasında gizlensin
+            });
+            viewer.scene.primitives.add(col);
+            self._gripCols.push({ col: col, pt: null, type: 'pmid', index: 1 });
+        }
+
+        // ── E) preRender: Sadece nokta grip konumlarını güncelle ──
+        // (Çizgi _rebuildEditLine() ile MOUSE_MOVE'da rebuild edilir — positions= crash riski yok)
+        this._preRender = function () {
+            self._gripCols.forEach(function (g) {
+                // ── Nokta grip'leri (vertex, pmid, midpoint) ──
+                if (g.type === 'vertex' || g.type === 'pmid') {
+                    var pos = self.editPoints[g.index];
+                    if (pos) g.col.modelMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(pos);
+                } else if (g.type === 'midpoint') {
+                    var ePts = self.editPoints;
+                    var i = g.segStart;
+                    if (ePts.length >= 2) {
+                        var mp = Cesium.Cartesian3.midpoint(
+                            ePts[i], ePts[(i + 1) % ePts.length], new Cesium.Cartesian3()
+                        );
+                        g.col.modelMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(mp);
+                    }
                 }
             });
-            this.tempEntities.push(pMidIndicator);
-        }
+        };
+        viewer.scene.preRender.addEventListener(this._preRender);
 
         viewer.scene.requestRender();
     },
+
 
     // ─── 3. SONUÇ HESABINI YENİLE ───────────────────────────────
     recalcResult: function (m) {
@@ -248,18 +248,63 @@ var EditManager = {
         this.editPoints[1] = Cesium.Cartesian3.fromRadians(c2.longitude, c2.latitude, c1.height);
     },
 
+    // ─── 4b. EDİT ÇİZGİSİNİ STABİL PRİMİTİF OLARAK YENİDEN OLUŞTUR ─────────
+    // createStablePolyline (ENU pivot) kullanır — Float32 jitter yok.
+    // positions= setter (PolylineCollection) yerine tam Primitive rebuild — crash riski sıfır.
+    _rebuildEditLine: function () {
+        // Eskiyi kaldır
+        if (this._editLinePrim) {
+            safeRemoveItem(this._editLinePrim);
+            this._editLinePrim = null;
+        }
+        if (!this.activeMeasure || !this.editPoints || this.editPoints.length < 2) return;
+
+        var mType = this.activeMeasure.type;
+        var pts = this.editPoints;
+
+        if (mType === 'line' || mType === 'polygon') {
+            var drawPts = (mType === 'polygon' && pts.length > 2)
+                ? pts.concat([pts[0]]) : pts;
+            this._editLinePrim = createStablePolyline(
+                drawPts, 4, Cesium.Color.CYAN.withAlpha(0.8)
+            );
+        } else if (mType === 'height' && pts.length >= 3) {
+            this._editLinePrim = createStablePolyline(
+                [pts[0], pts[1], pts[2]], 3, Cesium.Color.CYAN.withAlpha(0.8)
+            );
+        }
+    },
+
     // ─── 5. EDİT MODUNU BİTİR VE KAYDET ─────────────────────────
     stopEdit: function () {
         if (!this.activeMeasure) return;
 
         var m = this.activeMeasure;
 
-        // Geçici tutamakları ve esnek şekli sil
+        // Geçici Entity çizgilerini temizle
         var self = this;
         this.tempEntities.forEach(function (ent) {
             drawLayer.entities.remove(ent);
         });
         this.tempEntities = [];
+
+        // Stabil edit çizgisini temizle
+        if (this._editLinePrim) {
+            safeRemoveItem(this._editLinePrim);
+            this._editLinePrim = null;
+        }
+
+        // ENU grip primitiflerini ve preRender listener'ı temizle
+        if (this._preRender) {
+            viewer.scene.preRender.removeEventListener(this._preRender);
+            this._preRender = null;
+        }
+        this._gripCols.forEach(function (g) {
+            if (viewer.scene.primitives.contains(g.col)) {
+                viewer.scene.primitives.remove(g.col);
+            }
+        });
+        this._gripCols = [];
 
         // Yeni noktaları orijinal ölçüme aktar
         m.points = this.editPoints;
@@ -308,6 +353,39 @@ var EditManager = {
 // FARE ETKİLEŞİMLERİ — handler'a yeni action'lar ekleniyor
 // ═══════════════════════════════════════════════════════════════
 
+// Module-scope drag state
+var _dragSmooth = null;    // Lerp için önceki düzleştirilmiş pozisyon (sürüklenen vertex)
+var _dragSmoothMid = null; // pMid için ayrı lerp geçmişi (height ölçümü)
+
+// ─── Yardımcı: Picked objeyi edit grip olarak çöz ───────────────
+// Entity API (PropertyBag) ve Primitive API (düz obje) her ikisini destekler.
+function _resolveGrip(pickedObject) {
+    if (!Cesium.defined(pickedObject)) return null;
+    // ── Primitive API pick (ENU PointPrimitiveCollection) ──
+    // scene.pick → {id: point.id, primitive: thePoint}
+    var rawId = pickedObject.id;
+    if (rawId && rawId._editGrip) {
+        return {
+            isVertex: !!rawId._isVertex,
+            isMidpoint: !!rawId._isMidpoint,
+            index: rawId._index !== undefined ? rawId._index : -1,
+            insertAfterIndex: rawId._insertAfterIndex !== undefined ? rawId._insertAfterIndex : -1
+        };
+    }
+    // ── Entity API pick (PropertyBag — eski mod, kullanılmıyor ama korunuyor) ──
+    if (rawId && rawId.properties) {
+        var props = rawId.properties;
+        if (!props._editGrip || !props._editGrip.getValue()) return null;
+        return {
+            isVertex: !!(props._isVertex && props._isVertex.getValue()),
+            isMidpoint: !!(props._isMidpoint && props._isMidpoint.getValue()),
+            index: props._index ? props._index.getValue() : -1,
+            insertAfterIndex: props._insertAfterIndex ? props._insertAfterIndex.getValue() : -1
+        };
+    }
+    return null;
+}
+
 // ─── 1. LEFT_DOWN — Sürükleme Başlangıcı ────────────────────────
 handler.setInputAction(function (click) {
     // Çizim modundayken edit yapılmaz
@@ -316,75 +394,118 @@ handler.setInputAction(function (click) {
     if (!EditManager.activeMeasure) return;
 
     var pickedObject = viewer.scene.pick(click.position);
-    if (!Cesium.defined(pickedObject) || !pickedObject.id || !pickedObject.id.properties) return;
+    var grip = _resolveGrip(pickedObject);
+    if (!grip) return;
 
-    var props = pickedObject.id.properties;
-
-    // _editGrip kontrolü — sadece edit tutamaklarına tepki ver
-    if (!props._editGrip || !props._editGrip.getValue()) return;
-
-    if (props._isVertex && props._isVertex.getValue()) {
-        // ── Gerçek köşe noktası sürükleme ──
-        EditManager.draggedIndex = props._index.getValue();
+    var startDrag = function (index) {
+        EditManager.draggedIndex = index;
         EditManager.isDragging = true;
+        _dragSmooth = null;
+        _dragSmoothMid = null;
         viewer.scene.screenSpaceCameraController.enableInputs = false;
-    } else if (props._isMidpoint && props._isMidpoint.getValue()) {
-        // ── Ara nokta (Midpoint) → yeni köşe ekle + sürükle ──
-        var insertIdx = props._insertAfterIndex.getValue() + 1;
-        // Mevcut midpoint pozisyonunu al
-        var midPos = pickedObject.id.position.getValue(Cesium.JulianDate.now());
-        var newPoint = Cesium.Cartesian3.clone(midPos);
-        // Araya noktayı ekle
-        EditManager.editPoints.splice(insertIdx, 0, newPoint);
-        EditManager.draggedIndex = insertIdx;
-        EditManager.isDragging = true;
-        EditManager.drawEditGrips(); // Yeni sayıya göre tutamakları yenile
-        viewer.scene.screenSpaceCameraController.enableInputs = false;
+    };
+
+    if (grip.isVertex) {
+        startDrag(grip.index);
+
+    } else if (grip.isMidpoint) {
+        var insertIdx = grip.insertAfterIndex + 1;
+        var segI = grip.insertAfterIndex;
+        var ePts = EditManager.editPoints;
+        // Midpoint pozisyonunu editPoints'dan hesapla (Primitive API'de .position.getValue() yok)
+        var newPoint = Cesium.Cartesian3.midpoint(
+            ePts[segI],
+            ePts[(segI + 1) % ePts.length],
+            new Cesium.Cartesian3()
+        );
+        ePts.splice(insertIdx, 0, newPoint);
+        EditManager.drawEditGrips();
+        startDrag(insertIdx);
     }
 }, Cesium.ScreenSpaceEventType.LEFT_DOWN);
 
+
 // ─── 2. MOUSE_MOVE — Sürükleme İşlemi ──────────────────────────
-// Mevcut MOUSE_MOVE handler'ını wrap ediyoruz
+// Anti-Jitter: Ray-Plane Intersection tekniği
+//  • Drag başında kameraya dik düzlem kurulur (LEFT_DOWN'da _dragPlane)
+//  • Her harekette kamera ışını bu düzlemi keser → depth buffer YOK
+//  • Kamera döndürülse bile koordinat değişmez → jitter YOK
+//  • Fallback: pickPosition → globe.pick (snap veya düzlem kurulamadıysa)
 (function () {
     var _originalMouseMove = handler.getInputAction(Cesium.ScreenSpaceEventType.MOUSE_MOVE);
+    var LERP_ALPHA = 0.6;    // 0=çok yumuşak, 1=anlık. 0.6 iyi denge
+    var DEAD_ZONE_SQ = 9;    // 3px dead-zone (kare) — sadece çok küçük titremeler
 
     handler.setInputAction(function (movement) {
         // Önce mevcut snap/crosshair mantığını çalıştır
         if (_originalMouseMove) _originalMouseMove(movement);
 
-        // Edit sürükleme
-        if (EditManager.isDragging && EditManager.draggedIndex !== -1) {
-            var cartesian = null;
+        if (!EditManager.isDragging || EditManager.draggedIndex === -1) {
+            _dragSmooth = null;
+            return;
+        }
 
-            // Snap noktası varsa onu kullan
-            if (typeof snappedCartesian !== 'undefined' && snappedCartesian) {
-                cartesian = Cesium.Cartesian3.clone(snappedCartesian);
-            } else {
-                // 3D model yüzeyinde pozisyon al
-                try {
-                    cartesian = viewer.scene.pickPosition(movement.endPosition);
-                } catch (e) { /* depth render hatası */ }
+        var endPos = movement.endPosition;
+        var startPos = movement.startPosition;
 
-                // Fallback: globe pick
-                if (!Cesium.defined(cartesian)) {
-                    var ray = viewer.camera.getPickRay(movement.endPosition);
-                    if (ray) {
-                        cartesian = viewer.scene.globe.pick(ray, viewer.scene);
+        // ── Dead-zone: 3px ──
+        if (startPos && endPos) {
+            var dx = endPos.x - startPos.x;
+            var dy = endPos.y - startPos.y;
+            if ((dx * dx + dy * dy) < DEAD_ZONE_SQ) return;
+        }
+
+        var cartesian = null;
+
+        // ── 1. Snap öncelikli (’vektör’ snap) ──
+        if (typeof snappedCartesian !== 'undefined' && snappedCartesian) {
+            cartesian = Cesium.Cartesian3.clone(snappedCartesian);
+            _dragSmooth = null;
+
+            // ── 2. pickPosition: derinlik buffer → 3D tile + terrain ──
+            // Boş gökyüzüne denk gelirse undefined döner → vertex taşınmaz (doğru davranış)
+        } else {
+            try { cartesian = viewer.scene.pickPosition(endPos); } catch (e) { }
+        }
+
+        // ── Lerp smooth (sadece mobilde, snap yokken) ──
+        if (Cesium.defined(cartesian) && typeof _isMob !== 'undefined' && _isMob) {
+            if (_dragSmooth) {
+                cartesian = Cesium.Cartesian3.lerp(
+                    _dragSmooth, cartesian, LERP_ALPHA, new Cesium.Cartesian3()
+                );
+            }
+            _dragSmooth = Cesium.Cartesian3.clone(cartesian);
+        }
+
+        if (Cesium.defined(cartesian)) {
+            EditManager.editPoints[EditManager.draggedIndex] = cartesian;
+            if (EditManager.activeMeasure && EditManager.activeMeasure.type === 'height') {
+                EditManager._recalcHeightMidpoint();
+                if (typeof _isMob !== 'undefined' && _isMob) {
+                    var rawMid = EditManager.editPoints[1];
+                    if (Cesium.defined(rawMid)) {
+                        if (_dragSmoothMid) {
+                            EditManager.editPoints[1] = Cesium.Cartesian3.lerp(
+                                _dragSmoothMid, rawMid, LERP_ALPHA, new Cesium.Cartesian3()
+                            );
+                        }
+                        _dragSmoothMid = Cesium.Cartesian3.clone(EditManager.editPoints[1]);
                     }
                 }
             }
-
-            if (Cesium.defined(cartesian)) {
-                EditManager.editPoints[EditManager.draggedIndex] = cartesian;
-                // Height tipinde pMid otomatik güncelle
-                if (EditManager.activeMeasure && EditManager.activeMeasure.type === 'height') {
-                    EditManager._recalcHeightMidpoint();
-                }
-                viewer.scene.requestRender();
-            }
+            // Çizgiyi yeniden oluştur (ENU stabil Primitive — jitter yok)
+            EditManager._rebuildEditLine();
+            viewer.scene.requestRender();
         }
+
     }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
+
 })();
+
+
+
+
 
 // ─── 3. LEFT_UP — Sürükleme Bitişi ─────────────────────────────
 handler.setInputAction(function () {
@@ -398,66 +519,70 @@ handler.setInputAction(function () {
 }, Cesium.ScreenSpaceEventType.LEFT_UP);
 
 // ─── 4. RIGHT_CLICK — Nokta Silme ──────────────────────────────
-// Mevcut RIGHT_CLICK handler'ını wrap ediyoruz
 (function () {
     var _originalRightClick = handler.getInputAction(Cesium.ScreenSpaceEventType.RIGHT_CLICK);
 
     handler.setInputAction(function (click) {
-        // Çizim modundayken mevcut sağ tık davranışını koru
         if (activeTool) {
             if (_originalRightClick) _originalRightClick(click);
             return;
         }
 
-        // Edit modunda vertex silme
         if (EditManager.activeMeasure && click) {
             var pickedObject = viewer.scene.pick(click.position);
+            var grip = _resolveGrip(pickedObject);
 
-            if (Cesium.defined(pickedObject) && pickedObject.id && pickedObject.id.properties) {
-                var props = pickedObject.id.properties;
+            if (grip && grip.isVertex) {
+                var idx = grip.index;
+                var mType = EditManager.activeMeasure.type;
 
-                if (props._editGrip && props._editGrip.getValue() &&
-                    props._isVertex && props._isVertex.getValue()) {
+                if (mType === 'height' || mType === 'coord') return;
 
-                    var idx = props._index.getValue();
-                    var mType = EditManager.activeMeasure.type;
-
-                    // Height ve coord tiplerinde silme yok
-                    if (mType === 'height' || mType === 'coord') return;
-
-                    // Minimum nokta kontrolü
-                    if ((mType === 'polygon' && EditManager.editPoints.length <= 3) ||
-                        (mType === 'line' && EditManager.editPoints.length <= 2)) {
-                        // Ses/vibrasyon uyarısı (basit alert yerine sessiz)
-                        console.warn('EditManager: Minimum nokta sayısına ulaşıldı, daha fazla silinemez.');
-                        return;
-                    }
-
-                    // Noktayı sil ve tutamakları yenile
-                    EditManager.editPoints.splice(idx, 1);
-                    EditManager.drawEditGrips();
-                    viewer.scene.requestRender();
-                    return; // Sağ tık menüsünü engelle
+                if ((mType === 'polygon' && EditManager.editPoints.length <= 3) ||
+                    (mType === 'line' && EditManager.editPoints.length <= 2)) {
+                    console.warn('EditManager: Minimum nokta sayısına ulaşıldı.');
+                    return;
                 }
+
+                EditManager.editPoints.splice(idx, 1);
+                EditManager.drawEditGrips();
+                viewer.scene.requestRender();
+                return;
             }
         }
 
-        // Diğer durumlar: orijinal handler'ı çağır
         if (_originalRightClick) _originalRightClick(click);
-
     }, Cesium.ScreenSpaceEventType.RIGHT_CLICK);
 })();
 
 // ─── 5. ESC İLE EDİT MODUNDAN ÇIK ──────────────────────────────
 document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && EditManager.activeMeasure && !activeTool) {
-        // Değişiklikleri iptal et (orijinal noktaları geri yükle)
         var m = EditManager.activeMeasure;
-        // Geçicileri sil
+
+        // Entity çizgilerini sil
         EditManager.tempEntities.forEach(function (ent) {
             drawLayer.entities.remove(ent);
         });
         EditManager.tempEntities = [];
+
+        // ENU grip primitiflerini ve preRender listener'ı sil
+        if (EditManager._preRender) {
+            viewer.scene.preRender.removeEventListener(EditManager._preRender);
+            EditManager._preRender = null;
+        }
+        EditManager._gripCols.forEach(function (g) {
+            if (viewer.scene.primitives.contains(g.col)) {
+                viewer.scene.primitives.remove(g.col);
+            }
+        });
+        EditManager._gripCols = [];
+
+        // Stabil edit çizgisini temizle
+        if (EditManager._editLinePrim) {
+            safeRemoveItem(EditManager._editLinePrim);
+            EditManager._editLinePrim = null;
+        }
 
         // Orijinal entity'leri geri göster
         m.entities.forEach(function (ent) {
@@ -470,7 +595,6 @@ document.addEventListener('keydown', function (e) {
         EditManager.draggedIndex = -1;
         EditManager.isDragging = false;
 
-        // Seçimi kaldır
         if (typeof highlightMeasurement === 'function' && typeof activeHighlightId !== 'undefined' && activeHighlightId !== null) {
             highlightMeasurement(activeHighlightId);
         }
@@ -480,3 +604,4 @@ document.addEventListener('keydown', function (e) {
 });
 
 console.log('✏️ EditManager yüklendi — CAD/GIS düzenleme modülü aktif.');
+
