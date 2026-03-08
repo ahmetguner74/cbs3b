@@ -179,15 +179,17 @@ var EditManager = {
                 // ── Nokta grip'leri (vertex, pmid, midpoint) ──
                 if (g.type === 'vertex' || g.type === 'pmid') {
                     var pos = self.editPoints[g.index];
+                    // Her grip kendi Matrix4'ünü alır — referans paylaşımı yok
                     if (pos) g.col.modelMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(pos);
                 } else if (g.type === 'midpoint') {
                     var ePts = self.editPoints;
                     var i = g.segStart;
                     if (ePts.length >= 2) {
-                        var mp = Cesium.Cartesian3.midpoint(
-                            ePts[i], ePts[(i + 1) % ePts.length], new Cesium.Cartesian3()
+                        // _scratchMidpoint: sadece ara hesap — modelMatrix'e referans verilmiyor
+                        Cesium.Cartesian3.midpoint(
+                            ePts[i], ePts[(i + 1) % ePts.length], _scratchMidpoint
                         );
-                        g.col.modelMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(mp);
+                        g.col.modelMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(_scratchMidpoint);
                     }
                 }
             });
@@ -263,16 +265,28 @@ var EditManager = {
             this._editLinePrim = createStablePolyline(
                 drawPts, 4, Cesium.Color.CYAN.withAlpha(0.8)
             );
+            // X-Ray aktifse edit çizgisine uygula
+            if (this._editLinePrim && typeof _xrayActive !== 'undefined' && _xrayActive && typeof applyXRayToPrimitive === 'function') {
+                applyXRayToPrimitive(this._editLinePrim, true);
+            }
             // Polygon dolgu da ENU Primitive (jitter yok)
             if (mType === 'polygon' && pts.length >= 3) {
                 this._editPolyPrim = createStablePolygon(
                     pts, Cesium.Color.CYAN.withAlpha(0.15)
                 );
+                // X-Ray aktifse edit polygon fill'e uygula
+                if (this._editPolyPrim && typeof _xrayActive !== 'undefined' && _xrayActive && typeof applyXRayToPrimitive === 'function') {
+                    applyXRayToPrimitive(this._editPolyPrim, true);
+                }
             }
         } else if (mType === 'height' && pts.length >= 3) {
             this._editLinePrim = createStablePolyline(
                 [pts[0], pts[1], pts[2]], 3, Cesium.Color.CYAN.withAlpha(0.8)
             );
+            // X-Ray aktifse edit çizgisine uygula
+            if (this._editLinePrim && typeof _xrayActive !== 'undefined' && _xrayActive && typeof applyXRayToPrimitive === 'function') {
+                applyXRayToPrimitive(this._editLinePrim, true);
+            }
         }
     },
 
@@ -361,6 +375,11 @@ var EditManager = {
 // Module-scope drag state
 var _dragSmooth = null;    // Lerp için önceki düzleştirilmiş pozisyon (sürüklenen vertex)
 var _dragSmoothMid = null; // pMid için ayrı lerp geçmişi (height ölçümü)
+
+// ─── Scratch nesnesi: sadece midpoint ara hesabı için güvenli ────────────
+// modelMatrix için scratch KULLANILMAZ — CesiumJS referansı kopyalamadan saklar;
+// tüm grip'ler aynı Matrix4'ü gösterir → yanlış konumlar.
+var _scratchMidpoint = new Cesium.Cartesian3();
 
 // ─── Sürükleme önizleme entity — bir kez oluşturulur, her drag'de yeniden kullanılır ──
 // CallbackProperty → editPoints'ı canlı okur; sürükleme sırasında sıfır GPU rebuild.

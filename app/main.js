@@ -3880,18 +3880,11 @@ function deleteMeasurement(id) {
 	if (idx === -1) return;
 	var m = measurements[idx];
 
-	// ── Edit modundaysa ÖNCE durdur ──
-	// Aksi hâlde stopEdit() silinmiş objeyi restore etmeye çalışır
+	// ── Edit modundaysa önce temiz çık ──
 	if (typeof EditManager !== 'undefined' && EditManager.activeMeasure && EditManager.activeMeasure.id === id) {
-		// activeMeasure'ı manuel sıfırla (stopEdit kaydetmeye çalışır, biz istemiyoruz)
-		EditManager.tempEntities.forEach(function (ent) { drawLayer.entities.remove(ent); });
-		EditManager.tempEntities = [];
-		EditManager.activeMeasure = null;
-		EditManager.editPoints = [];
-		EditManager.draggedIndex = -1;
-		EditManager.isDragging = false;
-		viewer.scene.screenSpaceCameraController.enableInputs = true;
+		EditManager.stopEdit(); // tüm grip/primitive/listener temizliği burada
 	}
+
 
 	// Sahneden entity/primitive'leri kaldır
 	m.entities.forEach(function (item) { safeRemoveItem(item); });

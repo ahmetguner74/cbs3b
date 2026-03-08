@@ -1,5 +1,5 @@
 # 🚀 Deploy Öncesi Kontrol Listesi
-**CBS — 3D Şehir Modeli | Bursa Büyükşehir Belediyesi | v0.9.2.3**
+**CBS — 3D Şehir Modeli | Bursa Büyükşehir Belediyesi | v0.9.3**
 
 > Git'e push **ya da** belediye sunucusuna göndermeden önce bu listeyi tepeden aşağıya tara.
 
@@ -10,7 +10,7 @@
 **Dosya:** `app/index.html` → ~satır 29
 
 ```js
-var VER = '0.9.2.3';  // ← her deploy'da bu sayıyı bir artır → 0.9.2.4
+var VER = '0.9.3';  // ← her deploy'da bu sayıyı bir artır → 0.9.4
 ```
 
 > Bu yapılmazsa kullanıcılar yeni kodu göremez, tarayıcı önbelleğindeki eskiyi okur.
@@ -109,7 +109,7 @@ app/
 ## ✅ ADIM 4 — Deploy Sonrası Kontrol
 
 1. Tarayıcıda **Ctrl + Shift + R** — önbelleği temizleyerek zorla yenile
-2. F12 → Network → `main.js?v=0.9.2.3` — yeni sürümün indiğini doğrula
+2. F12 → Network → `main.js?v=0.9.3` — yeni sürümün indiğini doğrula
 3. F12 → Console — 1 dakika açık bırak, kırmızı hata çıkmamalı
 4. Supabase → `telemetry_logs` tablosu — yeni `HEARTBEAT` kayıtları geliyor mu bak
 
@@ -123,6 +123,7 @@ app/
 | 0.9.1 | 2026-03 | Splash ekranı, ClipBox, ENU refactor |
 | 0.9.2 | 2026-03 | Snap loupe, mobil arayüz, monitoring paneli |
 | 0.9.2.3 | 2026-03-08 | Performans & güvenlik düzeltmeleri + cache busting |
-| **0.9.2.4** | **2026-03-08** | Snap performans (2D kutu filtresi), rubber-band (globe.pick güvenliği), mobil snap öncelik mantığı, edit→çizim geçiş commit |
+| 0.9.2.4 | 2026-03-08 | Snap performans (2D kutu filtresi), rubber-band (globe.pick güvenliği), mobil snap öncelik mantığı, edit→çizim geçiş commit |
+| **0.9.3** | **2026-03-08** | Edit modu X-Ray sync, Delete tuşu ghost primitive fix (stopEdit cleanup), preRender scratch Cartesian3 optimizasyonu |
 
 > Yeni sürüm çıkınca bu tabloya bir satır ekle ve Adım 1'deki VER numarasını güncelle.
