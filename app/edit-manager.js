@@ -23,6 +23,7 @@ var EditManager = {
     _gripCols: [],         // ENU PointPrimitiveCollection'lar (jitter-free grip noktaları)
     _preRender: null,      // preRender listener referansı (cleanup için)
     _editLinePrim: null,   // Stabil edit çizgisi Primitive (createStablePolyline pattern)
+    _editPolyPrim: null,   // Stabil polygon dolgu Primitive (createStablePolygon pattern)
 
     // ─── 1. EDİT MODUNU BAŞLAT ──────────────────────────────────
     startEdit: function (measureId) {
@@ -65,7 +66,7 @@ var EditManager = {
         });
         this.tempEntities = [];
 
-        // ── Eski ENU grip primitiflerini temizle ──
+        // ── Eski ENU grip primitiflerini ve edit çizgisini temizle ──
         if (this._preRender) {
             viewer.scene.preRender.removeEventListener(this._preRender);
             this._preRender = null;
@@ -76,29 +77,25 @@ var EditManager = {
             }
         });
         this._gripCols = [];
+        // _editLinePrim drawEditGrips çağrısında da _rebuildEditLine → safeRemoveItem ile temizlenir
+        // (ek koruma: elle de temizle)
+        if (this._editLinePrim) {
+            safeRemoveItem(this._editLinePrim);
+            this._editLinePrim = null;
+        }
+        if (this._editPolyPrim) {
+            safeRemoveItem(this._editPolyPrim);
+            this._editPolyPrim = null;
+        }
 
         if (!this.activeMeasure) return;
 
         var mType = this.activeMeasure.type;
         var isHeight = (mType === 'height');
 
-        // ── A) ESNEK GEOMETRİ — createStablePolyline (ENU Primitive, jitter yok) ──
-        // Her editPoints değişiminde _rebuildEditLine() çağrılır.
-        // Polygon fill: Entity API CallbackProperty (sadece dolgu, az kritik)
+        // ── A) ESNEK GEOMETRİ — createStablePolyline + createStablePolygon (ENU Primitive) ──
+        // Her editPoints değişiminde _rebuildEditLine() çağrılır (MOUSE_MOVE + drawEditGrips).
         this._rebuildEditLine();
-
-        if (mType === 'polygon') {
-            var dynPolygon = drawLayer.entities.add({
-                polygon: {
-                    hierarchy: new Cesium.CallbackProperty(function () {
-                        return new Cesium.PolygonHierarchy(self.editPoints);
-                    }, false),
-                    material: Cesium.Color.CYAN.withAlpha(0.15),
-                    perPositionHeight: true
-                }
-            });
-            this.tempEntities.push(dynPolygon);
-        }
 
 
         // ── B) KÖŞE TUTAMAKLARI — ENU PointPrimitiveCollection ──
@@ -253,10 +250,8 @@ var EditManager = {
     // positions= setter (PolylineCollection) yerine tam Primitive rebuild — crash riski sıfır.
     _rebuildEditLine: function () {
         // Eskiyi kaldır
-        if (this._editLinePrim) {
-            safeRemoveItem(this._editLinePrim);
-            this._editLinePrim = null;
-        }
+        if (this._editLinePrim) { safeRemoveItem(this._editLinePrim); this._editLinePrim = null; }
+        if (this._editPolyPrim) { safeRemoveItem(this._editPolyPrim); this._editPolyPrim = null; }
         if (!this.activeMeasure || !this.editPoints || this.editPoints.length < 2) return;
 
         var mType = this.activeMeasure.type;
@@ -268,6 +263,12 @@ var EditManager = {
             this._editLinePrim = createStablePolyline(
                 drawPts, 4, Cesium.Color.CYAN.withAlpha(0.8)
             );
+            // Polygon dolgu da ENU Primitive (jitter yok)
+            if (mType === 'polygon' && pts.length >= 3) {
+                this._editPolyPrim = createStablePolygon(
+                    pts, Cesium.Color.CYAN.withAlpha(0.15)
+                );
+            }
         } else if (mType === 'height' && pts.length >= 3) {
             this._editLinePrim = createStablePolyline(
                 [pts[0], pts[1], pts[2]], 3, Cesium.Color.CYAN.withAlpha(0.8)
@@ -288,10 +289,14 @@ var EditManager = {
         });
         this.tempEntities = [];
 
-        // Stabil edit çizgisini temizle
+        // Stabil edit çizgisi ve dolgu temizle
         if (this._editLinePrim) {
             safeRemoveItem(this._editLinePrim);
             this._editLinePrim = null;
+        }
+        if (this._editPolyPrim) {
+            safeRemoveItem(this._editPolyPrim);
+            this._editPolyPrim = null;
         }
 
         // ENU grip primitiflerini ve preRender listener'ı temizle
@@ -426,11 +431,10 @@ handler.setInputAction(function (click) {
 
 
 // ─── 2. MOUSE_MOVE — Sürükleme İşlemi ──────────────────────────
-// Anti-Jitter: Ray-Plane Intersection tekniği
-//  • Drag başında kameraya dik düzlem kurulur (LEFT_DOWN'da _dragPlane)
-//  • Her harekette kamera ışını bu düzlemi keser → depth buffer YOK
-//  • Kamera döndürülse bile koordinat değişmez → jitter YOK
-//  • Fallback: pickPosition → globe.pick (snap veya düzlem kurulamadıysa)
+// Koordinat bulma sırası (standart araçlarla aynı):
+//  1. snappedCartesian → Snap noktası varsa direkt kullan
+//  2. scene.pickPosition() → Derinlik buffer'ından 3D yüzey (tile + terrain)
+//  Hiçbiri yoksa (boş gökyüzü) → vertex taşınmaz, güvenli
 (function () {
     var _originalMouseMove = handler.getInputAction(Cesium.ScreenSpaceEventType.MOUSE_MOVE);
     var LERP_ALPHA = 0.6;    // 0=çok yumuşak, 1=anlık. 0.6 iyi denge
@@ -578,10 +582,14 @@ document.addEventListener('keydown', function (e) {
         });
         EditManager._gripCols = [];
 
-        // Stabil edit çizgisini temizle
+        // Stabil edit çizgisi ve dolgu temizle
         if (EditManager._editLinePrim) {
             safeRemoveItem(EditManager._editLinePrim);
             EditManager._editLinePrim = null;
+        }
+        if (EditManager._editPolyPrim) {
+            safeRemoveItem(EditManager._editPolyPrim);
+            EditManager._editPolyPrim = null;
         }
 
         // Orijinal entity'leri geri göster

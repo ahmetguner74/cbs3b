@@ -80,6 +80,7 @@ var viewer = new Cesium.Viewer('cesiumContainer', {
 	sceneModePicker: false, baseLayerPicker: false, geocoder: false,
 	homeButton: false,
 	navigationHelpButton: false,
+	preserveDrawingBuffer: true,  // pickPosition() ve snap loupe canvas okuma için zorunlu
 	imageryProvider: isLocalFile ? false : undefined, // file:// → imagery kapalı
 	terrainProvider: new Cesium.EllipsoidTerrainProvider()  // Başlangıçta düz elipsoid
 });
@@ -1084,8 +1085,9 @@ function initSplashProgress(ts) {
 	function tryDismiss() {
 		if (dismissed) return;
 		var elapsed = Date.now() - startTime;
-		// Tüm 3 koşul: model hazır + fontlar hazır + kamera uçuşu bitti
-		if (modelReady && fontsReady && zoomReady && elapsed >= MIN_SHOW) dismiss();
+		// Tüm koşullar: model + fontlar + kamera + ölçümler + importlar
+		var storageOK = window._splashMeasuresReady && window._splashImportsReady;
+		if (modelReady && fontsReady && zoomReady && storageOK && elapsed >= MIN_SHOW) dismiss();
 	}
 
 	// ─── Site tam hazırlık kontrolü (fontlar + ikonlar + CSS) ───
@@ -1179,6 +1181,16 @@ function initSplashProgress(ts) {
 	}).catch(function () {
 		// zoomTo başarısız olursa bile devam et
 		zoomReady = true;
+		tryDismiss();
+	});
+
+	// ─── Storage yüklenince tekrar kontrol et ───
+	document.addEventListener('splashStorageReady', function () {
+		var msg = (!window._splashImportsReady)
+			? 'Referanslar yükleniyor...'
+			: (window.AppMessages.SPLASH_LOAD_MODEL_READY || 'Hazırlanıyor...');
+		if (statusText && !dismissed) statusText.textContent = msg;
+		updateProgress(Math.max(currentPercent, 92));
 		tryDismiss();
 	});
 
@@ -2198,8 +2210,14 @@ function loadFromStorage() {
 			}
 		});
 		renderList();
+		// Splash: ölçümler+gruplar yüklendi
+		window._splashMeasuresReady = true;
+		document.dispatchEvent(new CustomEvent('splashStorageReady'));
 	}).catch(function (e) {
 		console.error("Ölçümler geri yüklenirken hata:", e);
+		// Hata olsa da splash'i takılı bırakma
+		window._splashMeasuresReady = true;
+		document.dispatchEvent(new CustomEvent('splashStorageReady'));
 	});
 }
 
@@ -2269,7 +2287,7 @@ function createStablePolyline(positions, width, material, depthFailColor, isDash
 			appearance: appearance,
 			modelMatrix: enuMatrix, // CPU double-precision ile mutlak pozisyon
 			asynchronous: false,
-			allowPicking: false
+			allowPicking: true   // Çizgiye tıklayınca ölçüm seçilebilsin
 		}));
 		return primitive;
 	} catch (e) {
@@ -2307,7 +2325,7 @@ function createStablePolygon(positions, material) {
 			}),
 			modelMatrix: enuMatrix,
 			asynchronous: false,
-			allowPicking: false
+			allowPicking: true   // Alan dolgusu tıklanınca ölçüm seçilebilsin
 		}));
 		primitive._isPolygonFill = true;
 		return primitive;
@@ -2792,8 +2810,14 @@ function restoreImports() {
 		renderList();
 		viewer.scene.requestRender();
 		console.info('CbsStorage: ' + importRecords.length + ' import grubu geri yüklendi');
+		// Splash: import referansları yüklendi
+		window._splashImportsReady = true;
+		document.dispatchEvent(new CustomEvent('splashStorageReady'));
 	}).catch(function (e) {
 		console.error('Import geri yükleme hatası:', e);
+		// Hata olsa da splash'i takılı bırakma
+		window._splashImportsReady = true;
+		document.dispatchEvent(new CustomEvent('splashStorageReady'));
 	});
 }
 
@@ -4611,29 +4635,37 @@ handler.setInputAction(function (click) {
 
 	// Eğer aktif bir araç yoksa, haritadaki objeleri (ölçümleri) seçme işlemi yap
 	if (!activeTool) {
-		// Edit grip tıklanmışsa seçim/seçimi kaldırma mantığını atla
 		var _pickCheck = viewer.scene.pick(click.position);
-		if (Cesium.defined(_pickCheck) && _pickCheck.id && _pickCheck.id.properties &&
-			_pickCheck.id.properties._editGrip && _pickCheck.id.properties._editGrip.getValue()) {
-			return; // EditManager LEFT_DOWN handler'ı bununla ilgilenecek
-		}
-		var pickedObject = viewer.scene.pick(click.position);
-		if (Cesium.defined(pickedObject) && pickedObject.id) {
-			var entity = pickedObject.id;
-			if (entity.owner) entity = entity.owner; // Label tıklanırsa Point'e yönlendir
 
-			// Ölçümlere ait bir entity ise IDsini bul
+		// ── Edit grip tıklanmışsa seçim mantığını atla ──
+		// Primitive API grip: pickedObject.id._editGrip === true
+		// Entity API grip (eski): pickedObject.id.properties._editGrip
+		if (Cesium.defined(_pickCheck)) {
+			var _gid = _pickCheck.id;
+			if (_gid && (_gid._editGrip ||
+				(_gid.properties && _gid.properties._editGrip && _gid.properties._editGrip.getValue()))) {
+				return; // EditManager LEFT_DOWN handler'ı bununla ilgilenecek
+			}
+		}
+
+		// ── Ölçüm seçimi: Entity API (id) + Primitive API (primitive) ──
+		// addPointLabel → pickedObject.id = PointPrimitiveCollection (m.entities'te)
+		// createStablePolyline/Polygon → pickedObject.primitive = Primitive (m.entities'te)
+		if (Cesium.defined(_pickCheck)) {
+			var _obj = _pickCheck.id || _pickCheck.primitive;
+			if (_obj && _obj.owner) _obj = _obj.owner;
 			var foundMeasurement = measurements.find(function (m) {
-				return m.entities.includes(entity);
+				return m.entities.includes(_obj);
 			});
 			if (foundMeasurement) {
 				highlightMeasurement(foundMeasurement.id);
+				return;
 			}
-		} else {
-			// Boş bir yere tıklandıysa seçimi kaldır
-			if (activeHighlightId !== null) {
-				highlightMeasurement(activeHighlightId); // Zaten seçiliyse null yapar
-			}
+		}
+
+		// Boş yere tıklandıysa seçimi kaldır
+		if (activeHighlightId !== null) {
+			highlightMeasurement(activeHighlightId);
 		}
 		return;
 	}
