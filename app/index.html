@@ -26,8 +26,12 @@
 	<!-- Cesium & App Script Loader -->
 	<script>
 		(function () {
-			var isLocal = (window.location.protocol === 'file:');
-			var cesiumSrc = isLocal ? 'Cesium/Cesium.js' : 'https://cesium.com/downloads/cesiumjs/releases/1.105/Build/Cesium/Cesium.js';
+			// ── CACHE BUSTING: Her yeni deploy'dan önce bu numarayı bir artır ──
+			var VER = '0.9.2.3';
+
+			// Cesium her zaman yerel klasörden yüklenir (CDN bağımlılığını kaldırdık)
+			// Sunucuya deploy ederken app/Cesium/ klasörünün kopyalandığından emin ol!
+			var cesiumSrc = 'Cesium/Cesium.js';
 
 			function loadScript(src, callback) {
 				var script = document.createElement('script');
@@ -41,13 +45,13 @@
 			loadScript(cesiumSrc, function () {
 				if (document.readyState === 'loading') {
 					document.addEventListener('DOMContentLoaded', function () {
-						loadScript('cbs-storage.js', function () {
-							loadScript('main.js', function () { loadScript('edit-manager.js'); });
+						loadScript('cbs-storage.js?v=' + VER, function () {
+							loadScript('main.js?v=' + VER, function () { loadScript('edit-manager.js?v=' + VER); });
 						});
 					});
 				} else {
-					loadScript('cbs-storage.js', function () {
-						loadScript('main.js', function () { loadScript('edit-manager.js'); });
+					loadScript('cbs-storage.js?v=' + VER, function () {
+						loadScript('main.js?v=' + VER, function () { loadScript('edit-manager.js?v=' + VER); });
 					});
 				}
 			});
@@ -56,11 +60,11 @@
 	<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.15.0/proj4.js"></script>
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-	<script src="messages.js"></script>
+	<script src="messages.js?v=0.9.2.3"></script>
 	<!-- GIS Monitoring & Support -->
 	<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-	<script src="monitoring-service.js"></script>
-	<script src="main.js"></script>
+	<script src="monitoring-service.js?v=0.9.2.3"></script>
+	<script src="main.js?v=0.9.2.3"></script>
 	<style>
 		@import url('https://cesium.com/downloads/cesiumjs/releases/1.105/Build/Cesium/Widgets/widgets.css');
 

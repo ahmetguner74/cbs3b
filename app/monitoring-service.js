@@ -205,10 +205,23 @@
         },
 
         startHeartbeat: function () {
-            // Her 20 saniyede bir durum güncellemesi gönder
-            setInterval(() => {
-                this.log('HEARTBEAT');
-            }, 20000);
+            // [FIX-5] Sekme görünmezken heartbeat gönderme — veri kirliliğini ve pil tüketimini önler
+            var self = this;
+            var _hbInterval = null;
+            function _startHb() {
+                if (_hbInterval) return;
+                _hbInterval = setInterval(function () {
+                    self.log('HEARTBEAT');
+                }, 20000);
+            }
+            function _stopHb() {
+                clearInterval(_hbInterval);
+                _hbInterval = null;
+            }
+            _startHb();
+            document.addEventListener('visibilitychange', function () {
+                if (document.hidden) { _stopHb(); } else { _startHb(); }
+            });
         },
 
         getSystemInfoSync: function () {

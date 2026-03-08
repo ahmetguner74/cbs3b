@@ -247,7 +247,7 @@ viewer.scene.canvas.addEventListener('wheel', function (e) {
 		});
 		viewer.scene.canvas.dispatchEvent(slowEvent);
 	}
-}, true); // Capture phase (Cesium'dan önce yakalar)
+}, { capture: true, passive: false }); // Capture phase; passive:false zorunlu (içinde stopPropagation var)
 
 // Kredi bilgisini güvenli yöntemle ekle (deprecated removeDefaultCredit/addDefaultCredit kullanma)
 try {
@@ -1070,6 +1070,11 @@ function initSplashProgress(ts) {
 	function dismiss() {
 		if (dismissed) return;
 		dismissed = true;
+		// [FIX-4] Splash kapanırken font poll timer'ını temizle (DOM kaldırıldıktan sonra çalışmasın)
+		if (typeof _fontPollTimer !== 'undefined' && _fontPollTimer) {
+			clearInterval(_fontPollTimer);
+			_fontPollTimer = null;
+		}
 		updateProgress(100);
 		if (statusText) statusText.textContent = window.AppMessages.SPLASH_LOAD_READY || 'Hazır!';
 		setTimeout(function () {
@@ -1329,22 +1334,36 @@ if (btnPerformance && btnQuality) {
 		if (frameTimes.length > 60) frameTimes.shift();
 	});
 
-	setInterval(function () {
-		if (frameTimes.length < 10 || toastShown) return;
-		var sum = 0;
-		for (var i = 0; i < frameTimes.length; i++) sum += frameTimes[i];
-		avgFPS = Math.round(1000 / (sum / frameTimes.length));
+	// [FIX-3] Sekme görünmezken FPS izlemeyi durdur — mobil pil tüketimini azaltır
+	var _fpsInterval = null;
+	function _startFpsInterval() {
+		if (_fpsInterval) return;
+		_fpsInterval = setInterval(function () {
+			if (frameTimes.length < 10 || toastShown) return;
+			var sum = 0;
+			for (var i = 0; i < frameTimes.length; i++) sum += frameTimes[i];
+			avgFPS = Math.round(1000 / (sum / frameTimes.length));
 
-		if (avgFPS < FPS_THRESHOLD) {
-			if (lowSince === 0) lowSince = Date.now();
-			if (Date.now() - lowSince >= LOW_DURATION) {
-				toastShown = true;
-				showPerfSuggestion();
+			if (avgFPS < FPS_THRESHOLD) {
+				if (lowSince === 0) lowSince = Date.now();
+				if (Date.now() - lowSince >= LOW_DURATION) {
+					toastShown = true;
+					showPerfSuggestion();
+				}
+			} else {
+				lowSince = 0;
 			}
+		}, 1000);
+	}
+	_startFpsInterval();
+	document.addEventListener('visibilitychange', function () {
+		if (document.hidden) {
+			clearInterval(_fpsInterval);
+			_fpsInterval = null;
 		} else {
-			lowSince = 0;
+			_startFpsInterval();
 		}
-	}, 1000);
+	});
 
 	function showPerfSuggestion() {
 		var toast = document.createElement('div');
@@ -2367,6 +2386,8 @@ function safeRemoveItem(item) {
 		// 2) Eğer içeride "label" objesi (bağlı olduğu primitive) varsa onu sil
 		if (item.label) {
 			safeRemoveItem(item.label);
+			// [FIX-6] GC'nin referansı serbest bırakabilmesi için null'la
+			item.label = null;
 		}
 
 		// 3) Collection'ın Kendisini Silme (Jitter Fix v3: Her noktanın kendi koleksiyonu var)
