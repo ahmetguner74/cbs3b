@@ -110,6 +110,40 @@ var CbsStorage = (function () {
     // ─── PUBLIC API ───
 
     /**
+     * Çizilen veya yüklenen her vektör verinin özelliklerini (properties)
+     * resmi standartlara ve veritabanı şemasına uygun hale getirir (Sanitization).
+     * Eski çizimlerde bu alanlar yoksa, hata vermemesi için varsayılan (boş) değerler atar.
+     */
+    function normalizeFeatureProperties(rawData) {
+        var data = rawData || {};
+        // Backward-compat aliases: eski kayıtlarda ref_ada/ref_parsel/ref_cins/tasiyici/kullanim
+        // kullanılmış olabilir; yeni canonical isimler ada_no/parsel_no/cins/tasiyici_sistem/kullanim_amaci
+        var ada_no      = data.ada_no      || data.ref_ada    || data.adano    || "";
+        var parsel_no   = data.parsel_no   || data.ref_parsel || data.parselno || "";
+        var cins        = data.cins        || data.ref_cins   || data.tapucinsaciklama || "";
+        var tasiyici    = data.tasiyici_sistem || data.tasiyici || "";
+        var kullanim    = data.kullanim_amaci  || data.kullanim  || "";
+        return {
+            area_m2:      typeof data.area_m2   === 'number' ? data.area_m2   : null,
+            length_m:     typeof data.length_m  === 'number' ? data.length_m  : null,
+            height_m:     typeof data.height_m  === 'number' ? data.height_m  : null,
+            vertex_count: typeof data.vertex_count === 'number' ? data.vertex_count : 0,
+            // Kadastro (canonical names = UI field names)
+            ada_no:    String(ada_no).trim(),
+            parsel_no: String(parsel_no).trim(),
+            cins:      String(cins).trim(),
+            // Kullanıcı verileri
+            kat:              !isNaN(parseInt(data.kat))         ? parseInt(data.kat)         : null,
+            yapim_yili:       !isNaN(parseInt(data.yapim_yili))  ? parseInt(data.yapim_yili)  : null,
+            cikma_tipi:       data.cikma_tipi      ? String(data.cikma_tipi).trim()      : "",
+            tasiyici_sistem:  tasiyici              ? String(tasiyici).trim()             : "",
+            yapi_durumu:      data.yapi_durumu      ? String(data.yapi_durumu).trim()     : "",
+            kullanim_amaci:   kullanim              ? String(kullanim).trim()             : "",
+            notlar:           data.notlar           ? String(data.notlar).trim()          : ""
+        };
+    }
+
+    /**
      * Tüm verileri kaydet (gruplar + ölçümler + aktif grup)
      * @param {Object} data - { groups, measurements, activeGroupId }
      * @param {Function} serializePoint - Cartesian3 → {lat,lon,height}
@@ -119,7 +153,15 @@ var CbsStorage = (function () {
         var record = {
             key: 'main',
             groups: data.groups.map(function (g) {
-                return { id: g.id, name: g.name, isOpen: g.isOpen, checked: g.checked, color: g.color || '#14B8A6', isReferans: g.isReferans || false };
+                return {
+                    id: g.id,
+                    name: g.name,
+                    isOpen: g.isOpen,
+                    checked: g.checked,
+                    color: g.color || '#14B8A6',
+                    isReferans: g.isReferans || false,
+                    isClipBoxRoot: g.isClipBoxRoot || false
+                };
             }),
             measurements: data.measurements.filter(function (m) { return !m.isImported; }).map(function (m) {
                 return {
@@ -129,7 +171,23 @@ var CbsStorage = (function () {
                     type: m.type,
                     resultText: m.resultText,
                     checked: m.checked,
-                    points: m.points.map(serializePoint)
+                    points: m.points.map(serializePoint),
+                    properties: normalizeFeatureProperties(m.properties)
+                };
+            }),
+            clipBoxes: (data.clipBoxes || []).map(function (clip) {
+                return {
+                    id: clip.id,
+                    groupId: clip.groupId || 0,
+                    name: clip.name,
+                    checked: clip.checked !== false,
+                    center: clip.center ? serializePoint(clip.center) : null,
+                    halfSize: {
+                        x: clip.halfSize && clip.halfSize.x || 15,
+                        y: clip.halfSize && clip.halfSize.y || 15,
+                        z: clip.halfSize && clip.halfSize.z || 15
+                    },
+                    rotationDeg: clip.rotationDeg || 0
                 };
             }),
             activeGroupId: data.activeGroupId
@@ -157,9 +215,17 @@ var CbsStorage = (function () {
             })
             .then(function (record) {
                 if (!record) return null;
+                
+                // Normalizasyon koruması: Her okunan veriyi şemaya uygun hale getir
+                var safeMeasurements = (record.measurements || []).map(function(m) {
+                    m.properties = normalizeFeatureProperties(m.properties);
+                    return m;
+                });
+                
                 return {
                     groups: record.groups || [],
-                    measurements: record.measurements || [],
+                    measurements: safeMeasurements,
+                    clipBoxes: record.clipBoxes || [],
                     activeGroupId: record.activeGroupId !== undefined ? record.activeGroupId : 0
                 };
             });
@@ -276,6 +342,7 @@ var CbsStorage = (function () {
         saveImport: saveImport,
         loadImports: loadImports,
         deleteImport: deleteImport,
+        normalizeFeatureProperties: normalizeFeatureProperties, // Dışa aç
         // Dahili erişim (clear.html ve debug için)
         openDB: openDB,
         backend: 'IndexedDB'

@@ -84,13 +84,11 @@
 	<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.15.0/proj4.js"></script>
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+	<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 	<script src="messages.js?v=0.9.3"></script>
 	<!-- GIS Monitoring & Support -->
 	<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 	<script src="monitoring-service.js?v=0.9.3"></script>
-	<script src="main.js?v=0.9.3"></script>
-	<!-- ── CBS ONBOARDING TOUR CSS — sil: sistemi bozmaz ── -->
-	<link rel="stylesheet" href="tour.css">
 	<style>
 		@import url('https://cesium.com/downloads/cesiumjs/releases/1.105/Build/Cesium/Widgets/widgets.css');
 
@@ -1575,7 +1573,7 @@
 			<div class="clip-mini-body">
 				<div
 					style="font-size:7px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:6px">
-					Boyut (metre) — 5m adım</div>
+					Boyut / Rotasyon — 5 birim adım</div>
 				<div class="clip-mini-row">
 					<span class="clip-mini-label" style="color:#ef4444">X</span>
 					<button class="clip-pm-btn-lg" data-axis="X" data-dir="-1">−</button>
@@ -1597,12 +1595,27 @@
 					<button class="clip-pm-btn-lg" data-axis="Z" data-dir="1">+</button>
 					<span class="clip-mini-val" id="clipMiniZVal">30m</span>
 				</div>
+				<div class="clip-mini-row">
+					<span class="clip-mini-label" style="color:#f59e0b">R</span>
+					<button class="clip-pm-btn-lg" data-axis="R" data-dir="-1">−</button>
+					<input type="range" class="clip-mini-slider" id="clipMiniR" min="-180" max="180" value="0">
+					<button class="clip-pm-btn-lg" data-axis="R" data-dir="1">+</button>
+					<span class="clip-mini-val" id="clipMiniRVal">0°</span>
+				</div>
 				<div style="display:flex;gap:4px;margin-top:6px">
 					<button id="clipMiniReset" class="clip-mini-btn" style="flex:1">
 						<span class="material-symbols-outlined text-[12px]">restart_alt</span> Sıfırla
 					</button>
 					<button id="clipMiniFlyTo" class="clip-mini-btn" style="flex:1">
 						<span class="material-symbols-outlined text-[12px]">flight</span> Odakla
+					</button>
+				</div>
+				<div style="display:flex;gap:4px;margin-top:4px">
+					<button id="clipMiniSave" class="clip-mini-btn" style="flex:1">
+						<span class="material-symbols-outlined text-[12px]">save</span> Kaydet
+					</button>
+					<button id="clipMiniUpdate" class="clip-mini-btn" style="flex:1">
+						<span class="material-symbols-outlined text-[12px]">sync</span> Güncelle
 					</button>
 				</div>
 			</div>
@@ -1796,6 +1809,15 @@
 										class="flex-1 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md text-[10px] font-bold text-slate-300 hover:bg-slate-700 hover:text-white transition-colors flex items-center justify-center gap-1">
 										<span class="material-symbols-outlined text-[14px]">location_on</span>
 										<span>KML</span>
+									</button>
+								</div>
+								<!-- Excel Metadata Raporu -->
+								<div class="flex gap-2 mt-1">
+									<button id="btnExportExcel"
+										class="flex-1 px-2 py-1.5 bg-emerald-900/40 border border-emerald-700/50 rounded-md text-[10px] font-bold text-emerald-300 hover:bg-emerald-800/50 hover:text-emerald-100 transition-colors flex items-center justify-center gap-1"
+										title="Ada/Parsel/Metadata içeren detaylı Excel raporu oluştur">
+										<span class="material-symbols-outlined text-[14px]">table_view</span>
+										<span>Excel Rapor</span>
 									</button>
 								</div>
 							</div>
@@ -3292,8 +3314,6 @@
 	</script>
 	<!-- Dev Panel: localhost/file:// ortamında Ctrl+Shift+D ile açılır, üretimde otomatik gizlenir -->
 	<script src="dev-panel.js"></script>
-	<!-- ── CBS ONBOARDING TOUR — sil: sistemi bozmaz ── -->
-	<script src="tour.js"></script>
 
 	<!-- ─── ARAÇLAR TOGGLE DİKEY ETİKET ─── -->
 	<script>
@@ -3330,6 +3350,118 @@
 			observer.observe(toolPanel, { attributes: true, attributeFilter: ['style'] });
 		})();
 	</script>
+	<!-- ── İNFO (PROPERTIES) PANELİ ── -->
+	<div id="infoPanel" class="fixed top-24 right-4 w-72 bg-[#0a0c10]/95 backdrop-blur-md border border-slate-700/50 rounded-xl shadow-2xl z-[60] flex flex-col overflow-hidden transition-all duration-300 transform translate-x-[120%] opacity-0 pointer-events-none">
+		<!-- Header -->
+		<div class="flex items-center justify-between px-3 py-2 border-b border-slate-700/50 bg-slate-800/40 cursor-grab active:cursor-grabbing" id="infoPanelHeader">
+			<div class="flex items-center gap-2">
+				<span class="material-symbols-outlined text-cyan-400 text-[18px]">info</span>
+				<span class="text-sm font-semibold text-slate-200 tracking-wide">Özellikler</span>
+			</div>
+			<button id="btnCloseInfo" class="text-slate-400 hover:text-white transition-colors p-1 rounded-md hover:bg-slate-700/50">
+				<span class="material-symbols-outlined text-[18px]">close</span>
+			</button>
+		</div>
+		
+		<!-- İçerik -->
+		<div class="p-3 text-[13px] text-slate-300 space-y-3 overflow-y-auto max-h-[calc(100vh-160px)] custom-scrollbar">
+			<!-- Özet -->
+			<div id="infoSummaryBlock" class="text-cyan-300 font-mono text-xs bg-slate-900/50 p-2 rounded border border-slate-700/50 mb-2">
+				Seçim bekleniyor...
+			</div>
+			
+			<!-- Kadastro Seçimi -->
+			<div class="space-y-2 relative">
+				<div class="flex items-center justify-between">
+					<span class="font-semibold text-slate-400 text-xs uppercase tracking-wider">Kadastro Verisi</span>
+					<button id="btnPickReference" class="flex items-center gap-1 bg-indigo-500/20 hover:bg-indigo-500/40 text-indigo-300 px-2 py-1 rounded border border-indigo-500/30 transition-colors text-[11px] font-medium" title="Haritadan Ada/Parsel Seç">
+						<span class="material-symbols-outlined text-[14px]">ads_click</span>
+						Ekranda Seç
+					</button>
+				</div>
+				<div class="grid grid-cols-2 gap-2">
+					<div>
+						<label class="block text-[10px] text-slate-500 mb-0.5">Ada</label>
+						<input type="text" id="infoAda" readonly class="w-full bg-slate-900/60 border border-slate-700/50 rounded px-2 py-1 text-slate-300 font-mono focus:outline-none">
+					</div>
+					<div>
+						<label class="block text-[10px] text-slate-500 mb-0.5">Parsel</label>
+						<input type="text" id="infoParsel" readonly class="w-full bg-slate-900/60 border border-slate-700/50 rounded px-2 py-1 text-slate-300 font-mono focus:outline-none">
+					</div>
+				</div>
+				<div>
+					<label class="block text-[10px] text-slate-500 mb-0.5">Tip / Cins</label>
+					<input type="text" id="infoCins" readonly class="w-full bg-slate-900/60 border border-slate-700/50 rounded px-2 py-1 text-slate-300 text-xs focus:outline-none">
+				</div>
+			</div>
+			
+			<hr class="border-slate-700/50">
+			
+			<!-- Kullanıcı Verisi -->
+			<div class="space-y-2">
+				<span class="font-semibold text-slate-400 text-xs uppercase tracking-wider block mb-1">Kullanıcı Bilgileri</span>
+				<div class="grid grid-cols-2 gap-2">
+					<div>
+						<label class="block text-[10px] text-slate-500 mb-0.5">Kat</label>
+						<input type="text" id="infoKat" class="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none transition-all">
+					</div>
+					<div>
+						<label class="block text-[10px] text-slate-500 mb-0.5">Yapım Yılı</label>
+						<input type="text" id="infoYil" class="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none transition-all">
+					</div>
+				</div>
+				<div>
+					<label class="block text-[10px] text-slate-500 mb-0.5">Çıkma Tipi</label>
+					<input type="text" id="infoCikma" class="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none transition-all" placeholder="Örn: Kapalı Çıkma">
+				</div>
+				<div>
+					<label class="block text-[10px] text-slate-500 mb-0.5">Taşıyıcı Sistem</label>
+					<select id="infoTasiyici" class="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none">
+						<option value="">Seçiniz...</option>
+						<option value="BA Karkas">BA Karkas</option>
+						<option value="Çelik">Çelik</option>
+						<option value="Yığma">Yığma</option>
+						<option value="Ahşap">Ahşap</option>
+						<option value="Diğer">Diğer</option>
+					</select>
+				</div>
+				<div>
+					<label class="block text-[10px] text-slate-500 mb-0.5">Yapı Durumu</label>
+					<select id="infoDurum" class="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none">
+						<option value="">Seçiniz...</option>
+						<option value="İyi">İyi</option>
+						<option value="Orta">Orta</option>
+						<option value="Kötü">Kötü</option>
+						<option value="Metruk">Metruk</option>
+					</select>
+				</div>
+				<div>
+					<label class="block text-[10px] text-slate-500 mb-0.5">Kullanım Amacı</label>
+					<select id="infoKullanim" class="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none">
+						<option value="">Seçiniz...</option>
+						<option value="Konut">Konut</option>
+						<option value="Ticaret">Ticaret</option>
+						<option value="Sanayi">Sanayi</option>
+						<option value="Eğitim">Eğitim</option>
+						<option value="Sağlık">Sağlık</option>
+						<option value="Diğer">Diğer</option>
+					</select>
+				</div>
+				<div>
+					<label class="block text-[10px] text-slate-500 mb-0.5">Notlar</label>
+					<textarea id="infoNotlar" rows="2" class="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none transition-all resize-none"></textarea>
+				</div>
+			</div>
+			
+			<!-- Buton Alanı -->
+			<div class="pt-2 flex justify-end">
+				<button id="btnSaveInfo" class="flex items-center gap-1 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white px-3 py-1.5 rounded shadow-lg shadow-emerald-500/20 font-medium transition-all text-xs">
+					<span class="material-symbols-outlined text-[16px]">save</span>
+					Kaydet
+				</button>
+			</div>
+		</div>
+	</div>
 </body>
 
 </html>

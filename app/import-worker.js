@@ -4,20 +4,47 @@
 // ═══════════════════════════════════════════════════════════════
 
 // proj4 kütüphanesini worker'a yükle
-try {
-    importScripts('https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.15.0/proj4.js');
-    proj4.defs("EPSG:5254", "+proj=tmerc +lat_0=0 +lon_0=30 +k=1 +x_0=500000 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs");
-} catch (e) {
-    // proj4 yüklenemezse fallback
-    self.proj4Available = false;
+var proj4Available = false;
+
+function ensureTm30Def() {
+    if (typeof proj4 === 'undefined') return false;
+    if (!proj4.defs('EPSG:5254')) {
+        proj4.defs("EPSG:5254", "+proj=tmerc +lat_0=0 +lon_0=30 +k=1 +x_0=500000 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs");
+    }
+    return true;
 }
 
+function tryLoadProj4(url) {
+    try {
+        importScripts(url);
+        if (ensureTm30Def()) {
+            proj4Available = true;
+            return true;
+        }
+    } catch (e) { }
+    return false;
+}
+
+if (!tryLoadProj4('https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.15.0/proj4.js')) {
+    tryLoadProj4('https://cdn.jsdelivr.net/npm/proj4@2.15.0/dist/proj4.js');
+}
+
+self.proj4Available = proj4Available;
+
 function tm30ToWgs84(x, y) {
-    if (typeof proj4 !== 'undefined') {
+    if (proj4Available && typeof proj4 !== 'undefined') {
         var wgsCoords = proj4("EPSG:5254", "EPSG:4326", [x, y]);
         return [wgsCoords[1], wgsCoords[0]];
     }
     return [y, x];
+}
+
+function isFiniteNumber(v) {
+    return typeof v === 'number' && isFinite(v);
+}
+
+function isValidPosition(c) {
+    return Array.isArray(c) && c.length >= 2 && isFiniteNumber(c[0]) && isFiniteNumber(c[1]);
 }
 
 // Akıllı İsimlendirme
@@ -33,9 +60,12 @@ function smartName(props, geomType, idx) {
 
 // Koordinat Dönüştürme
 function convertCoord(c, effectiveCrs) {
+    if (!isValidPosition(c)) return null;
     var lon, lat, z = c[2] || 0;
     if (effectiveCrs === '5254') { var wgs = tm30ToWgs84(c[0], c[1]); lat = wgs[0]; lon = wgs[1]; }
     else { lon = c[0]; lat = c[1]; }
+    if (!isFiniteNumber(lat) || !isFiniteNumber(lon)) return null;
+    if (!isFiniteNumber(z)) z = 0;
     return { lon: lon, lat: lat, z: z };
 }
 
@@ -72,6 +102,11 @@ self.onmessage = function (e) {
     var effectiveCrs = fileCrs || userCrs;
     var crsInfo = fileCrs ? ' (CRS otomatik algılandı: EPSG:' + fileCrs + ')' : '';
 
+    if (effectiveCrs === '5254' && !proj4Available) {
+        self.postMessage({ error: 'EPSG:5254 dönüşümü için proj4 yüklenemedi. Lütfen internet bağlantınızı kontrol edip tekrar deneyin.' });
+        return;
+    }
+
     // 3. Feature'ları İşle
     var feats = data.features || (data.type === 'Feature' ? [data] : []);
     if (feats.length === 0) {
@@ -81,47 +116,98 @@ self.onmessage = function (e) {
 
     var parsedFeats = [];
     var globalIdx = 0;
+    var skippedGeometryCount = 0;
 
     feats.forEach(function (f) {
         if (!f.geometry) return;
         var props = f.properties || {};
 
         function processGeometry(geom, propOverride) {
+            if (!geom || !geom.type) {
+                skippedGeometryCount++;
+                return;
+            }
+
             var type = geom.type;
             var coords = geom.coordinates;
             var pr = propOverride || props;
 
             if (type === 'Point') {
-                var converted = [convertCoord(coords, effectiveCrs)];
-                parsedFeats.push({ name: smartName(pr, 'Nokta', ++globalIdx), type: 'coord', coords: converted });
+                var pointConverted = convertCoord(coords, effectiveCrs);
+                if (pointConverted) {
+                    parsedFeats.push({ name: smartName(pr, 'Nokta', ++globalIdx), type: 'coord', coords: [pointConverted] });
+                } else {
+                    skippedGeometryCount++;
+                }
             } else if (type === 'LineString') {
-                var converted = coords.map(function (c) { return convertCoord(c, effectiveCrs); });
-                if (converted.length > 0) parsedFeats.push({ name: smartName(pr, 'Çizgi', ++globalIdx), type: 'line', coords: converted });
+                if (!Array.isArray(coords)) {
+                    skippedGeometryCount++;
+                    return;
+                }
+                var lineConverted = coords.map(function (c) { return convertCoord(c, effectiveCrs); }).filter(Boolean);
+                if (lineConverted.length > 0) {
+                    parsedFeats.push({ name: smartName(pr, 'Çizgi', ++globalIdx), type: 'line', coords: lineConverted });
+                } else {
+                    skippedGeometryCount++;
+                }
             } else if (type === 'Polygon') {
-                var converted = removeClosingPoint(coords[0].map(function (c) { return convertCoord(c, effectiveCrs); }));
-                if (converted.length > 0) parsedFeats.push({ name: smartName(pr, 'Alan', ++globalIdx), type: 'polygon', coords: converted });
+                if (!Array.isArray(coords) || !Array.isArray(coords[0])) {
+                    skippedGeometryCount++;
+                    return;
+                }
+                var polyConverted = removeClosingPoint(coords[0].map(function (c) { return convertCoord(c, effectiveCrs); }).filter(Boolean));
+                if (polyConverted.length > 0) {
+                    parsedFeats.push({ name: smartName(pr, 'Alan', ++globalIdx), type: 'polygon', coords: polyConverted });
+                } else {
+                    skippedGeometryCount++;
+                }
             } else if (type === 'MultiPoint') {
+                if (!Array.isArray(coords)) {
+                    skippedGeometryCount++;
+                    return;
+                }
                 coords.forEach(function (pt) { processGeometry({ type: 'Point', coordinates: pt }, pr); });
             } else if (type === 'MultiLineString') {
+                if (!Array.isArray(coords)) {
+                    skippedGeometryCount++;
+                    return;
+                }
                 coords.forEach(function (ls) { processGeometry({ type: 'LineString', coordinates: ls }, pr); });
             } else if (type === 'MultiPolygon') {
+                if (!Array.isArray(coords)) {
+                    skippedGeometryCount++;
+                    return;
+                }
                 coords.forEach(function (poly) { processGeometry({ type: 'Polygon', coordinates: poly }, pr); });
             } else if (type === 'GeometryCollection') {
-                (geom.geometries || []).forEach(function (g) { processGeometry(g, pr); });
+                if (!Array.isArray(geom.geometries)) {
+                    skippedGeometryCount++;
+                    return;
+                }
+                geom.geometries.forEach(function (g) { processGeometry(g, pr); });
+            } else {
+                skippedGeometryCount++;
             }
         }
         processGeometry(f.geometry);
 
         // Her 500 feature'da progress bildir
-        if (parsedFeats.length % 500 === 0) {
+        if (parsedFeats.length > 0 && parsedFeats.length % 500 === 0) {
             self.postMessage({ progress: parsedFeats.length, total: feats.length });
         }
     });
+
+    if (parsedFeats.length === 0) {
+        self.postMessage({ error: 'GeoJSON içindeki geometri verileri geçersiz veya desteklenmiyor.' });
+        return;
+    }
 
     // 4. Sonucu gönder
     self.postMessage({
         features: parsedFeats,
         crsInfo: crsInfo,
-        totalRaw: feats.length
+        totalRaw: feats.length,
+        skipped: skippedGeometryCount,
+        proj4Available: proj4Available
     });
 };

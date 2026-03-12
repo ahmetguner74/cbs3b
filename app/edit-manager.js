@@ -73,7 +73,7 @@ var EditManager = {
         }
         this._gripCols.forEach(function (g) {
             if (viewer.scene.primitives.contains(g.col)) {
-                viewer.scene.primitives.remove(g.col);
+                safeRemoveItem(g.col);
             }
         });
         this._gripCols = [];
@@ -320,7 +320,7 @@ var EditManager = {
         }
         this._gripCols.forEach(function (g) {
             if (viewer.scene.primitives.contains(g.col)) {
-                viewer.scene.primitives.remove(g.col);
+                safeRemoveItem(g.col);
             }
         });
         this._gripCols = [];
@@ -625,7 +625,7 @@ document.addEventListener('keydown', function (e) {
         }
         EditManager._gripCols.forEach(function (g) {
             if (viewer.scene.primitives.contains(g.col)) {
-                viewer.scene.primitives.remove(g.col);
+                safeRemoveItem(g.col);
             }
         });
         EditManager._gripCols = [];
