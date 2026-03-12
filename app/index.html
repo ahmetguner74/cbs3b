@@ -54,9 +54,16 @@
 			// ── CACHE BUSTING: Her yeni deploy'dan önce bu numarayı bir artır ──
 			var VER = '0.9.3';
 
-			// Cesium her zaman yerel klasörden yüklenir (CDN bağımlılığını kaldırdık)
-			// Sunucuya deploy ederken app/Cesium/ klasörünün kopyalandığından emin ol!
+			// Cesium: yerelde varsa yerel, yoksa CDN'den yükle
 			var cesiumSrc = 'Cesium/Cesium.js';
+			try {
+				var xhr = new XMLHttpRequest();
+				xhr.open('HEAD', cesiumSrc, false);
+				xhr.send();
+				if (xhr.status === 404) cesiumSrc = 'https://cesium.com/downloads/cesiumjs/releases/1.105/Build/Cesium/Cesium.js';
+			} catch(e) {
+				cesiumSrc = 'https://cesium.com/downloads/cesiumjs/releases/1.105/Build/Cesium/Cesium.js';
+			}
 
 			function loadScript(src, callback) {
 				var script = document.createElement('script');
@@ -71,12 +78,24 @@
 				if (document.readyState === 'loading') {
 					document.addEventListener('DOMContentLoaded', function () {
 						loadScript('cbs-storage.js?v=' + VER, function () {
-							loadScript('main.js?v=' + VER, function () { loadScript('edit-manager.js?v=' + VER); });
+							loadScript('main.js?v=' + VER, function () {
+								loadScript('edit-manager.js?v=' + VER, function () {
+									if (window.ENABLE_VOLUME_HOOK !== false) {
+										loadScript('volume-manager.js?v=' + VER);
+									}
+								});
+							});
 						});
 					});
 				} else {
 					loadScript('cbs-storage.js?v=' + VER, function () {
-						loadScript('main.js?v=' + VER, function () { loadScript('edit-manager.js?v=' + VER); });
+						loadScript('main.js?v=' + VER, function () {
+							loadScript('edit-manager.js?v=' + VER, function () {
+								if (window.ENABLE_VOLUME_HOOK !== false) {
+									loadScript('volume-manager.js?v=' + VER);
+								}
+							});
+						});
 					});
 				}
 			});
@@ -86,6 +105,8 @@
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.15.0/proj4.js"></script>
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 	<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
 	<script src="config.js?v=0.9.3"></script>
 	<script src="messages.js?v=0.9.3"></script>
 	<!-- GIS Monitoring & Support -->
@@ -1420,12 +1441,22 @@
 									<span class="text-xl font-normal leading-none">H</span>
 								</div>
 							</button>
+							<button id="btnVolume"
+								class="tool-btn w-10 h-10 flex items-center justify-center rounded bg-transparent hover:bg-slate-800 text-slate-400 border border-transparent transition-colors"
+								title="Hacim Hesabi (Secili Alan)">
+								<span class="material-symbols-outlined text-xl">view_in_ar</span>
+							</button>
 							<div class="h-[1px] w-full bg-border-subtle"></div>
 							<!-- ═══ CLIPBOX BUTONU ═══ -->
 							<button id="btnClipBox"
 								class="tool-btn w-10 h-10 flex items-center justify-center rounded bg-transparent hover:bg-slate-800 text-slate-400 border border-transparent transition-colors"
 								title="Kırpma Kutusu (ClipBox)">
 								<span class="material-symbols-outlined text-xl">content_cut</span>
+							</button>
+							<button id="btnSingleSlice"
+								class="tool-btn w-10 h-10 flex items-center justify-center rounded bg-transparent hover:bg-slate-800 text-slate-400 border border-transparent transition-colors"
+								title="Tek Düzlem Kesit">
+								<span class="material-symbols-outlined text-xl">splitscreen_top</span>
 							</button>
 							<div class="h-[1px] w-full bg-border-subtle"></div>
 							<!-- ═══ BİLGİ MODU BUTONU ═══ -->
@@ -1504,12 +1535,53 @@
 				pointer-events: auto;
 			}
 
+			#sliceMiniPanel {
+				position: fixed;
+				bottom: 74px;
+				right: 18px;
+				z-index: 801;
+				width: min(320px, calc(100vw - 28px));
+				background: linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(11, 15, 25, 0.94));
+				backdrop-filter: blur(14px);
+				-webkit-backdrop-filter: blur(14px);
+				border: 1px solid rgba(255, 255, 255, 0.08);
+				border-radius: 16px;
+				box-shadow: 0 18px 40px var(--shadow);
+				padding: 14px;
+				opacity: 0;
+				visibility: hidden;
+				transform: translateY(10px);
+				transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+				pointer-events: none;
+			}
+
+			html.light #sliceMiniPanel {
+				background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(241, 245, 249, 0.98));
+				border-color: rgba(148, 163, 184, 0.25);
+			}
+
+			#sliceMiniPanel.show {
+				opacity: 1;
+				visibility: visible;
+				transform: translateY(0);
+				pointer-events: auto;
+			}
+
 			#clipMiniPanel.minimized {
 				width: auto;
 				min-width: 240px;
 			}
 
+			#sliceMiniPanel.minimized {
+				width: auto;
+				min-width: 240px;
+			}
+
 			#clipMiniPanel.minimized .clip-mini-body {
+				display: none;
+			}
+
+			#sliceMiniPanel.minimized .slice-mini-body {
 				display: none;
 			}
 
@@ -1607,6 +1679,39 @@
 				font-size: 9px;
 				line-height: 1.35;
 				color: var(--text-muted);
+			}
+
+			.clip-mini-mode {
+				display: grid;
+				grid-template-columns: repeat(2, minmax(0, 1fr));
+				gap: 6px;
+				margin-bottom: 2px;
+			}
+
+			.clip-mini-mode-btn {
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				padding: 6px 8px;
+				border-radius: 10px;
+				border: 1px solid var(--border);
+				background: var(--bg-elevated);
+				color: var(--text-secondary);
+				font-size: 10px;
+				font-weight: 700;
+				cursor: pointer;
+				transition: all 0.15s ease;
+			}
+
+			.clip-mini-mode-btn:hover {
+				background: var(--bg-hover);
+				color: var(--text-primary);
+			}
+
+			.clip-mini-mode-btn.active {
+				background: rgba(6, 182, 212, 0.16);
+				border-color: rgba(6, 182, 212, 0.45);
+				color: #67e8f9;
 			}
 
 			.clip-mini-body {
@@ -1827,6 +1932,52 @@
 					</button>
 					<button id="clipMiniUpdate" type="button" class="clip-mini-btn" title="Seçili ClipBox kaydını güncelle">
 						<span class="material-symbols-outlined text-[12px]">sync</span> Seçiliyi Güncelle
+					</button>
+				</div>
+			</div>
+		</div>
+
+		<div id="sliceMiniPanel">
+			<div class="clip-mini-head">
+				<div class="clip-mini-title-wrap">
+					<div class="clip-mini-icon" style="background: rgba(250, 204, 21, 0.15); color:#fde047;">
+						<span class="material-symbols-outlined text-[16px]">splitscreen_top</span>
+					</div>
+					<div>
+						<span class="clip-mini-title">Tek Düzlem Kesit</span>
+						<span id="sliceMiniState" class="clip-mini-state" data-tone="warn">Haritada merkez seçin</span>
+					</div>
+				</div>
+				<div style="display:flex;gap:6px">
+					<button id="sliceMiniMinimize" type="button" class="clip-mini-btn clip-mini-icon-btn" title="Küçült / Büyüt">
+						<span class="material-symbols-outlined text-[14px]">remove</span>
+					</button>
+					<button id="sliceMiniClose" type="button" class="clip-mini-btn clip-mini-icon-btn danger" title="Kapat">
+						<span class="material-symbols-outlined text-[14px]">close</span>
+					</button>
+				</div>
+			</div>
+			<div class="clip-mini-body slice-mini-body">
+				<div class="clip-mini-meta">
+					<div class="clip-mini-meta-line"><strong>Tek düzlem kesit aktif.</strong> Tıklanan merkezden yatay kesit alınır.</div>
+					<div class="clip-mini-hint">H değeri + ise düzlem yukarı, - ise aşağı kayar.</div>
+				</div>
+				<div class="clip-mini-row" title="Yatay kesit düzleminin kot ofseti">
+					<span class="clip-mini-label" style="color:#facc15">H</span>
+					<button type="button" class="clip-pm-btn-lg" id="sliceMiniMinus">−</button>
+					<input type="range" class="clip-mini-slider" id="sliceMiniOffset" min="-120" max="120" step="1" value="0">
+					<button type="button" class="clip-pm-btn-lg" id="sliceMiniPlus">+</button>
+					<span class="clip-mini-val" id="sliceMiniOffsetVal">0m</span>
+				</div>
+				<div class="clip-mini-actions tight">
+					<button id="sliceMiniReset" type="button" class="clip-mini-btn">
+						<span class="material-symbols-outlined text-[12px]">restart_alt</span> Sıfırla
+					</button>
+					<button id="sliceMiniFlyTo" type="button" class="clip-mini-btn">
+						<span class="material-symbols-outlined text-[12px]">flight</span> Odakla
+					</button>
+					<button id="sliceMiniReposition" type="button" class="clip-mini-btn" title="Mevcut kesit kotunu koruyup merkezi yeniden seç">
+						<span class="material-symbols-outlined text-[12px]">open_with</span> Taşı
 					</button>
 				</div>
 			</div>

@@ -52,7 +52,6 @@ _backup_editions/
 # ── Debug / Diff ──
 app/analyze.js
 app/audit_results.txt
-app/config.js
 recent_changes.diff
 recent_changes_utf8.diff
 recent_main_changes.diff
