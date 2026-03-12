@@ -21,6 +21,10 @@ var VER = '0.9.3';  // ← her deploy'da bu sayıyı bir artır → 0.9.4
 
 **Sunucuya atmadan önce kendi bilgisayarında:**
 
+- [ ] Deploy paketi gerekiyorsa `npm run build:deploy` çalıştır; varsayılan olarak `pointcloud/` ve `Scene/Data/` deploy paketine alınmaz
+- [ ] `dist/` içinde `app/`, `Scene/` (Data hariç), `import/`, `logo/` klasörlerini doğrula
+- [ ] Büyük veri de gerekiyorsa sadece o durumda `npm run build:deploy:full` kullan
+
 - [ ] F12 → Console → kırmızı hata yok
 - [ ] Splash ekranı açıldı ve 10sn içinde kapandı
 - [ ] Mesafe / alan / yükseklik / koordinat araçları çalışıyor
@@ -33,7 +37,8 @@ var VER = '0.9.3';  // ← her deploy'da bu sayıyı bir artır → 0.9.4
 
 ## ✅ ADIM 3 — Güvenlik Kontrolü
 
-- [ ] `monitoring-service.js` içindeki `SUPABASE_URL` ve `SUPABASE_KEY` doğru ve eksiksiz
+- [ ] `app/config.js` mevcut, güncel ve `app/config.example.js` ile aynı anahtarları içeriyor
+- [ ] `app/config.js` içindeki `supabaseUrl` ve `supabaseAnonKey` doğru ve eksiksiz
 - [ ] Supabase Dashboard → `telemetry_logs` tablosunda **RLS aktif** (tablo yanında kilit ikonu)
 - [ ] Kod içinde hassas bilgi içeren `console.log(...)` satırı bırakılmadı
 

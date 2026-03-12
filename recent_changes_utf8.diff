@@ -1,0 +1,613 @@
+﻿diff --git a/app/edit-manager.js b/app/edit-manager.js
+index 037cf10..7b77965 100644
+--- a/app/edit-manager.js
++++ b/app/edit-manager.js
+@@ -366,296 +366,265 @@ var EditManager = {
+     }
+ };
+ 
+-// ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+-// FARE ETK─░LE┼Ş─░MLER─░ ÔÇö handler'a yeni action'lar ekleniyor
+-// ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+ 
+-// Module-scope drag state
+-var _dragSmooth = null;    // Lerp i├ğin ├Ânceki d├╝zle┼ştirilmi┼ş pozisyon (s├╝r├╝klenen vertex)
+-var _dragSmoothMid = null; // pMid i├ğin ayr─▒ lerp ge├ğmi┼şi (height ├Âl├ğ├╝m├╝)
+-
+-// ÔöÇÔöÇÔöÇ Scratch nesnesi: sadece midpoint ara hesab─▒ i├ğin g├╝venli ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+-// modelMatrix i├ğin scratch KULLANILMAZ ÔÇö CesiumJS referans─▒ kopyalamadan saklar;
+-// t├╝m grip'ler ayn─▒ Matrix4'├╝ g├Âsterir ÔåÆ yanl─▒┼ş konumlar.
+-var _scratchMidpoint = new Cesium.Cartesian3();
+-
+-// ÔöÇÔöÇÔöÇ S├╝r├╝kleme ├Ânizleme entity ÔÇö bir kez olu┼şturulur, her drag'de yeniden kullan─▒l─▒r ÔöÇÔöÇ
+-// CallbackProperty ÔåÆ editPoints'─▒ canl─▒ okur; s├╝r├╝kleme s─▒ras─▒nda s─▒f─▒r GPU rebuild.
+-// Kar┼ş─▒la┼şt─▒rma: _rebuildEditLine = 60├ù/sn GPU upload/destroy ÔåÆ bu = 0.
+-var _dragPreviewEntity = drawLayer.entities.add({
+-    show: false,
+-    polyline: {
+-        positions: new Cesium.CallbackProperty(function () {
+-            var pts = EditManager.editPoints;
+-            if (!pts || pts.length < 2) return [];
+-            var mType = EditManager.activeMeasure ? EditManager.activeMeasure.type : null;
+-            if (mType === 'polygon' && pts.length > 2) return pts.concat([pts[0]]);
+-            return pts.slice(); // line ve height: noktalar s─▒rayla
+-        }, false),
+-        width: 3,
+-        material: new Cesium.ColorMaterialProperty(Cesium.Color.CYAN.withAlpha(0.8)),
+-        clampToGround: false
+-    }
+-});
+-
+-// ÔöÇÔöÇÔöÇ Yard─▒mc─▒: Picked objeyi edit grip olarak ├ğ├Âz ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+-// Entity API (PropertyBag) ve Primitive API (d├╝z obje) her ikisini destekler.
+-function _resolveGrip(pickedObject) {
+-    if (!Cesium.defined(pickedObject)) return null;
+-    // ÔöÇÔöÇ Primitive API pick (ENU PointPrimitiveCollection) ÔöÇÔöÇ
+-    // scene.pick ÔåÆ {id: point.id, primitive: thePoint}
+-    var rawId = pickedObject.id;
+-    if (rawId && rawId._editGrip) {
+-        return {
+-            isVertex: !!rawId._isVertex,
+-            isMidpoint: !!rawId._isMidpoint,
+-            index: rawId._index !== undefined ? rawId._index : -1,
+-            insertAfterIndex: rawId._insertAfterIndex !== undefined ? rawId._insertAfterIndex : -1
+-        };
+-    }
+-    // ÔöÇÔöÇ Entity API pick (PropertyBag ÔÇö eski mod, kullan─▒lm─▒yor ama korunuyor) ÔöÇÔöÇ
+-    if (rawId && rawId.properties) {
+-        var props = rawId.properties;
+-        if (!props._editGrip || !props._editGrip.getValue()) return null;
+-        return {
+-            isVertex: !!(props._isVertex && props._isVertex.getValue()),
+-            isMidpoint: !!(props._isMidpoint && props._isMidpoint.getValue()),
+-            index: props._index ? props._index.getValue() : -1,
+-            insertAfterIndex: props._insertAfterIndex ? props._insertAfterIndex.getValue() : -1
+-        };
+-    }
+-    return null;
+-}
+-
+-// ÔöÇÔöÇÔöÇ 1. LEFT_DOWN ÔÇö S├╝r├╝kleme Ba┼şlang─▒c─▒ ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+-handler.setInputAction(function (click) {
+-    // ├çizim modundayken edit yap─▒lmaz
+-    if (activeTool) return;
+-    // Edit modu aktif de─şilse ├ğ─▒k
+-    if (!EditManager.activeMeasure) return;
+-
+-    var pickedObject = viewer.scene.pick(click.position);
+-    var grip = _resolveGrip(pickedObject);
+-    if (!grip) return;
+-
+-    var startDrag = function (index) {
+-        EditManager.draggedIndex = index;
+-        EditManager.isDragging = true;
+-        _dragSmooth = null;
+-        _dragSmoothMid = null;
+-        viewer.scene.screenSpaceCameraController.enableInputs = false;
+-        // Sabit Primitive'i gizle ÔåÆ drag boyunca CallbackProperty entity g├Âsterir (0 GPU rebuild)
+-        if (EditManager._editLinePrim) EditManager._editLinePrim.show = false;
+-        if (EditManager._editPolyPrim) EditManager._editPolyPrim.show = false;
+-        _dragPreviewEntity.show = true;
+-        viewer.scene.requestRender();
+-    };
+-
+-    if (grip.isVertex) {
+-        startDrag(grip.index);
+-
+-    } else if (grip.isMidpoint) {
+-        var insertIdx = grip.insertAfterIndex + 1;
+-        var segI = grip.insertAfterIndex;
+-        var ePts = EditManager.editPoints;
+-        // Midpoint pozisyonunu editPoints'dan hesapla (Primitive API'de .position.getValue() yok)
+-        var newPoint = Cesium.Cartesian3.midpoint(
+-            ePts[segI],
+-            ePts[(segI + 1) % ePts.length],
+-            new Cesium.Cartesian3()
+-        );
+-        ePts.splice(insertIdx, 0, newPoint);
+-        EditManager.drawEditGrips();
+-        startDrag(insertIdx);
++// ÔöÇÔöÇÔöÇ EditManager Ba┼şlatma Y├Ântemi ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
++// Bu metod, handler ve drawLayer gibi ba─ş─▒ml─▒l─▒klar─▒n haz─▒r oldu─şu
++// andan itibaren ├ğa─şr─▒lmal─▒d─▒r. main.js'de handler tan─▒mland─▒ktan hemen
++// sonra EditManager.init() ├ğa─şr─▒l─▒r.
++EditManager.init = function () {
++    if (EditManager._initialized) return; // ├çift ├ğa─şr─▒m─▒ ├Ânle
++    EditManager._initialized = true;
++
++    // ÔöÇÔöÇÔöÇ Scratch nesnesi: midpoint ara hesab─▒ ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
++    var _scratchMidpoint = new Cesium.Cartesian3();
++
++    // ÔöÇÔöÇÔöÇ Module-scope drag state ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
++    var _dragSmooth = null;
++    var _dragSmoothMid = null;
++
++    // ÔöÇÔöÇÔöÇ S├╝r├╝kleme ├Ânizleme entity (bir kez olu┼şturulur, her drag'de reuse) ÔöÇ
++    // CallbackProperty ÔåÆ editPoints'─▒ canl─▒ okur; s├╝r├╝kleme s─▒ras─▒nda s─▒f─▒r GPU rebuild.
++    var _dragPreviewEntity = drawLayer.entities.add({
++        show: false,
++        polyline: {
++            positions: new Cesium.CallbackProperty(function () {
++                var pts = EditManager.editPoints;
++                if (!pts || pts.length < 2) return [];
++                var mType = EditManager.activeMeasure ? EditManager.activeMeasure.type : null;
++                if (mType === 'polygon' && pts.length > 2) return pts.concat([pts[0]]);
++                return pts.slice();
++            }, false),
++            width: 3,
++            material: new Cesium.ColorMaterialProperty(Cesium.Color.CYAN.withAlpha(0.8)),
++            clampToGround: false
++        }
++    });
++
++    // ÔöÇÔöÇÔöÇ Yard─▒mc─▒: Picked objeyi edit grip olarak ├ğ├Âz ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
++    function _resolveGrip(pickedObject) {
++        if (!Cesium.defined(pickedObject)) return null;
++        var rawId = pickedObject.id;
++        if (rawId && rawId._editGrip) {
++            return {
++                isVertex: !!rawId._isVertex,
++                isMidpoint: !!rawId._isMidpoint,
++                index: rawId._index !== undefined ? rawId._index : -1,
++                insertAfterIndex: rawId._insertAfterIndex !== undefined ? rawId._insertAfterIndex : -1
++            };
++        }
++        if (rawId && rawId.properties) {
++            var props = rawId.properties;
++            if (!props._editGrip || !props._editGrip.getValue()) return null;
++            return {
++                isVertex: !!(props._isVertex && props._isVertex.getValue()),
++                isMidpoint: !!(props._isMidpoint && props._isMidpoint.getValue()),
++                index: props._index ? props._index.getValue() : -1,
++                insertAfterIndex: props._insertAfterIndex ? props._insertAfterIndex.getValue() : -1
++            };
++        }
++        return null;
+     }
+-}, Cesium.ScreenSpaceEventType.LEFT_DOWN);
+-
+ 
+-// ÔöÇÔöÇÔöÇ 2. MOUSE_MOVE ÔÇö S├╝r├╝kleme ─░┼şlemi ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+-// Koordinat bulma s─▒ras─▒ (standart ara├ğlarla ayn─▒):
+-//  1. snappedCartesian ÔåÆ Snap noktas─▒ varsa direkt kullan
+-//  2. scene.pickPosition() ÔåÆ Derinlik buffer'─▒ndan 3D y├╝zey (tile + terrain)
+-//  Hi├ğbiri yoksa (bo┼ş g├Âky├╝z├╝) ÔåÆ vertex ta┼ş─▒nmaz, g├╝venli
+-(function () {
+-    var _originalMouseMove = handler.getInputAction(Cesium.ScreenSpaceEventType.MOUSE_MOVE);
+-    var LERP_ALPHA = 0.6;    // 0=├ğok yumu┼şak, 1=anl─▒k. 0.6 iyi denge
++    // ÔöÇÔöÇÔöÇ 1. LEFT_DOWN ÔÇö S├╝r├╝kleme Ba┼şlang─▒c─▒ ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
++    handler.setInputAction(function (click) {
++        if (activeTool) return;
++        if (!EditManager.activeMeasure) return;
+ 
+-    handler.setInputAction(function (movement) {
+-        // ├ûnce mevcut snap/crosshair mant─▒─ş─▒n─▒ ├ğal─▒┼şt─▒r
+-        if (_originalMouseMove) _originalMouseMove(movement);
++        var pickedObject = viewer.scene.pick(click.position);
++        var grip = _resolveGrip(pickedObject);
++        if (!grip) return;
+ 
+-        if (!EditManager.isDragging || EditManager.draggedIndex === -1) {
++        var startDrag = function (index) {
++            EditManager.draggedIndex = index;
++            EditManager.isDragging = true;
+             _dragSmooth = null;
+-            return;
+-        }
++            _dragSmoothMid = null;
++            viewer.scene.screenSpaceCameraController.enableInputs = false;
++            if (EditManager._editLinePrim) EditManager._editLinePrim.show = false;
++            if (EditManager._editPolyPrim) EditManager._editPolyPrim.show = false;
++            _dragPreviewEntity.show = true;
++            viewer.scene.requestRender();
++        };
+ 
+-        var endPos = movement.endPosition;
++        if (grip.isVertex) {
++            startDrag(grip.index);
++        } else if (grip.isMidpoint) {
++            var insertIdx = grip.insertAfterIndex + 1;
++            var segI = grip.insertAfterIndex;
++            var ePts = EditManager.editPoints;
++            var newPoint = Cesium.Cartesian3.midpoint(
++                ePts[segI],
++                ePts[(segI + 1) % ePts.length],
++                new Cesium.Cartesian3()
++            );
++            ePts.splice(insertIdx, 0, newPoint);
++            EditManager.drawEditGrips();
++            startDrag(insertIdx);
++        }
++    }, Cesium.ScreenSpaceEventType.LEFT_DOWN);
+ 
+-        // Dead-zone kald─▒r─▒ld─▒: grip'e bilin├ğli t─▒klanm─▒┼ş ÔåÆ her hareket ge├ğerli
++    // ÔöÇÔöÇÔöÇ 2. MOUSE_MOVE ÔÇö S├╝r├╝kleme ─░┼şlemi ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
++    (function () {
++        var _originalMouseMove = handler.getInputAction(Cesium.ScreenSpaceEventType.MOUSE_MOVE);
++        var LERP_ALPHA = 0.6;
+ 
+-        var cartesian = null;
++        handler.setInputAction(function (movement) {
++            if (_originalMouseMove) _originalMouseMove(movement);
+ 
+-        // ÔöÇÔöÇ 1. Snap ├Âncelikli ÔöÇÔöÇ
+-        if (typeof snappedCartesian !== 'undefined' && Cesium.defined(snappedCartesian)) {
+-            cartesian = Cesium.Cartesian3.clone(snappedCartesian);
+-            _dragSmooth = null; // Snap yakaland─▒ysa lerp ge├ğmi┼şini s─▒f─▒rla
++            if (!EditManager.isDragging || EditManager.draggedIndex === -1) {
++                _dragSmooth = null;
++                return;
++            }
+ 
+-            // ÔöÇÔöÇ 2. globe.pick ÔåÆ ray-ellipsoid matematik (CPU, GPU yok) ÔöÇÔöÇ
+-        } else {
+-            try {
+-                var _dRay = viewer.camera.getPickRay(endPos);
+-                if (_dRay) {
+-                    var _dGlobe = viewer.scene.globe.pick(_dRay, viewer.scene);
+-                    if (Cesium.defined(_dGlobe)) {
+-                        cartesian = _dGlobe;
+-                    } else {
+-                        // Globe miss: terrain kapal─▒ veya 3D model ÔåÆ GPU fallback
+-                        var _dScene = viewer.scene.pickPosition(endPos);
+-                        if (Cesium.defined(_dScene)) cartesian = _dScene;
++            var endPos = movement.endPosition;
++            var cartesian = null;
++
++            if (typeof snappedCartesian !== 'undefined' && Cesium.defined(snappedCartesian)) {
++                cartesian = Cesium.Cartesian3.clone(snappedCartesian);
++                _dragSmooth = null;
++            } else {
++                try {
++                    var _dRay = viewer.camera.getPickRay(endPos);
++                    if (_dRay) {
++                        var _dGlobe = viewer.scene.globe.pick(_dRay, viewer.scene);
++                        if (Cesium.defined(_dGlobe)) {
++                            cartesian = _dGlobe;
++                        } else {
++                            var _dScene = viewer.scene.pickPosition(endPos);
++                            if (Cesium.defined(_dScene)) cartesian = _dScene;
++                        }
+                     }
+-                }
+-            } catch (e) { /* frustum / context kayb─▒ ÔÇö sessizce atla */ }
+-        }
++                } catch (e) { /* frustum / context kayb─▒ ÔÇö sessizce atla */ }
++            }
+ 
+-        // ÔöÇÔöÇ Lerp smooth (sadece mobilde, snap yokken) ÔöÇÔöÇ
+-        if (Cesium.defined(cartesian) && typeof _isMob !== 'undefined' && _isMob) {
+-            if (_dragSmooth) {
+-                cartesian = Cesium.Cartesian3.lerp(
+-                    _dragSmooth, cartesian, LERP_ALPHA, new Cesium.Cartesian3()
+-                );
++            if (Cesium.defined(cartesian) && typeof _isMob !== 'undefined' && _isMob) {
++                if (_dragSmooth) {
++                    cartesian = Cesium.Cartesian3.lerp(
++                        _dragSmooth, cartesian, LERP_ALPHA, new Cesium.Cartesian3()
++                    );
++                }
++                _dragSmooth = Cesium.Cartesian3.clone(cartesian);
+             }
+-            _dragSmooth = Cesium.Cartesian3.clone(cartesian);
+-        }
+ 
+-        if (Cesium.defined(cartesian)) {
+-            EditManager.editPoints[EditManager.draggedIndex] = cartesian;
+-            if (EditManager.activeMeasure && EditManager.activeMeasure.type === 'height') {
+-                EditManager._recalcHeightMidpoint();
+-                if (typeof _isMob !== 'undefined' && _isMob) {
+-                    var rawMid = EditManager.editPoints[1];
+-                    if (Cesium.defined(rawMid)) {
+-                        if (_dragSmoothMid) {
+-                            EditManager.editPoints[1] = Cesium.Cartesian3.lerp(
+-                                _dragSmoothMid, rawMid, LERP_ALPHA, new Cesium.Cartesian3()
+-                            );
++            if (Cesium.defined(cartesian)) {
++                EditManager.editPoints[EditManager.draggedIndex] = cartesian;
++                if (EditManager.activeMeasure && EditManager.activeMeasure.type === 'height') {
++                    EditManager._recalcHeightMidpoint();
++                    if (typeof _isMob !== 'undefined' && _isMob) {
++                        var rawMid = EditManager.editPoints[1];
++                        if (Cesium.defined(rawMid)) {
++                            if (_dragSmoothMid) {
++                                EditManager.editPoints[1] = Cesium.Cartesian3.lerp(
++                                    _dragSmoothMid, rawMid, LERP_ALPHA, new Cesium.Cartesian3()
++                                );
++                            }
++                            _dragSmoothMid = Cesium.Cartesian3.clone(EditManager.editPoints[1]);
+                         }
+-                        _dragSmoothMid = Cesium.Cartesian3.clone(EditManager.editPoints[1]);
+                     }
+                 }
++                viewer.scene.requestRender();
+             }
+-            // _rebuildEditLine() KALDIRILD! ÔÇö drag boyunca _dragPreviewEntity (CallbackProperty)
+-            // editPoints'─▒ canl─▒ okur. LEFT_UP'ta tek seferlik rebuild yap─▒l─▒r.
+-            viewer.scene.requestRender();
++        }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
++    })();
++
++    // ÔöÇÔöÇÔöÇ 3. LEFT_UP ÔÇö S├╝r├╝kleme Biti┼şi ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
++    handler.setInputAction(function () {
++        if (EditManager.isDragging) {
++            EditManager.isDragging = false;
++            EditManager.draggedIndex = -1;
++            viewer.scene.screenSpaceCameraController.enableInputs = true;
++            _dragPreviewEntity.show = false;
++            EditManager.drawEditGrips();
+         }
++    }, Cesium.ScreenSpaceEventType.LEFT_UP);
+ 
+-    }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
+-
+-})();
++    // ÔöÇÔöÇÔöÇ 4. RIGHT_CLICK ÔÇö Nokta Silme ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
++    (function () {
++        var _originalRightClick = handler.getInputAction(Cesium.ScreenSpaceEventType.RIGHT_CLICK);
+ 
++        handler.setInputAction(function (click) {
++            if (activeTool) {
++                if (_originalRightClick) _originalRightClick(click);
++                return;
++            }
+ 
++            if (EditManager.activeMeasure && click) {
++                var pickedObject = viewer.scene.pick(click.position);
++                var grip = _resolveGrip(pickedObject);
+ 
++                if (grip && grip.isVertex) {
++                    var idx = grip.index;
++                    var mType = EditManager.activeMeasure.type;
+ 
++                    if (mType === 'height' || mType === 'coord') return;
+ 
+-// ÔöÇÔöÇÔöÇ 3. LEFT_UP ÔÇö S├╝r├╝kleme Biti┼şi ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+-handler.setInputAction(function () {
+-    if (EditManager.isDragging) {
+-        EditManager.isDragging = false;
+-        EditManager.draggedIndex = -1;
+-        viewer.scene.screenSpaceCameraController.enableInputs = true;
+-        // Drag preview'─▒ kapat ÔåÆ sabit Primitive'i tek seferlik yeniden olu┼ştur
+-        _dragPreviewEntity.show = false;
+-        EditManager.drawEditGrips(); // _rebuildEditLine dahil ÔÇö yaln─▒zca burada ├ğal─▒┼ş─▒r
+-    }
+-}, Cesium.ScreenSpaceEventType.LEFT_UP);
++                    if ((mType === 'polygon' && EditManager.editPoints.length <= 3) ||
++                        (mType === 'line' && EditManager.editPoints.length <= 2)) {
++                        console.warn('EditManager: Minimum nokta say─▒s─▒na ula┼ş─▒ld─▒.');
++                        return;
++                    }
+ 
+-// ÔöÇÔöÇÔöÇ 4. RIGHT_CLICK ÔÇö Nokta Silme ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+-(function () {
+-    var _originalRightClick = handler.getInputAction(Cesium.ScreenSpaceEventType.RIGHT_CLICK);
++                    EditManager.editPoints.splice(idx, 1);
++                    EditManager.drawEditGrips();
++                    viewer.scene.requestRender();
++                    return;
++                }
++            }
+ 
+-    handler.setInputAction(function (click) {
+-        if (activeTool) {
+             if (_originalRightClick) _originalRightClick(click);
+-            return;
+-        }
+-
+-        if (EditManager.activeMeasure && click) {
+-            var pickedObject = viewer.scene.pick(click.position);
+-            var grip = _resolveGrip(pickedObject);
++        }, Cesium.ScreenSpaceEventType.RIGHT_CLICK);
++    })();
+ 
+-            if (grip && grip.isVertex) {
+-                var idx = grip.index;
+-                var mType = EditManager.activeMeasure.type;
++    // ÔöÇÔöÇÔöÇ 5. ESC ÔÇö Edit Modundan ├ç─▒k ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
++    document.addEventListener('keydown', function (e) {
++        if (e.key === 'Escape' && EditManager.activeMeasure && !activeTool) {
++            var m = EditManager.activeMeasure;
+ 
+-                if (mType === 'height' || mType === 'coord') return;
++            EditManager.tempEntities.forEach(function (ent) {
++                drawLayer.entities.remove(ent);
++            });
++            EditManager.tempEntities = [];
+ 
+-                if ((mType === 'polygon' && EditManager.editPoints.length <= 3) ||
+-                    (mType === 'line' && EditManager.editPoints.length <= 2)) {
+-                    console.warn('EditManager: Minimum nokta say─▒s─▒na ula┼ş─▒ld─▒.');
+-                    return;
++            if (EditManager._preRender) {
++                viewer.scene.preRender.removeEventListener(EditManager._preRender);
++                EditManager._preRender = null;
++            }
++            EditManager._gripCols.forEach(function (g) {
++                if (viewer.scene.primitives.contains(g.col)) {
++                    viewer.scene.primitives.remove(g.col);
+                 }
++            });
++            EditManager._gripCols = [];
+ 
+-                EditManager.editPoints.splice(idx, 1);
+-                EditManager.drawEditGrips();
+-                viewer.scene.requestRender();
+-                return;
++            if (EditManager._editLinePrim) {
++                safeRemoveItem(EditManager._editLinePrim);
++                EditManager._editLinePrim = null;
+             }
+-        }
+-
+-        if (_originalRightClick) _originalRightClick(click);
+-    }, Cesium.ScreenSpaceEventType.RIGHT_CLICK);
+-})();
+-
+-// ÔöÇÔöÇÔöÇ 5. ESC ─░LE ED─░T MODUNDAN ├çIK ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+-document.addEventListener('keydown', function (e) {
+-    if (e.key === 'Escape' && EditManager.activeMeasure && !activeTool) {
+-        var m = EditManager.activeMeasure;
+-
+-        // Entity ├ğizgilerini sil
+-        EditManager.tempEntities.forEach(function (ent) {
+-            drawLayer.entities.remove(ent);
+-        });
+-        EditManager.tempEntities = [];
+-
+-        // ENU grip primitiflerini ve preRender listener'─▒ sil
+-        if (EditManager._preRender) {
+-            viewer.scene.preRender.removeEventListener(EditManager._preRender);
+-            EditManager._preRender = null;
+-        }
+-        EditManager._gripCols.forEach(function (g) {
+-            if (viewer.scene.primitives.contains(g.col)) {
+-                viewer.scene.primitives.remove(g.col);
++            if (EditManager._editPolyPrim) {
++                safeRemoveItem(EditManager._editPolyPrim);
++                EditManager._editPolyPrim = null;
+             }
+-        });
+-        EditManager._gripCols = [];
+ 
+-        // Stabil edit ├ğizgisi ve dolgu temizle
+-        if (EditManager._editLinePrim) {
+-            safeRemoveItem(EditManager._editLinePrim);
+-            EditManager._editLinePrim = null;
+-        }
+-        if (EditManager._editPolyPrim) {
+-            safeRemoveItem(EditManager._editPolyPrim);
+-            EditManager._editPolyPrim = null;
+-        }
++            m.entities.forEach(function (ent) {
++                ent.show = m.checked;
++                if (ent.label) ent.label.show = m.checked;
++            });
+ 
+-        // Orijinal entity'leri geri g├Âster
+-        m.entities.forEach(function (ent) {
+-            ent.show = m.checked;
+-            if (ent.label) ent.label.show = m.checked;
+-        });
++            EditManager.activeMeasure = null;
++            EditManager.editPoints = [];
++            EditManager.draggedIndex = -1;
++            EditManager.isDragging = false;
+ 
+-        EditManager.activeMeasure = null;
+-        EditManager.editPoints = [];
+-        EditManager.draggedIndex = -1;
+-        EditManager.isDragging = false;
++            if (typeof highlightMeasurement === 'function' && typeof activeHighlightId !== 'undefined' && activeHighlightId !== null) {
++                highlightMeasurement(activeHighlightId);
++            }
+ 
+-        if (typeof highlightMeasurement === 'function' && typeof activeHighlightId !== 'undefined' && activeHighlightId !== null) {
+-            highlightMeasurement(activeHighlightId);
++            viewer.scene.requestRender();
+         }
++    });
+ 
+-        viewer.scene.requestRender();
+-    }
+-});
++    console.log('Ô£Å´©Å EditManager.init() tamamland─▒ ÔÇö fare etkile┼şimleri ba─şland─▒.');
++};
+ 
+-console.log('Ô£Å´©Å EditManager y├╝klendi ÔÇö CAD/GIS d├╝zenleme mod├╝l├╝ aktif.');
++console.log('Ô£Å´©Å EditManager y├╝klendi ÔÇö CAD/GIS d├╝zenleme mod├╝l├╝ aktif. init() bekleniyor...');
+ 
+diff --git a/app/index.html b/app/index.html
+index 5ddf8e8..4b2f863 100644
+--- a/app/index.html
++++ b/app/index.html
+@@ -92,7 +92,8 @@
+ 	<!-- GIS Monitoring & Support -->
+ 	<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+ 	<script src="monitoring-service.js?v=0.9.3"></script>
+-	<script src="main.js?v=0.9.3"></script>
++	<!-- main.js dinamik loader arac─▒l─▒─ş─▒yla y├╝kleniyor (Cesium.js'den sonra) ÔÇö burada tekrar y├╝klenmez -->
++
+ 	<!-- ÔöÇÔöÇ CBS ONBOARDING TOUR CSS ÔÇö sil: sistemi bozmaz ÔöÇÔöÇ -->
+ 	<link rel="stylesheet" href="tour.css">
+ 	<style>
+diff --git a/app/main.js b/app/main.js
+index 775ed32..8882a4c 100644
+--- a/app/main.js
++++ b/app/main.js
+@@ -1998,15 +1998,16 @@ function createStablePoint(position, color) {
+ 	return pointPrimitive;
+ }
+ 
+-// ÔöÇÔöÇÔöÇ SAFE REMOVE: afterRender kuyru─şu ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
++// ÔöÇÔöÇÔöÇ SAFE REMOVE: postRender kuyru─şu ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+ // Primitive'leri render frame ortas─▒nda silmek Cesium'da _target undefined
+-// hatas─▒na (race condition) neden olur. ├ç├Âz├╝m: kuyru─şa al, frame bittikten
+-// sonra bir sonraki afterRender event'─▒nda temizle.
++// hatas─▒na (race condition) neden olur. ├ç├Âz├╝m: postRender event'─▒nda
++// requestAnimationFrame ile bir tick sonraya ertele (GPU flush garantisi).
+ var _pendingRemove = [];
++var _removeScheduled = false;
+ 
+-viewer.scene.afterRender.addEventListener(function () {
+-	if (_pendingRemove.length === 0) return;
+-	var toRemove = _pendingRemove.splice(0); // kopyala + hemen bo┼şalt
++function _flushPendingRemove() {
++	_removeScheduled = false;
++	var toRemove = _pendingRemove.splice(0);
+ 	toRemove.forEach(function (item) {
+ 		if (!item) return;
+ 		try {
+@@ -2019,8 +2020,17 @@ viewer.scene.afterRender.addEventListener(function () {
+ 			}
+ 		} catch (e) { /* zaten silinmi┼ş, g├Ârmezden gel */ }
+ 	});
++}
++
++viewer.scene.postRender.addEventListener(function () {
++	if (_pendingRemove.length === 0) return;
++	if (_removeScheduled) return;
++	_removeScheduled = true;
++	// rAF: GPU render frame tamamen bitince ├ğal─▒┼ş ÔÇö _target race condition ├Ânlenir
++	requestAnimationFrame(_flushPendingRemove);
+ });
+ 
++
+ // Evrensel silme: Entity VEYA Primitive VEYA Collection Item
+ // Art─▒k do─şrudan silmez ÔÇö afterRender kuyru─şuna al─▒r (race condition fix)
+ function safeRemoveItem(item) {
+@@ -3603,6 +3613,8 @@ document.getElementById('selectAllToggle').addEventListener('click', function ()
+ 
+ // ÔöÇÔöÇÔöÇ 6. ├ç─░Z─░M ARA├çLARI ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+ var handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
++// EditManager'─▒ ┼şimdi ba┼şlat: handler ve drawLayer haz─▒r oldu─şunda
++EditManager.init();
+ var activeTool = null;
+ var clickPoints = [];
+ var tempEntities = [];
+@@ -3645,19 +3657,22 @@ var _rubberBandLine = drawLayer.entities.add({
+ 
+ function clearTempDrawing() {
+ 	// Hen├╝z kaydedilmemi┼ş ge├ğici ├ğizimleri temizle
+-	tempEntities.forEach(function (item) { safeRemoveItem(item); });
++	if (Array.isArray(tempEntities)) {
++		tempEntities.forEach(function (item) { safeRemoveItem(item); });
++		tempEntities = [];
++	}
+ 	if (activeShape) { safeRemoveItem(activeShape); activeShape = null; }
+ 	clickPoints = [];
+-	tempEntities = [];
+ 	pointCounter = 0;
+ 	if (snapIndicator) snapIndicator.show = false;
+ 	snappedCartesian = null;
+ 	// Rubber-band temizle
+-	_rubberBandLine.show = false;
++	if (_rubberBandLine) { _rubberBandLine.show = false; }
+ 	_rubberEnd = null;
+ 	clearZOverlays();
+ }
+ 
++
+ // ÔöÇÔöÇÔöÇ Z-AYAR SLIDER S─░STEM─░ ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+ // Z butonu art─▒k resultDisplay bar─▒n─▒n sa─ş─▒nda sabit konumda beliriyor
+ var _zBtnWrapper = null;  // Z buton wrapper'─▒

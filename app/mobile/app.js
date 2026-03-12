@@ -740,7 +740,7 @@
                 if (window.EditManager && window.EditManager.activeMeasure) {
                     window.EditManager.stopEdit();
                 }
-                var idx = window.measurements.findIndex(function (m) { return m.id === measureId; });
+                var idx = window.measurements.findIndex(function (m) { return String(m.id) === measureId; });
                 if (idx !== -1) {
                     var m = window.measurements[idx];
                     m.entities.forEach(function (ent) { window.safeRemoveItem(ent); });

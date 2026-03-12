@@ -135,7 +135,7 @@ self.onmessage = function (e) {
             if (type === 'Point') {
                 var pointConverted = convertCoord(coords, effectiveCrs);
                 if (pointConverted) {
-                    parsedFeats.push({ name: smartName(pr, 'Nokta', ++globalIdx), type: 'coord', coords: [pointConverted] });
+                    parsedFeats.push({ name: smartName(pr, 'Nokta', ++globalIdx), type: 'coord', coords: [pointConverted], props: pr });
                 } else {
                     skippedGeometryCount++;
                 }
@@ -146,7 +146,7 @@ self.onmessage = function (e) {
                 }
                 var lineConverted = coords.map(function (c) { return convertCoord(c, effectiveCrs); }).filter(Boolean);
                 if (lineConverted.length > 0) {
-                    parsedFeats.push({ name: smartName(pr, 'Çizgi', ++globalIdx), type: 'line', coords: lineConverted });
+                    parsedFeats.push({ name: smartName(pr, 'Çizgi', ++globalIdx), type: 'line', coords: lineConverted, props: pr });
                 } else {
                     skippedGeometryCount++;
                 }
@@ -157,7 +157,7 @@ self.onmessage = function (e) {
                 }
                 var polyConverted = removeClosingPoint(coords[0].map(function (c) { return convertCoord(c, effectiveCrs); }).filter(Boolean));
                 if (polyConverted.length > 0) {
-                    parsedFeats.push({ name: smartName(pr, 'Alan', ++globalIdx), type: 'polygon', coords: polyConverted });
+                    parsedFeats.push({ name: smartName(pr, 'Alan', ++globalIdx), type: 'polygon', coords: polyConverted, props: pr });
                 } else {
                     skippedGeometryCount++;
                 }

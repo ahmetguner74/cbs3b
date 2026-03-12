@@ -14,6 +14,10 @@
 //   _isMob, _xrayActive, applyXRayToPrimitive
 // ═══════════════════════════════════════════════════════════════
 
+// ─── Global scratch nesnesi: midpoint ara hesabı için ────────────
+// Tüm grip'leri aynı Matrix4'ü göstermesini engellemek için global scope'da
+var _scratchMidpoint = new Cesium.Cartesian3();
+
 var EditManager = {
     activeMeasure: null,   // Şu an düzenlenen ölçüm objesi
     editPoints: [],        // Düzenleme anındaki aktif noktalar (Cartesian3 klonları)
@@ -165,8 +169,11 @@ var EditManager = {
                 pixelSize: 8,
                 color: Cesium.Color.YELLOW.withAlpha(0.6),
                 outlineColor: Cesium.Color.WHITE.withAlpha(0.4),
-                outlineWidth: 1
-                // disableDepthTestDistance YOK — bina arkasında gizlensin
+                outlineWidth: 1,
+                // X-Ray açıkken görünür kalsın, kapalıyken derinlik testine dönsün.
+                disableDepthTestDistance: (typeof _xrayActive !== 'undefined' && _xrayActive)
+                    ? Number.POSITIVE_INFINITY
+                    : 0
             });
             viewer.scene.primitives.add(col);
             self._gripCols.push({ col: col, pt: null, type: 'pmid', index: 1 });
@@ -372,14 +379,32 @@ var EditManager = {
 // FARE ETKİLEŞİMLERİ — handler'a yeni action'lar ekleniyor
 // ═══════════════════════════════════════════════════════════════
 
+(function setupEditManagerInteractions() {
+    if (EditManager._interactionsBound) return;
+
+    var depsReady =
+        (typeof handler !== 'undefined' && !!handler) &&
+        (typeof viewer !== 'undefined' && !!viewer) &&
+        (typeof drawLayer !== 'undefined' && !!drawLayer) &&
+        (typeof safeRemoveItem === 'function');
+
+    if (!depsReady) {
+        if (!EditManager._waitingMainReady) {
+            EditManager._waitingMainReady = true;
+            if (typeof window !== 'undefined') {
+                window.addEventListener('cbs-main-ready', setupEditManagerInteractions, { once: true });
+            }
+            console.warn('EditManager: bağımlılıklar hazır değil, main hazır sinyali bekleniyor.');
+        }
+        return;
+    }
+
+    EditManager._waitingMainReady = false;
+    EditManager._interactionsBound = true;
+
 // Module-scope drag state
 var _dragSmooth = null;    // Lerp için önceki düzleştirilmiş pozisyon (sürüklenen vertex)
 var _dragSmoothMid = null; // pMid için ayrı lerp geçmişi (height ölçümü)
-
-// ─── Scratch nesnesi: sadece midpoint ara hesabı için güvenli ────────────
-// modelMatrix için scratch KULLANILMAZ — CesiumJS referansı kopyalamadan saklar;
-// tüm grip'ler aynı Matrix4'ü gösterir → yanlış konumlar.
-var _scratchMidpoint = new Cesium.Cartesian3();
 
 // ─── Sürükleme önizleme entity — bir kez oluşturulur, her drag'de yeniden kullanılır ──
 // CallbackProperty → editPoints'ı canlı okur; sürükleme sırasında sıfır GPU rebuild.
@@ -658,6 +683,8 @@ document.addEventListener('keydown', function (e) {
         viewer.scene.requestRender();
     }
 });
+
+})();
 
 console.log('✏️ EditManager yüklendi — CAD/GIS düzenleme modülü aktif.');
 

@@ -2,14 +2,42 @@
 // Bursa Büyükşehir Belediyesi — 3D Ölçüm ve Dijitalleştirme
 // ═══════════════════════════════════════════════════════════════
 
+main_boot: {
+
 if (window.__CBS_BOOTED__) {
 	console.warn('[CBS] main.js tekrar yüklendi (çift include olasılığı).');
+	break main_boot;
 }
 window.__CBS_BOOTED__ = true;
 
-// 1. CESIUM ION TOKEN (her zaman gerekli — CesiumJS dahili olarak kullanır)
-Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIyYmExYjdkYS03YjFkLTRkMDMtYjFkMS1kNjJiYzA1ZGIyNWQiLCJpZCI6NDE3MTMsImlhdCI6MTc2NjEzMjI3OH0.OGK7rOk1E5pLcZ_Wauyz8hiUlSPb9zmMWuRW2lhp-7c';
+// 1. CESIUM ION TOKEN (app/config.js üzerinden okunur)
+var _appConfig = window.CBS_CONFIG || {};
+var _ionToken = (_appConfig.cesiumIonToken || '').trim();
+if (_ionToken) {
+	Cesium.Ion.defaultAccessToken = _ionToken;
+} else {
+	console.warn('[CBS] Cesium Ion token tanımlı değil (CBS_CONFIG.cesiumIonToken).');
+}
 var _isMunicipality = true;
+
+function _readRenderBufferMode() {
+	var modeFromConfig = ((_appConfig.preserveDrawingBufferMode || 'precision') + '').toLowerCase();
+	var modeFromStorage = null;
+	try {
+		if (typeof CbsStorage !== 'undefined' && CbsStorage.getSetting) {
+			modeFromStorage = CbsStorage.getSetting('cbs-render-buffer-mode');
+		} else {
+			modeFromStorage = localStorage.getItem('cbs-render-buffer-mode');
+		}
+	} catch (e) { }
+
+	var mode = ((modeFromStorage || modeFromConfig || 'precision') + '').toLowerCase();
+	if (mode !== 'performance' && mode !== 'precision') mode = 'precision';
+	return mode;
+}
+
+var _renderBufferMode = _readRenderBufferMode();
+var _preserveDrawingBufferEnabled = _renderBufferMode !== 'performance';
 
 // ═══ TELEMETRİ VE LOG YÖNETİMİ (Geri Bildirim Kara Kutusu) ═══
 var TelemetryManager = {
@@ -91,10 +119,33 @@ var viewer = new Cesium.Viewer('cesiumContainer', {
 	sceneModePicker: false, baseLayerPicker: false, geocoder: false,
 	homeButton: false,
 	navigationHelpButton: false,
-	preserveDrawingBuffer: true,  // pickPosition() ve snap loupe canvas okuma için zorunlu
-	imageryProvider: isLocalFile ? false : undefined, // file:// → imagery kapalı
+	preserveDrawingBuffer: _preserveDrawingBufferEnabled,
+	imageryProvider: (isLocalFile || _isMunicipality || !_ionToken) ? false : undefined, // belediye modu veya token yoksa Ion default imagery devre dışı
 	terrainProvider: new Cesium.EllipsoidTerrainProvider()  // Başlangıçta düz elipsoid
 });
+
+window.CBSRender = {
+	getBufferMode: function () { return _renderBufferMode; },
+	setBufferMode: function (mode) {
+		var normalized = ((mode || '') + '').toLowerCase();
+		if (normalized !== 'performance' && normalized !== 'precision') {
+			console.warn('[CBSRender] Geçersiz buffer modu. Geçerli değerler: performance | precision');
+			return false;
+		}
+		try {
+			if (typeof CbsStorage !== 'undefined' && CbsStorage.setSetting) {
+				CbsStorage.setSetting('cbs-render-buffer-mode', normalized);
+			} else {
+				localStorage.setItem('cbs-render-buffer-mode', normalized);
+			}
+			console.info('[CBSRender] Buffer modu kaydedildi:', normalized, '• Uygulamak için sayfayı yenileyin.');
+			return true;
+		} catch (e) {
+			console.warn('[CBSRender] Buffer modu kaydedilemedi:', e);
+			return false;
+		}
+	}
+};
 
 // Monitoring Service Entegrasyonu
 if (window.MonitoringService) {
@@ -257,6 +308,8 @@ if (satelliteLayer) satelliteLayer.show = false; // Uydu katmanı başlangıçta
 // zoomFactor her zaman istenen sonucu vermediği için doğrudan fare tekerleği sinyalini zayıflatıyoruz.
 var zoomSensitivity = 0.25; // Değer ne kadar küçükse o kadar yavaş yaklaşır (0.25 = %25 hız)
 viewer.scene.canvas.addEventListener('wheel', function (e) {
+	// Ortografik mod kendi wheel akışını aşağıda yönetiyor.
+	if (isOrthographic) return;
 	if (e.isTrusted) {
 		e.stopPropagation();
 		var slowEvent = new WheelEvent('wheel', {
@@ -289,8 +342,8 @@ try {
 var drawLayer = new Cesium.CustomDataSource('Olcumler');
 viewer.dataSources.add(drawLayer);
 
-// Z-fighting ofseti (metre) — eksik değişken tanımlandı
-var ENTITY_HEIGHT_OFFSET = 0.5; // metre — çizimlerin titremesini engelleyen ofset
+// Görsel render ofseti (metre) — sadece Z-fighting azaltmak için kullanılır.
+var ENTITY_HEIGHT_OFFSET = 0.02;
 
 // requestRenderMode=true iken entity değişikliklerinde sahneyi otomatik yenile
 drawLayer.entities.collectionChanged.addEventListener(function () {
@@ -431,6 +484,9 @@ Cesium.Cesium3DTileset.fromUrl("../Scene/merinos1.json", {
 }).then(function (loadedTileset) {
 	tileset = loadedTileset;
 	viewer.scene.primitives.add(tileset);
+	if (isOrthographic) {
+		applyOrthographicTilesetStability(true);
+	}
 	// zoomTo artık initSplashProgress içinde yönetiliyor (splash kapanma kontrolü için)
 	// Mobilde performans ayarı — tile kalitesini düşür
 	if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
@@ -463,6 +519,7 @@ var ClipBoxManager = {
 	_placementMode: false,
 	_clickHandler: null,
 	_escHandler: null,
+	_preserveTransformOnNextPlacement: false,
 
 	// Kutu boyutları (metre)
 	_halfSize: { x: 15, y: 15, z: 15 },
@@ -487,6 +544,8 @@ var ClipBoxManager = {
 	_hiddenPrimitives: [],
 	// Clip sırasında geçici daraltılmış batch grupları
 	_clippedBatchGroupIds: [],
+	// _clipEntities çağrılarını frame bazında birleştir
+	_clipEntitiesFrame: null,
 
 	_rebuildClipTransforms: function () {
 		if (!tileset || !this._baseEnuAtClick || !this._inverseOriginMatrix) return;
@@ -506,16 +565,13 @@ var ClipBoxManager = {
 		);
 	},
 
-	// ── AKTİVASYON: YERLEŞTİRME MODUNA GİR ─────────────────
-	activate: function () {
+	_enterPlacementMode: function () {
 		if (!tileset) {
 			console.warn('ClipBox: Tileset henüz yüklenmedi.');
 			return;
 		}
 
-		// Zaten aktifse veya placement modundaysa → kapat
-		if (this.active || this._placementMode) {
-			this.deactivate();
+		if (this._placementMode) {
 			return;
 		}
 
@@ -531,7 +587,11 @@ var ClipBoxManager = {
 		if (rd) {
 			rd.style.display = '';
 			var rdDiv = rd.querySelector('div');
-			if (rdDiv) rdDiv.textContent = '✂️ Kırpma noktası seçmek için haritaya tıklayın';
+			if (rdDiv) {
+				rdDiv.textContent = this._preserveTransformOnNextPlacement
+					? '✂️ Yeni merkez seçin — mevcut boyut ve rotasyon korunacak'
+					: '✂️ Kırpma noktası seçmek için haritaya tıklayın';
+			}
 		}
 
 		// Harita tıklama handler
@@ -552,6 +612,42 @@ var ClipBoxManager = {
 		document.addEventListener('keydown', this._escHandler);
 
 		TelemetryManager.addLog('ClipBox: Yerleştirme modu');
+	},
+
+	// ── AKTİVASYON: YERLEŞTİRME MODUNA GİR ─────────────────
+	activate: function () {
+		if (!tileset) {
+			console.warn('ClipBox: Tileset henüz yüklenmedi.');
+			return;
+		}
+
+		if (this.active || this._placementMode) {
+			this.deactivate();
+			return;
+		}
+
+		this._preserveTransformOnNextPlacement = false;
+		this._enterPlacementMode();
+	},
+
+	reposition: function () {
+		if (!tileset || this._placementMode) return;
+
+		var preservedHalfSize = {
+			x: this._halfSize.x,
+			y: this._halfSize.y,
+			z: this._halfSize.z
+		};
+		var preservedRotation = this._rotationDeg || 0;
+
+		this._preserveTransformOnNextPlacement = true;
+		if (this.active) {
+			this.deactivate();
+		}
+
+		this._halfSize = preservedHalfSize;
+		this._rotationDeg = preservedRotation;
+		this._enterPlacementMode();
 	},
 
 	// ── HARİTAYA TIKLANDIĞINDA ──────────────────────────────
@@ -588,7 +684,8 @@ var ClipBoxManager = {
 		this._worldCenter = Cesium.Cartesian3.clone(worldPos);
 		this._baseEnuAtClick = enuAtClick;
 		this._inverseOriginMatrix = inverseOrigin;
-		this._rotationDeg = 0;
+		this._rotationDeg = this._preserveTransformOnNextPlacement ? (this._rotationDeg || 0) : 0;
+		this._preserveTransformOnNextPlacement = false;
 		this._rebuildClipTransforms();
 
 		console.log('ClipBox: Yerleştirildi, modelMatrix hesaplandı');
@@ -902,6 +999,16 @@ var ClipBoxManager = {
 		console.log('ClipBox: ' + this._hiddenEntities.length + ' entity + ' + this._hiddenPrimitives.length + ' primitive gizlendi');
 	},
 
+	_scheduleClipEntities: function () {
+		var self = this;
+		if (this._clipEntitiesFrame) return;
+		this._clipEntitiesFrame = requestAnimationFrame(function () {
+			self._clipEntitiesFrame = null;
+			self._clipEntities();
+			viewer.scene.requestRender();
+		});
+	},
+
 	// ── GİZLENEN ENTITY'LERİ GERİ GÖSTER ───────────────────
 	_restoreEntities: function () {
 		for (var i = 0; i < this._hiddenEntities.length; i++) {
@@ -941,20 +1048,16 @@ var ClipBoxManager = {
 	_showMiniPanel: function () {
 		var panel = document.getElementById('clipMiniPanel');
 		if (!panel) return;
-		// Slider değerlerini sync et
-		var sx = document.getElementById('clipMiniX');
-		var sy = document.getElementById('clipMiniY');
-		var sz = document.getElementById('clipMiniZ');
-		var sr = document.getElementById('clipMiniR');
-		if (sx) { sx.value = this._halfSize.x * 2; document.getElementById('clipMiniXVal').textContent = (this._halfSize.x * 2) + 'm'; }
-		if (sy) { sy.value = this._halfSize.y * 2; document.getElementById('clipMiniYVal').textContent = (this._halfSize.y * 2) + 'm'; }
-		if (sz) { sz.value = this._halfSize.z * 2; document.getElementById('clipMiniZVal').textContent = (this._halfSize.z * 2) + 'm'; }
-		if (sr) { sr.value = this._rotationDeg; document.getElementById('clipMiniRVal').textContent = this._rotationDeg + '°'; }
+		updateClipMiniSliderUi('X', this._halfSize.x * 2);
+		updateClipMiniSliderUi('Y', this._halfSize.y * 2);
+		updateClipMiniSliderUi('Z', this._halfSize.z * 2);
+		updateClipMiniSliderUi('R', this._rotationDeg || 0);
 		panel.classList.add('show');
 		syncClipMiniActionButtons();
 	},
 
 	_hideMiniPanel: function () {
+		flushClipMiniPreview(false);
 		var panel = document.getElementById('clipMiniPanel');
 		if (panel) panel.classList.remove('show');
 	},
@@ -973,7 +1076,7 @@ var ClipBoxManager = {
 
 		// Entity kırpma — sadece slider bırakıldığında (change event)
 		if (updateEntities) {
-			this._clipEntities();
+			this._scheduleClipEntities();
 		}
 
 		viewer.scene.requestRender();
@@ -989,7 +1092,7 @@ var ClipBoxManager = {
 		this._drawWireframe(this._worldCenter);
 
 		if (updateEntities) {
-			this._clipEntities();
+			this._scheduleClipEntities();
 		}
 
 		viewer.scene.requestRender();
@@ -1047,6 +1150,11 @@ var ClipBoxManager = {
 	deactivate: function () {
 		this.active = false;
 		this._placementMode = false;
+
+		if (this._clipEntitiesFrame) {
+			cancelAnimationFrame(this._clipEntitiesFrame);
+			this._clipEntitiesFrame = null;
+		}
 
 		// Click handler temizle
 		if (this._clickHandler) {
@@ -1110,30 +1218,39 @@ var ClipBoxManager = {
 
 // ── CLIPBOX EVENT BAĞLANTILARI ──────────────────────────────
 (function () {
-	// ── Slider artık pointer-events:none ile sadece görsel — drag event'leri kaldırıldı
-	// Slider değerleri yalnızca +/- butonlarından güncellenir (requestRender emniyetli)
+	// ── Slider canlı önizleme: rAF ile sınırlı, entity clip commit'i sadece bırakınca
 
 	// ── ± Buton Handler'ları ──
 	var pmBtns = document.querySelectorAll('.clip-pm-btn-lg');
 	pmBtns.forEach(function (btn) {
 		btn.addEventListener('click', function () {
+			flushClipMiniPreview(false);
 			var axis = btn.getAttribute('data-axis');
-			var dir = parseInt(btn.getAttribute('data-dir'));
+			var dir = parseInt(btn.getAttribute('data-dir'), 10);
 			var slider = document.getElementById('clipMini' + axis);
-			var valLabel = document.getElementById('clipMini' + axis + 'Val');
-			if (!slider || !valLabel) return;
+			if (!slider) return;
 
 			var currentVal = parseInt(slider.value, 10) || 0;
 			var newVal = axis === 'R'
 				? Math.max(-180, Math.min(180, currentVal + dir * 5))
 				: Math.max(5, Math.min(100, currentVal + dir * 5));
-			slider.value = newVal;
-			valLabel.textContent = axis === 'R' ? (newVal + '°') : (newVal + 'm');
-			if (axis === 'R') {
-				ClipBoxManager._updateRotation(newVal, true);
-			} else {
-				ClipBoxManager._updateSize(axis.toLowerCase(), newVal, true);
-			}
+			applyClipMiniAxisValue(axis, newVal, true);
+		});
+	});
+
+	var sliders = document.querySelectorAll('.clip-mini-slider');
+	sliders.forEach(function (slider) {
+		slider.addEventListener('input', function () {
+			var axis = slider.getAttribute('data-axis');
+			var newVal = parseInt(slider.value, 10) || 0;
+			scheduleClipMiniPreview(axis, newVal);
+		});
+
+		slider.addEventListener('change', function () {
+			var axis = slider.getAttribute('data-axis');
+			var newVal = parseInt(slider.value, 10) || 0;
+			flushClipMiniPreview(false);
+			applyClipMiniAxisValue(axis, newVal, true);
 		});
 	});
 
@@ -1141,16 +1258,11 @@ var ClipBoxManager = {
 	var resetBtn = document.getElementById('clipMiniReset');
 	if (resetBtn) {
 		resetBtn.addEventListener('click', function () {
+			flushClipMiniPreview(false);
 			['X', 'Y', 'Z'].forEach(function (a) {
-				var s = document.getElementById('clipMini' + a);
-				var v = document.getElementById('clipMini' + a + 'Val');
-				if (s) { s.value = 30; }
-				if (v) { v.textContent = '30m'; }
+				updateClipMiniSliderUi(a, 30);
 			});
-			var sr = document.getElementById('clipMiniR');
-			var rv = document.getElementById('clipMiniRVal');
-			if (sr) { sr.value = 0; }
-			if (rv) { rv.textContent = '0°'; }
+			updateClipMiniSliderUi('R', 0);
 			ClipBoxManager._halfSize = { x: 15, y: 15, z: 15 };
 			ClipBoxManager._rotationDeg = 0;
 			ClipBoxManager._rebuildClipTransforms();
@@ -1158,8 +1270,16 @@ var ClipBoxManager = {
 			if (ClipBoxManager._worldCenter) {
 				ClipBoxManager._drawWireframe(ClipBoxManager._worldCenter);
 			}
-			ClipBoxManager._clipEntities();
+			ClipBoxManager._scheduleClipEntities();
 			viewer.scene.requestRender();
+		});
+	}
+
+	var repositionBtn = document.getElementById('clipMiniReposition');
+	if (repositionBtn) {
+		repositionBtn.addEventListener('click', function () {
+			flushClipMiniPreview(false);
+			ClipBoxManager.reposition();
 		});
 	}
 
@@ -1215,6 +1335,14 @@ var ClipBoxManager = {
 			ClipBoxManager.activate();
 		});
 	}
+
+	updateClipMiniSliderUi('X', 30);
+	updateClipMiniSliderUi('Y', 30);
+	updateClipMiniSliderUi('Z', 30);
+	updateClipMiniSliderUi('R', 0);
+	if (!Array.isArray(savedClipBoxes)) savedClipBoxes = [];
+	if (typeof selectedSavedClipBoxId === 'undefined') selectedSavedClipBoxId = null;
+	syncClipMiniActionButtons();
 })();
 
 // ─── SPLASH SCREEN: Gerçek tileset yükleme progress'i ───
@@ -1450,6 +1578,7 @@ if (btnThemeToggle) {
 			themeIcon.textContent = 'dark_mode';
 			CbsStorage.setSetting('cbs-theme', 'dark');
 		}
+		applyInfoPanelTheme(document.getElementById('infoPanel'));
 	});
 }
 
@@ -1477,6 +1606,14 @@ if (btnPerformance && btnQuality) {
 		viewer.scene.fog.enabled = true;
 		if (tileset) tileset.maximumScreenSpaceError = 1;
 		viewer.scene.requestRender();
+	});
+}
+
+// ─── INFO MODE BUTONU (Araçlar Panelinde) ──────────────────────
+var btnInfoMode = document.getElementById('btnInfoMode');
+if (btnInfoMode) {
+	btnInfoMode.addEventListener('click', function () {
+		toggleInfoMode();
 	});
 }
 
@@ -1571,6 +1708,218 @@ if (btnPerformance && btnQuality) {
 	}
 })();
 
+// ═══ PERFORMANS BENCHMARK (JANK / LONG TASK / TILE QUEUE) ═══
+// CBSPerf.sample(15000) çağrısı ile 15sn ölçüm alır.
+// Rapor: ortalama FPS, %1 low FPS, p95 frame time, jank oranı, long task ve tile kuyruğu.
+(function () {
+	var _isSampling = false;
+	var _sampleStartMs = 0;
+	var _sampleTimer = null;
+	var _sampleLastFrame = 0;
+	var _frameTimes = [];
+	var _longTaskDurations = [];
+	var _longTaskObserver = null;
+	var _tilesPendingPeak = 0;
+	var _tilesProcessingPeak = 0;
+	var _tilesSelectedPeak = 0;
+	var _startHeapMB = null;
+	var _lastReport = null;
+
+	function _readHeapMB() {
+		if (performance && performance.memory && typeof performance.memory.usedJSHeapSize === 'number') {
+			return performance.memory.usedJSHeapSize / (1024 * 1024);
+		}
+		return null;
+	}
+
+	function _round(value, digits) {
+		var d = typeof digits === 'number' ? digits : 2;
+		if (typeof value !== 'number' || !isFinite(value)) return null;
+		var k = Math.pow(10, d);
+		return Math.round(value * k) / k;
+	}
+
+	function _percentile(sorted, q) {
+		if (!sorted || sorted.length === 0) return null;
+		var idx = (sorted.length - 1) * q;
+		var low = Math.floor(idx);
+		var high = Math.ceil(idx);
+		if (low === high) return sorted[low];
+		return sorted[low] + (sorted[high] - sorted[low]) * (idx - low);
+	}
+
+	function _toast(message, kind) {
+		var el = document.createElement('div');
+		var isWarn = kind === 'warn';
+		el.style.cssText =
+			'position:fixed;bottom:22px;left:22px;z-index:9999;padding:10px 14px;border-radius:10px;' +
+			'background:' + (isWarn ? 'rgba(127,29,29,0.92)' : 'rgba(15,23,42,0.92)') + ';' +
+			'color:#e2e8f0;border:1px solid ' + (isWarn ? 'rgba(248,113,113,0.35)' : 'rgba(56,189,248,0.3)') + ';' +
+			'font:600 11px/1.45 Inter, sans-serif;max-width:420px;box-shadow:0 8px 28px rgba(0,0,0,.45);';
+		el.textContent = message;
+		document.body.appendChild(el);
+		setTimeout(function () {
+			if (el && el.parentNode) el.parentNode.removeChild(el);
+		}, 4500);
+	}
+
+	function _startLongTaskObserver() {
+		if (!window.PerformanceObserver) return;
+		if (!PerformanceObserver.supportedEntryTypes || PerformanceObserver.supportedEntryTypes.indexOf('longtask') === -1) return;
+		try {
+			_longTaskObserver = new PerformanceObserver(function (list) {
+				var entries = list.getEntries();
+				for (var i = 0; i < entries.length; i++) {
+					var dur = entries[i].duration;
+					if (typeof dur === 'number' && isFinite(dur)) _longTaskDurations.push(dur);
+				}
+			});
+			_longTaskObserver.observe({ entryTypes: ['longtask'] });
+		} catch (e) {
+			_longTaskObserver = null;
+		}
+	}
+
+	function _stopLongTaskObserver() {
+		if (_longTaskObserver) {
+			try { _longTaskObserver.disconnect(); } catch (e) { }
+			_longTaskObserver = null;
+		}
+	}
+
+	function _onSampleFrame() {
+		var now = performance.now();
+		if (_sampleLastFrame > 0) {
+			_frameTimes.push(now - _sampleLastFrame);
+		}
+		_sampleLastFrame = now;
+
+		if (tileset && tileset.statistics) {
+			var s = tileset.statistics;
+			_tilesPendingPeak = Math.max(_tilesPendingPeak, s.numberOfPendingRequests || 0);
+			_tilesProcessingPeak = Math.max(_tilesProcessingPeak, s.numberOfTilesProcessing || 0);
+			_tilesSelectedPeak = Math.max(_tilesSelectedPeak, s.numberOfTilesSelected || 0);
+		}
+	}
+
+	function _buildReport(durationMs, label) {
+		var sorted = _frameTimes.slice().sort(function (a, b) { return a - b; });
+		var count = sorted.length;
+		var sum = 0;
+		for (var i = 0; i < sorted.length; i++) sum += sorted[i];
+
+		var avgFrameMs = count > 0 ? sum / count : null;
+		var p95FrameMs = _percentile(sorted, 0.95);
+		var p99FrameMs = _percentile(sorted, 0.99);
+		var worstFrameMs = count > 0 ? sorted[sorted.length - 1] : null;
+
+		var jankCount = 0;
+		var severeJankCount = 0;
+		for (var j = 0; j < sorted.length; j++) {
+			if (sorted[j] > 33.3) jankCount++;
+			if (sorted[j] > 50.0) severeJankCount++;
+		}
+
+		var longTaskTotal = 0;
+		var longTaskMax = 0;
+		for (var k = 0; k < _longTaskDurations.length; k++) {
+			longTaskTotal += _longTaskDurations[k];
+			if (_longTaskDurations[k] > longTaskMax) longTaskMax = _longTaskDurations[k];
+		}
+
+		var endHeapMB = _readHeapMB();
+
+		return {
+			label: label || 'manual',
+			durationMs: _round(durationMs, 0),
+			frames: count,
+			avgFps: avgFrameMs ? _round(1000 / avgFrameMs, 1) : null,
+			onePercentLowFps: p99FrameMs ? _round(1000 / p99FrameMs, 1) : null,
+			avgFrameMs: _round(avgFrameMs, 2),
+			p95FrameMs: _round(p95FrameMs, 2),
+			worstFrameMs: _round(worstFrameMs, 2),
+			jankRatioPct: count > 0 ? _round((jankCount / count) * 100, 1) : null,
+			severeJankRatioPct: count > 0 ? _round((severeJankCount / count) * 100, 1) : null,
+			longTaskCount: _longTaskDurations.length,
+			longTaskTotalMs: _round(longTaskTotal, 1),
+			longTaskMaxMs: _round(longTaskMax, 1),
+			tilePendingPeak: _tilesPendingPeak,
+			tileProcessingPeak: _tilesProcessingPeak,
+			tileSelectedPeak: _tilesSelectedPeak,
+			heapStartMB: _round(_startHeapMB, 1),
+			heapEndMB: _round(endHeapMB, 1),
+			heapDeltaMB: (_startHeapMB !== null && endHeapMB !== null) ? _round(endHeapMB - _startHeapMB, 1) : null,
+			timestamp: new Date().toISOString()
+		};
+	}
+
+	function _stopSample(label) {
+		if (!_isSampling) return _lastReport;
+
+		_isSampling = false;
+		if (_sampleTimer) {
+			clearTimeout(_sampleTimer);
+			_sampleTimer = null;
+		}
+		viewer.scene.postRender.removeEventListener(_onSampleFrame);
+		_stopLongTaskObserver();
+
+		var durationMs = performance.now() - _sampleStartMs;
+		_lastReport = _buildReport(durationMs, label);
+
+		try {
+			TelemetryManager.addLog('PERF_BENCHMARK', _lastReport, false);
+		} catch (e) { }
+
+		if (_lastReport && _lastReport.avgFps !== null) {
+			var summary =
+				'Benchmark bitti • Avg FPS: ' + _lastReport.avgFps +
+				' • %1 low: ' + (_lastReport.onePercentLowFps !== null ? _lastReport.onePercentLowFps : '-') +
+				' • Jank: ' + (_lastReport.jankRatioPct !== null ? _lastReport.jankRatioPct + '%' : '-');
+			_toast(summary, (_lastReport.jankRatioPct !== null && _lastReport.jankRatioPct > 8) ? 'warn' : 'info');
+			console.table(_lastReport);
+			console.log('[CBSPerf] Detaylı rapor:', _lastReport);
+		}
+
+		return _lastReport;
+	}
+
+	function _startSample(durationMs, label) {
+		if (_isSampling) {
+			return Promise.resolve(_lastReport);
+		}
+
+		var ms = Math.max(3000, Number(durationMs) || 15000);
+		_isSampling = true;
+		_sampleStartMs = performance.now();
+		_sampleLastFrame = 0;
+		_frameTimes = [];
+		_longTaskDurations = [];
+		_tilesPendingPeak = 0;
+		_tilesProcessingPeak = 0;
+		_tilesSelectedPeak = 0;
+		_startHeapMB = _readHeapMB();
+
+		viewer.scene.postRender.addEventListener(_onSampleFrame);
+		_startLongTaskObserver();
+
+		_toast('Performans benchmark başladı (' + Math.round(ms / 1000) + 's). Bu sırada normal kullanım senaryonu uygula.', 'info');
+
+		return new Promise(function (resolve) {
+			_sampleTimer = setTimeout(function () {
+				resolve(_stopSample(label));
+			}, ms);
+		});
+	}
+
+	window.CBSPerf = {
+		sample: function (durationMs, label) { return _startSample(durationMs, label); },
+		stop: function (label) { return _stopSample(label); },
+		isSampling: function () { return _isSampling; },
+		lastReport: function () { return _lastReport; }
+	};
+})();
+
 // ─── SAĞ PANEL DRAWER TOGGLE ───────────────────────────────────
 var _drawerIsOpen = false;
 (function () {
@@ -1589,11 +1938,20 @@ var _drawerIsOpen = false;
 		label.style.bottom = (window.innerHeight - btnRect.top + 8) + 'px';
 	}
 
+	function getDrawerButtonRight() {
+		var panelWidth = panel.getBoundingClientRect().width || 320;
+		return (Math.round(panelWidth) + 16) + 'px';
+	}
+
+	function syncDrawerButtonOffset() {
+		btn.style.right = getDrawerButtonRight();
+	}
+
 	function openDrawer() {
 		_drawerIsOpen = true;
 		panel.style.transform = 'translateX(0)';
 		icon.textContent = 'chevron_right';
-		btn.style.right = 'calc(320px + 16px)'; // w-80 = 320px + right-4
+		syncDrawerButtonOffset();
 		if (label) label.style.display = 'none';
 		CbsStorage.setSetting('cbs-drawer', 'open');
 	}
@@ -1619,12 +1977,21 @@ var _drawerIsOpen = false;
 		});
 	}
 
-	// Başlangıçta kapalı — label görünür
-	positionLabel('0');
+	// Başlangıçta: son kullanıcı tercihini uygula (yoksa açık başlat)
+	var savedDrawerState = null;
+	try {
+		savedDrawerState = CbsStorage.getSetting('cbs-drawer');
+	} catch (e) { }
+	if (savedDrawerState === 'closed') {
+		closeDrawer();
+	} else {
+		openDrawer();
+	}
 
-	// Pencere boyutu değişince label pozisyonunu güncelle
+	// Pencere boyutu değişince panel açıkken toggle offsetini, kapalıyken label pozisyonunu güncelle
 	window.addEventListener('resize', function () {
-		if (!_drawerIsOpen) positionLabel('0');
+		if (_drawerIsOpen) syncDrawerButtonOffset();
+		else positionLabel('0');
 	});
 })();
 
@@ -1640,6 +2007,7 @@ var _toolPanelIsOpen = false;
 		_toolPanelIsOpen = true;
 		panel.style.transform = 'translateX(0)';
 		icon.textContent = 'chevron_left';
+		if (isInfoPanelVisible()) scheduleInfoPanelDockSync();
 		CbsStorage.setSetting('cbs-toolpanel', 'open');
 	}
 
@@ -1647,6 +2015,7 @@ var _toolPanelIsOpen = false;
 		_toolPanelIsOpen = false;
 		panel.style.transform = 'translateX(calc(-100% + 28px))';
 		icon.textContent = 'chevron_right';
+		if (isInfoPanelVisible()) scheduleInfoPanelDockSync();
 		CbsStorage.setSetting('cbs-toolpanel', 'closed');
 	}
 	// Global erişim (setActiveTool mobilde çağırır)
@@ -1699,10 +2068,29 @@ document.addEventListener('keydown', function (e) {
 		if (topBtn) topBtn.click();
 	}
 
+	// O tuşu: Ortografik projeksiyon
+	if (e.key === 'o' || e.key === 'O') {
+		var orthoBtn = document.querySelector('.camera-proj-btn[data-proj="orthographic"]');
+		if (orthoBtn) orthoBtn.click();
+	}
+
+	// P tuşu: Perspektif projeksiyon
+	if (e.key === 'p' || e.key === 'P') {
+		var perspectiveBtn = document.querySelector('.camera-proj-btn[data-proj="perspective"]');
+		if (perspectiveBtn) perspectiveBtn.click();
+	}
+
 	// X tuşu: X-Ray toggle
 	if (e.key === 'x' || e.key === 'X') {
 		var xrayBtn = document.getElementById('btnXRayToggle');
 		if (xrayBtn) xrayBtn.click();
+	}
+
+	// K tuşu: 15sn performans benchmark başlat
+	if (e.key === 'k' || e.key === 'K') {
+		if (window.CBSPerf && !window.CBSPerf.isSampling()) {
+			window.CBSPerf.sample(15000, 'keyboard');
+		}
 	}
 });
 
@@ -1748,6 +2136,25 @@ function toggleXRay() {
 			applyXRayToPrimitive(p, _xrayActive);
 		});
 	});
+
+	// 3. Batch seçim overlay primitifleri (aktif seçili import vurgusu)
+	if (Array.isArray(_batchedSelectionOverlay) && _batchedSelectionOverlay.length > 0) {
+		_batchedSelectionOverlay.forEach(function (item) {
+			applyXRayToPrimitive(item, _xrayActive);
+		});
+	}
+
+	// 4. Edit modu geçici primitifleri (aktif edit varsa anında senkron)
+	if (typeof EditManager !== 'undefined' && EditManager) {
+		if (EditManager._editLinePrim) applyXRayToPrimitive(EditManager._editLinePrim, _xrayActive);
+		if (EditManager._editPolyPrim) applyXRayToPrimitive(EditManager._editPolyPrim, _xrayActive);
+		if (Array.isArray(EditManager._gripCols) && EditManager._gripCols.length > 0) {
+			EditManager._gripCols.forEach(function (g) {
+				if (!g || !g.col || g.type !== 'pmid') return;
+				applyXRayToPrimitive(g.col, _xrayActive);
+			});
+		}
+	}
 
 	viewer.scene.requestRender();
 }
@@ -1971,6 +2378,8 @@ var currentViewModeText = document.getElementById('currentViewModeText');
 
 viewModeBtns.forEach(function (btn) {
 	btn.addEventListener('click', function () {
+		if (this.disabled) return;
+
 		var mode = this.getAttribute('data-mode');
 		var icon = this.querySelector('span').innerText;
 		var text = this.innerText.replace(icon, '').trim();
@@ -2118,8 +2527,52 @@ var isOrthographic = false;
 var orthographicFrustum = new Cesium.OrthographicFrustum();
 var perspectiveFrustum = new Cesium.PerspectiveFrustum({
 	fov: Cesium.Math.toRadians(60.0),
-	aspectRatio: viewer.canvas.clientWidth / viewer.canvas.clientHeight
+	aspectRatio: viewer.canvas.clientWidth / viewer.canvas.clientHeight,
+	near: _isMob ? 1.0 : 0.1
 });
+var ORTHOGRAPHIC_MIN_CLEARANCE = 80.0; // Resmi ortofoto bakış için model üstünde güvenli minimum yükseklik
+var ORTHOGRAPHIC_NADIR_PITCH = Cesium.Math.toRadians(-90.0);
+var ORTHOGRAPHIC_FRUSTUM_NEAR = 0.01;
+var ORTHOGRAPHIC_FRUSTUM_FAR = 50000000.0;
+var _savedDynamicScreenSpaceError = null;
+var _savedCullWithChildrenBounds = null;
+
+function updateProjectionAspectRatios() {
+	var aspect = viewer.canvas.clientWidth / Math.max(1, viewer.canvas.clientHeight);
+	perspectiveFrustum.aspectRatio = aspect;
+	orthographicFrustum.aspectRatio = aspect;
+}
+
+function applyOrthographicFrustumPrecision() {
+	updateProjectionAspectRatios();
+	orthographicFrustum.near = ORTHOGRAPHIC_FRUSTUM_NEAR;
+	orthographicFrustum.far = ORTHOGRAPHIC_FRUSTUM_FAR;
+}
+
+function applyOrthographicTilesetStability(enable) {
+	if (!tileset) return;
+
+	if (enable) {
+		if (_savedDynamicScreenSpaceError === null) {
+			_savedDynamicScreenSpaceError = !!tileset.dynamicScreenSpaceError;
+		}
+		if (_savedCullWithChildrenBounds === null) {
+			_savedCullWithChildrenBounds = !!tileset.cullWithChildrenBounds;
+		}
+		tileset.dynamicScreenSpaceError = false;
+		tileset.cullWithChildrenBounds = false;
+		return;
+	}
+
+	if (_savedDynamicScreenSpaceError !== null) {
+		tileset.dynamicScreenSpaceError = _savedDynamicScreenSpaceError;
+		_savedDynamicScreenSpaceError = null;
+	}
+	if (_savedCullWithChildrenBounds !== null) {
+		tileset.cullWithChildrenBounds = _savedCullWithChildrenBounds;
+		_savedCullWithChildrenBounds = null;
+	}
+}
 
 var cameraProjBtns = document.querySelectorAll('.camera-proj-btn');
 cameraProjBtns.forEach(function (btn) {
@@ -2137,48 +2590,80 @@ cameraProjBtns.forEach(function (btn) {
 		if (proj === 'orthographic' && !isOrthographic) {
 			// Switch to Orthographic
 			var focus = getCameraFocus();
-			var distance = Cesium.Cartesian3.distance(viewer.camera.position, focus);
-			if (distance < 1 || distance > 5000) distance = 500;
+			var focusCarto = Cesium.Cartographic.fromCartesian(focus);
+			if (!focusCarto || !isFinite(focusCarto.longitude) || !isFinite(focusCarto.latitude)) {
+				return;
+			}
+			var cameraCarto = viewer.camera.positionCartographic;
+			var focusHeight = focusCarto && isFinite(focusCarto.height) ? focusCarto.height : 0;
+			var currentHeight = cameraCarto && isFinite(cameraCarto.height)
+				? cameraCarto.height
+				: (focusHeight + 150.0);
+			var targetHeight = Math.max(currentHeight, focusHeight + ORTHOGRAPHIC_MIN_CLEARANCE);
+			var orthoDestination = Cesium.Cartesian3.fromRadians(
+				focusCarto.longitude,
+				focusCarto.latitude,
+				targetHeight
+			);
+			var clearHeight = Math.max(ORTHOGRAPHIC_MIN_CLEARANCE, targetHeight - focusHeight);
 
-			orthographicFrustum.width = distance;
-			orthographicFrustum.aspectRatio = perspectiveFrustum.aspectRatio;
+			// Frustum genişliği mevcut kotu koruyan clearHeight'ten türetilir.
+			orthographicFrustum.width = Cesium.Math.clamp(clearHeight * 2.0, 30.0, 10000.0);
+			applyOrthographicFrustumPrecision();
 
-			// Mevcut odak noktasına uç ve üstten bakışa geç
+			// Mevcut kotu koruyarak üstten bakışa geç
 			viewer.camera.flyTo({
-				destination: focus,
+				destination: orthoDestination,
 				orientation: {
-					heading: 0,
-					pitch: Cesium.Math.toRadians(-90),
+					heading: viewer.camera.heading,
+					pitch: ORTHOGRAPHIC_NADIR_PITCH,
 					roll: 0
 				},
-				offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-90), distance),
 				duration: 1.0,
 				complete: function () {
+					applyOrthographicFrustumPrecision();
 					viewer.camera.frustum = orthographicFrustum;
 					isOrthographic = true;
+					applyOrthographicTilesetStability(true);
 					viewer.scene.screenSpaceCameraController.enableTilt = false;
+					viewer.scene.requestRender();
 				}
 			});
 		} else if (proj === 'perspective' && isOrthographic) {
 			// Switch to Perspective
+			updateProjectionAspectRatios();
 			viewer.camera.frustum = perspectiveFrustum;
 			isOrthographic = false;
+			applyOrthographicTilesetStability(false);
 			viewer.scene.screenSpaceCameraController.enableTilt = true;
+			viewer.scene.requestRender();
 		}
 	});
+});
+
+window.addEventListener('resize', function () {
+	updateProjectionAspectRatios();
+	if (isOrthographic) {
+		applyOrthographicFrustumPrecision();
+		viewer.scene.requestRender();
+	}
 });
 
 // Ortografik modda akıcı zoom için wheel düzeltmesi
 viewer.scene.canvas.addEventListener('wheel', function (e) {
 	if (isOrthographic) {
+		e.preventDefault();
+		e.stopPropagation();
 		var direction = e.deltaY > 0 ? 1 : -1;
 		var zoomAmount = orthographicFrustum.width * 0.1 * direction * zoomSensitivity;
 		orthographicFrustum.width += zoomAmount;
 		// Zoom limitleri (çok uzaklaşma veya ters dönmeyi önle)
 		if (orthographicFrustum.width < 10.0) orthographicFrustum.width = 10.0;
 		if (orthographicFrustum.width > 10000.0) orthographicFrustum.width = 10000.0;
+		applyOrthographicFrustumPrecision();
+		viewer.scene.requestRender();
 	}
-}, { passive: true });
+}, { passive: false, capture: true });
 
 
 // ─── 2. KATMANLAR ──────────────────────────────────────────────
@@ -2268,6 +2753,43 @@ var activeHighlightId = null;
 var savedClipBoxes = [];
 var savedClipBoxCount = 0;
 var selectedSavedClipBoxId = null;
+var _batchedSelectionOverlay = [];
+
+function clearBatchedSelectionOverlay() {
+	if (!_batchedSelectionOverlay || _batchedSelectionOverlay.length === 0) return;
+	_batchedSelectionOverlay.forEach(function (item) {
+		safeRemoveItem(item);
+	});
+	_batchedSelectionOverlay = [];
+}
+
+function renderBatchedSelectionOverlay(measurement) {
+	clearBatchedSelectionOverlay();
+	if (!measurement || !measurement.isBatched || !measurement.checked) return;
+	if (!measurement.points || measurement.points.length < 2) return;
+
+	var overlayColor = Cesium.Color.CYAN.withAlpha(0.95);
+
+	if (measurement.type === 'polygon' && measurement.points.length >= 3) {
+		var fillAlpha = Math.min(0.40, Math.max(0.18, (VEC_STYLE.polygon.fillAlpha || 0.25) + 0.12));
+		var fillOverlay = createStablePolygon(measurement.points, Cesium.Color.CYAN.withAlpha(fillAlpha));
+		if (fillOverlay) _batchedSelectionOverlay.push(fillOverlay);
+
+		var edgeWidth = Math.max(3, (VEC_STYLE.polygon.edgeWidth || 2) + 1);
+		var edgeOverlay = createStablePolyline(measurement.points.concat([measurement.points[0]]), edgeWidth, overlayColor);
+		if (edgeOverlay) _batchedSelectionOverlay.push(edgeOverlay);
+	} else if ((measurement.type === 'line' || measurement.type === 'height') && measurement.points.length >= 2) {
+		var lineWidth = Math.max(4, (VEC_STYLE.line.width || 3) + 1);
+		var lineOverlay = createStablePolyline(measurement.points, lineWidth, overlayColor);
+		if (lineOverlay) _batchedSelectionOverlay.push(lineOverlay);
+	}
+
+	if (_xrayActive) {
+		_batchedSelectionOverlay.forEach(function (item) {
+			applyXRayToPrimitive(item, true);
+		});
+	}
+}
 
 // STORAGE_KEY artık cbs-storage.js'de tanımlı (CbsStorage modülü)
 
@@ -2285,6 +2807,200 @@ function _deserializePoint(p) {
 function setResultDisplayMessage(messageHtml) {
 	var resultEl = document.querySelector('#resultDisplay > div');
 	if (resultEl) resultEl.innerHTML = messageHtml;
+}
+
+function escapeHtmlText(raw) {
+	return String(raw || '')
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&#39;');
+}
+
+function showResultErrorMessage(message) {
+	var colorClass = document.documentElement.classList.contains('light') ? 'text-rose-600' : 'text-rose-300';
+	setResultDisplayMessage('<span class="' + colorClass + ' font-bold text-[11px]">⚠️ ' + escapeHtmlText(message) + '</span>');
+}
+
+function showResultConfirmDialog(message, onConfirm) {
+	var existing = document.getElementById('cbsConfirmDialog');
+	if (existing) existing.remove();
+
+	var isLight = document.documentElement.classList.contains('light');
+	var overlay = document.createElement('div');
+	overlay.id = 'cbsConfirmDialog';
+	overlay.style.cssText = [
+		'position:fixed;inset:0;z-index:10020',
+		'display:flex;align-items:center;justify-content:center',
+		'background:' + (isLight ? 'rgba(15,23,42,0.35)' : 'rgba(2,6,23,0.6)'),
+		'backdrop-filter:blur(2px)'
+	].join(';');
+
+	var card = document.createElement('div');
+	card.style.cssText = [
+		'width:min(92vw,420px)',
+		'border-radius:12px',
+		'padding:16px',
+		'font-family:Inter,system-ui,sans-serif',
+		'background:' + (isLight ? '#ffffff' : '#0f172a'),
+		'border:1px solid ' + (isLight ? 'rgba(148,163,184,0.5)' : 'rgba(148,163,184,0.25)'),
+		'box-shadow:0 18px 36px rgba(0,0,0,0.35)'
+	].join(';');
+
+	var title = document.createElement('div');
+	title.textContent = 'Onay Gerekli';
+	title.style.cssText = 'font-size:14px;font-weight:700;margin-bottom:8px;color:' + (isLight ? '#0f172a' : '#e2e8f0') + ';';
+
+	var body = document.createElement('div');
+	body.textContent = message;
+	body.style.cssText = 'font-size:12px;line-height:1.6;white-space:pre-line;color:' + (isLight ? '#334155' : '#cbd5e1') + ';';
+
+	var actions = document.createElement('div');
+	actions.style.cssText = 'display:flex;justify-content:flex-end;gap:8px;margin-top:14px;';
+
+	var cancelBtn = document.createElement('button');
+	cancelBtn.textContent = 'Vazgeç';
+	cancelBtn.style.cssText = [
+		'border:1px solid ' + (isLight ? 'rgba(148,163,184,0.6)' : 'rgba(148,163,184,0.35)'),
+		'background:' + (isLight ? '#f8fafc' : '#1e293b'),
+		'color:' + (isLight ? '#334155' : '#e2e8f0'),
+		'padding:7px 12px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer'
+	].join(';');
+
+	var okBtn = document.createElement('button');
+	okBtn.textContent = 'Devam Et';
+	okBtn.style.cssText = [
+		'border:1px solid rgba(248,113,113,0.45)',
+		'background:' + (isLight ? '#ef4444' : '#dc2626'),
+		'color:white',
+		'padding:7px 12px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer'
+	].join(';');
+
+	function closeDialog() {
+		overlay.remove();
+	}
+
+	cancelBtn.addEventListener('click', closeDialog);
+	okBtn.addEventListener('click', function () {
+		closeDialog();
+		if (typeof onConfirm === 'function') onConfirm();
+	});
+	overlay.addEventListener('click', function (e) {
+		if (e.target === overlay) closeDialog();
+	});
+
+	actions.appendChild(cancelBtn);
+	actions.appendChild(okBtn);
+	card.appendChild(title);
+	card.appendChild(body);
+	card.appendChild(actions);
+	overlay.appendChild(card);
+	document.body.appendChild(overlay);
+}
+
+function applyInfoPanelTheme(panel) {
+	if (!panel) return;
+
+	var isLight = document.documentElement.classList.contains('light');
+	var header = document.getElementById('infoPanelHeader');
+	var summary = document.getElementById('infoSummaryBlock');
+	var closeBtn = document.getElementById('btnCloseInfo');
+	var content = panel.querySelector('.p-3');
+	var labels = panel.querySelectorAll('label');
+	var sectionTitles = panel.querySelectorAll('.font-semibold');
+	var fields = panel.querySelectorAll('input, select, textarea');
+	var divider = panel.querySelector('hr');
+	var pickStatus = document.getElementById('infoPickStatus');
+	var saveBtn = document.getElementById('btnSaveInfo');
+	var readonlyBadge = document.getElementById('infoReadonlyBadge');
+
+	if (isLight) {
+		panel.style.background = 'rgba(255,255,255,0.97)';
+		panel.style.border = '1px solid rgba(148,163,184,0.5)';
+		panel.style.boxShadow = '0 18px 36px rgba(15,23,42,0.18)';
+		if (header) {
+			header.style.background = 'rgba(241,245,249,0.9)';
+			header.style.borderBottom = '1px solid rgba(148,163,184,0.35)';
+		}
+		if (summary) {
+			summary.style.background = 'rgba(248,250,252,0.9)';
+			summary.style.border = '1px solid rgba(148,163,184,0.35)';
+			summary.style.color = '#0f766e';
+		}
+		if (content) content.style.color = '#334155';
+		if (closeBtn) closeBtn.style.color = '#64748b';
+		if (divider) divider.style.borderColor = 'rgba(148,163,184,0.35)';
+		if (saveBtn) {
+			saveBtn.style.background = 'rgba(241,245,249,0.92)';
+			saveBtn.style.borderColor = 'rgba(148,163,184,0.65)';
+			saveBtn.style.color = '#0f172a';
+		}
+		if (readonlyBadge) {
+			readonlyBadge.style.background = 'rgba(245,158,11,0.15)';
+			readonlyBadge.style.borderColor = 'rgba(217,119,6,0.45)';
+			readonlyBadge.style.color = '#b45309';
+		}
+
+		labels.forEach(function (label) {
+			label.style.color = '#64748b';
+		});
+		sectionTitles.forEach(function (title) {
+			title.style.color = '#475569';
+		});
+		fields.forEach(function (field) {
+			field.style.background = 'rgba(255,255,255,0.95)';
+			field.style.borderColor = 'rgba(148,163,184,0.6)';
+			field.style.color = '#0f172a';
+		});
+		setInfoPickButtonState(typeof window !== 'undefined' && !!window.__infoPickModeActive);
+		if (pickStatus) {
+			setInfoPickStatus(pickStatus.textContent || '', pickStatus.getAttribute('data-tone') || 'idle');
+		}
+		return;
+	}
+
+	panel.style.background = '';
+	panel.style.border = '';
+	panel.style.boxShadow = '';
+	if (header) {
+		header.style.background = '';
+		header.style.borderBottom = '';
+	}
+	if (summary) {
+		summary.style.background = '';
+		summary.style.border = '';
+		summary.style.color = '';
+	}
+	if (content) content.style.color = '';
+	if (closeBtn) closeBtn.style.color = '';
+	if (divider) divider.style.borderColor = '';
+	if (saveBtn) {
+		saveBtn.style.background = '';
+		saveBtn.style.borderColor = '';
+		saveBtn.style.color = '';
+	}
+	if (readonlyBadge) {
+		readonlyBadge.style.background = '';
+		readonlyBadge.style.borderColor = '';
+		readonlyBadge.style.color = '';
+	}
+
+	labels.forEach(function (label) {
+		label.style.color = '';
+	});
+	sectionTitles.forEach(function (title) {
+		title.style.color = '';
+	});
+	fields.forEach(function (field) {
+		field.style.background = '';
+		field.style.borderColor = '';
+		field.style.color = '';
+	});
+	setInfoPickButtonState(typeof window !== 'undefined' && !!window.__infoPickModeActive);
+	if (pickStatus) {
+		setInfoPickStatus(pickStatus.textContent || '', pickStatus.getAttribute('data-tone') || 'idle');
+	}
 }
 
 function normalizeClipBoxName(str) {
@@ -2386,19 +3102,129 @@ function getClipBoxSummary(clip) {
 }
 
 function findSavedClipBox(id) {
+	if (!Array.isArray(savedClipBoxes) || savedClipBoxes.length === 0) return null;
 	for (var i = 0; i < savedClipBoxes.length; i++) {
 		if (savedClipBoxes[i].id === id) return savedClipBoxes[i];
 	}
 	return null;
 }
 
+var clipMiniPreviewFrame = null;
+var clipMiniPendingPreview = null;
+
+function updateClipMiniSliderUi(axis, rawValue) {
+	axis = String(axis || '').toUpperCase();
+	var slider = document.getElementById('clipMini' + axis);
+	if (!slider) return;
+	var safeValue = Number(rawValue || 0);
+	var min = Number(slider.min || 0);
+	var max = Number(slider.max || 100);
+	var progress = max === min ? 0 : ((safeValue - min) / (max - min)) * 100;
+	slider.value = safeValue;
+	slider.style.setProperty('--clip-progress', Math.max(0, Math.min(100, progress)) + '%');
+	var label = document.getElementById('clipMini' + axis + 'Val');
+	if (label) {
+		label.textContent = axis === 'R' ? (safeValue + '°') : (safeValue + 'm');
+	}
+}
+
+function applyClipMiniAxisValue(axis, rawValue, commitEntities) {
+	axis = String(axis || '').toUpperCase();
+	var safeValue = Number(rawValue || 0);
+	updateClipMiniSliderUi(axis, safeValue);
+	if (!window.ClipBoxManager || !ClipBoxManager.active) return;
+	if (axis === 'R') {
+		ClipBoxManager._updateRotation(safeValue, !!commitEntities);
+		return;
+	}
+	ClipBoxManager._updateSize(axis.toLowerCase(), safeValue, !!commitEntities);
+}
+
+function scheduleClipMiniPreview(axis, rawValue) {
+	clipMiniPendingPreview = {
+		axis: String(axis || '').toUpperCase(),
+		value: Number(rawValue || 0)
+	};
+	updateClipMiniSliderUi(clipMiniPendingPreview.axis, clipMiniPendingPreview.value);
+	if (clipMiniPreviewFrame) return;
+	clipMiniPreviewFrame = requestAnimationFrame(function () {
+		clipMiniPreviewFrame = null;
+		if (!clipMiniPendingPreview) return;
+		var preview = clipMiniPendingPreview;
+		clipMiniPendingPreview = null;
+		applyClipMiniAxisValue(preview.axis, preview.value, false);
+	});
+}
+
+function flushClipMiniPreview(commitEntities) {
+	if (clipMiniPreviewFrame) {
+		cancelAnimationFrame(clipMiniPreviewFrame);
+		clipMiniPreviewFrame = null;
+	}
+	if (!clipMiniPendingPreview) return;
+	var preview = clipMiniPendingPreview;
+	clipMiniPendingPreview = null;
+	applyClipMiniAxisValue(preview.axis, preview.value, !!commitEntities);
+}
+
+function syncClipMiniPanelMeta() {
+	var stateEl = document.getElementById('clipMiniState');
+	if (stateEl) {
+		var tone = 'idle';
+		var text = 'Kapalı';
+		if (window.ClipBoxManager && ClipBoxManager._placementMode) {
+			tone = 'warn';
+			text = 'Haritada merkez seçin';
+		} else if (window.ClipBoxManager && ClipBoxManager.active && ClipBoxManager._worldCenter) {
+			tone = 'active';
+			text = 'Aktif kırpma';
+		}
+		stateEl.dataset.tone = tone;
+		stateEl.textContent = text;
+	}
+
+	var selectionInfo = document.getElementById('clipMiniSelectionInfo');
+	if (selectionInfo) {
+		var selectedClip = findSavedClipBox(selectedSavedClipBoxId);
+		if (selectedClip) {
+			selectionInfo.innerHTML = '<strong>Seçili kayıt:</strong> ' + escapeHtmlText(selectedClip.name);
+		} else {
+			selectionInfo.innerHTML = '<strong>Kaydedilmemiş kırpma.</strong> Yeni kayıt oluşturmak için Kaydet kullan.';
+		}
+	}
+}
+
 function syncClipMiniActionButtons() {
+	var isLiveClip = !!(window.ClipBoxManager && ClipBoxManager.active && ClipBoxManager._worldCenter);
+	var saveBtn = document.getElementById('clipMiniSave');
+	var flyBtn = document.getElementById('clipMiniFlyTo');
+	var repositionBtn = document.getElementById('clipMiniReposition');
 	var updateBtn = document.getElementById('clipMiniUpdate');
-	if (!updateBtn) return;
 	var hasSelected = !!findSavedClipBox(selectedSavedClipBoxId);
-	updateBtn.disabled = !hasSelected;
-	updateBtn.style.opacity = hasSelected ? '1' : '0.45';
-	updateBtn.title = hasSelected ? 'Seçili ClipBox kaydını güncelle' : 'Önce listeden bir ClipBox kaydı seçin';
+
+	if (saveBtn) {
+		saveBtn.disabled = !isLiveClip;
+		saveBtn.title = isLiveClip ? 'Geçerli ClipBox ayarlarıyla yeni kayıt oluştur' : 'Önce aktif bir ClipBox yerleştirin';
+	}
+
+	if (flyBtn) {
+		flyBtn.disabled = !isLiveClip;
+		flyBtn.title = isLiveClip ? 'Aktif ClipBox alanına odaklan' : 'Önce aktif bir ClipBox yerleştirin';
+	}
+
+	if (repositionBtn) {
+		repositionBtn.disabled = !isLiveClip;
+		repositionBtn.title = isLiveClip ? 'Mevcut boyut ve rotasyonu koruyup merkezi yeniden seç' : 'Önce aktif bir ClipBox yerleştirin';
+	}
+
+	if (updateBtn) {
+		updateBtn.disabled = !(hasSelected && isLiveClip);
+		updateBtn.title = hasSelected
+			? (isLiveClip ? 'Seçili ClipBox kaydını güncelle' : 'Önce güncellenecek ClipBox sahnede aktif olmalı')
+			: 'Önce listeden bir ClipBox kaydı seçin';
+	}
+
+	syncClipMiniPanelMeta();
 }
 
 function syncSavedClipBoxOverlay(clip) {
@@ -2495,14 +3321,15 @@ function deleteSavedClipBox(id) {
 	viewer.scene.requestRender();
 }
 
-function startEditingSavedClipBox(e, clip) {
-	e.stopPropagation();
-	var nameSpan = e.target;
+function startEditingSavedClipBox(e, clip, targetEl) {
+	if (e && e.stopPropagation) e.stopPropagation();
+	var nameSpan = targetEl || (e && e.currentTarget) || (e && e.target);
+	if (!nameSpan || !nameSpan.parentNode) return;
 	var oldName = clip.name;
 	var input = document.createElement('input');
 	input.type = 'text';
 	input.value = oldName;
-	input.className = 'text-[10px] border-b border-primary/50 px-1 py-0 w-[100px] outline-none';
+	input.className = 'text-[10px] border-b border-primary/50 px-1 py-0 w-[132px] outline-none';
 	input.style.cssText = 'background:#0f172a;color:#fff;caret-color:#fff;height:18px;line-height:18px;';
 
 	nameSpan.parentNode.replaceChild(input, nameSpan);
@@ -2726,7 +3553,7 @@ function loadFromStorage() {
 // GPU float32 hassasiyet sorunu: ECEF koordinatları (~4M metre) GPU'da titrer
 // Çözüm: İlk noktayı pivot yapıp tüm vertex'leri lokal ofset olarak gönder
 // modelMatrix ile mutlak pozisyon CPU'da hesaplanır (double precision)
-var ENTITY_HEIGHT_OFFSET = 0.02; // metre — Z-fighting önleyici fakat YÜKSEK HASSASİYETLİ min. eşik (Hassasiyet 1. Öncelik)
+// ENTITY_HEIGHT_OFFSET yukarıda tek bir yerden tanımlanır.
 
 // Global Primitive Koleksiyonları (Performans ve Stabilite için)
 var globalPointCollection = viewer.scene.primitives.add(new Cesium.PointPrimitiveCollection());
@@ -3221,6 +4048,8 @@ function restoreImports() {
 			var hexColor = existingGroup.color || '#14B8A6';
 			var cesColor = Cesium.Color.fromCssColorString(hexColor);
 			var zOffset = rec.zOffset || 0;
+			applyImportZOffsetToGroup(existingGroup, zOffset);
+			var effectiveGroupZ = existingGroup ? existingGroup._zOffset : zOffset;
 			var features = rec.features || [];
 
 			// Geometri akümülatörleri (batch rendering)
@@ -3231,7 +4060,7 @@ function restoreImports() {
 
 			features.forEach(function (feat) {
 				var points = feat.coords.map(function (c) {
-					return Cesium.Cartesian3.fromDegrees(c.lon, c.lat, c.z + zOffset);
+					return Cesium.Cartesian3.fromDegrees(c.lon, c.lat, c.z + effectiveGroupZ);
 				});
 
 				var m = {
@@ -3252,6 +4081,7 @@ function restoreImports() {
 				if (feat.type === 'polygon' && points.length >= 3) {
 					try {
 						polyFillInstances.push(new Cesium.GeometryInstance({
+							id: m.id,
 							geometry: new Cesium.CoplanarPolygonGeometry({
 								polygonHierarchy: new Cesium.PolygonHierarchy(points),
 								vertexFormat: Cesium.MaterialAppearance.MaterialSupport.BASIC.vertexFormat
@@ -3261,6 +4091,7 @@ function restoreImports() {
 					try {
 						var closedPts = points.concat([points[0]]);
 						polyLineInstances.push(new Cesium.GeometryInstance({
+							id: m.id,
 							geometry: new Cesium.PolylineGeometry({
 								positions: closedPts,
 								width: VEC_STYLE.polygon.edgeWidth || 2,
@@ -3270,10 +4101,11 @@ function restoreImports() {
 						}));
 					} catch (e) { }
 					var labelText = m.resultText || m.name || '';
-					labelEntries.push({ position: centroid(points), text: labelText });
+					labelEntries.push({ position: centroid(points), text: labelText, measurementId: m.id });
 				} else if (feat.type === 'line' && points.length >= 2) {
 					try {
 						polyLineInstances.push(new Cesium.GeometryInstance({
+							id: m.id,
 							geometry: new Cesium.PolylineGeometry({
 								positions: points,
 								width: VEC_STYLE.line.width || 3,
@@ -3299,7 +4131,7 @@ function restoreImports() {
 							faceForward: true
 						}),
 						asynchronous: true,
-						allowPicking: false
+						allowPicking: true
 					}));
 					fillPrim._isImportBatch = true;
 					fillPrim._isFillBatch = true;
@@ -3318,7 +4150,7 @@ function restoreImports() {
 							translucent: false
 						}),
 						asynchronous: true,
-						allowPicking: false
+						allowPicking: true
 					}));
 					linePrim._isImportBatch = true;
 					linePrim._isPolylineBatch = true;
@@ -3331,6 +4163,7 @@ function restoreImports() {
 				labelEntries.forEach(function (le) {
 					var lifted = liftPosition(le.position);
 					labelCol.add({
+						id: le.measurementId,
 						position: lifted,
 						text: le.text,
 						font: VEC_STYLE.label.font,
@@ -3560,6 +4393,7 @@ function rebuildBatchPrimitives(group, includeMeasurementFn) {
 		if (m.type === 'polygon' && points.length >= 3) {
 			try {
 				polyFillInstances.push(new Cesium.GeometryInstance({
+					id: m.id,
 					geometry: new Cesium.CoplanarPolygonGeometry({
 						polygonHierarchy: new Cesium.PolygonHierarchy(points),
 						vertexFormat: Cesium.MaterialAppearance.MaterialSupport.BASIC.vertexFormat
@@ -3569,6 +4403,7 @@ function rebuildBatchPrimitives(group, includeMeasurementFn) {
 			try {
 				var closedPts = points.concat([points[0]]);
 				polyLineInstances.push(new Cesium.GeometryInstance({
+					id: m.id,
 					geometry: new Cesium.PolylineGeometry({
 						positions: closedPts,
 						width: VEC_STYLE.polygon.edgeWidth || 2,
@@ -3578,10 +4413,11 @@ function rebuildBatchPrimitives(group, includeMeasurementFn) {
 				}));
 			} catch (e) { }
 			var labelText = m.resultText || m.name || '';
-			labelEntries.push({ position: centroid(points), text: labelText });
+			labelEntries.push({ position: centroid(points), text: labelText, measurementId: m.id });
 		} else if (m.type === 'line' && points.length >= 2) {
 			try {
 				polyLineInstances.push(new Cesium.GeometryInstance({
+					id: m.id,
 					geometry: new Cesium.PolylineGeometry({
 						positions: points,
 						width: VEC_STYLE.line.width || 3,
@@ -3605,7 +4441,7 @@ function rebuildBatchPrimitives(group, includeMeasurementFn) {
 					faceForward: true
 				}),
 				asynchronous: true,
-				allowPicking: false
+				allowPicking: true
 			}));
 			fillPrim._isImportBatch = true;
 			fillPrim._isFillBatch = true;
@@ -3624,7 +4460,7 @@ function rebuildBatchPrimitives(group, includeMeasurementFn) {
 					translucent: false
 				}),
 				asynchronous: true,
-				allowPicking: false
+				allowPicking: true
 			}));
 			linePrim._isImportBatch = true;
 			linePrim._isPolylineBatch = true;
@@ -3637,6 +4473,7 @@ function rebuildBatchPrimitives(group, includeMeasurementFn) {
 		labelEntries.forEach(function (le) {
 			var lifted = liftPosition(le.position);
 			labelCol.add({
+				id: le.measurementId,
 				position: lifted,
 				text: le.text,
 				font: VEC_STYLE.label.font,
@@ -3699,19 +4536,21 @@ function renderSavedClipBoxGroupContent(groupWrapper, group) {
 	clipItems.forEach(function (clip) {
 		var selectedClass = selectedSavedClipBoxId === clip.id ? ' border-amber-400 bg-amber-400/10' : ' border-slate-700/50 bg-slate-800/50 hover:bg-slate-700/50';
 		var row = document.createElement('div');
-		row.className = 'flex items-center justify-between py-0.5 px-1.5 rounded border transition-colors mb-1 cursor-pointer' + selectedClass;
-		row.style.minHeight = '28px';
+		row.className = 'flex items-center justify-between gap-2 py-1 px-2 rounded-md border transition-colors mb-1 cursor-pointer' + selectedClass;
+		row.style.minHeight = '38px';
+		row.title = 'ClipBox uygula ve odakla';
 		row.onclick = function () {
 			applySavedClipBox(clip.id);
 		};
 
 		var leftDiv = document.createElement('div');
-		leftDiv.className = 'flex items-center gap-2 overflow-hidden';
+		leftDiv.className = 'flex items-center gap-2 overflow-hidden flex-1 min-w-0';
 
 		var chk = document.createElement('input');
 		chk.type = 'checkbox';
 		chk.checked = clip.checked;
 		chk.className = 'rounded border-slate-600 bg-slate-800 text-primary size-3 cursor-pointer shrink-0';
+		chk.title = clip.checked ? 'Kayıt görünür' : 'Kayıt gizli';
 		chk.onclick = function (e) {
 			e.stopPropagation();
 			clip.checked = chk.checked;
@@ -3720,32 +4559,42 @@ function renderSavedClipBoxGroupContent(groupWrapper, group) {
 		};
 
 		var name = document.createElement('span');
-		name.className = 'text-[10px] text-slate-300 truncate w-[100px] cursor-pointer';
+		name.className = 'text-[10px] text-slate-200 font-medium truncate max-w-[132px] cursor-pointer';
 		name.innerText = clip.name;
+		name.title = 'Adı düzenle';
 		name.onclick = function (e) { startEditingSavedClipBox(e, clip); };
 
 		leftDiv.appendChild(chk);
 		leftDiv.appendChild(name);
 
 		var rightDiv = document.createElement('div');
-		rightDiv.className = 'flex items-center gap-1 shrink-0';
+		rightDiv.className = 'flex items-center gap-0.5 shrink-0';
 
 		var result = document.createElement('span');
-		result.className = 'text-[9px] font-mono text-amber-400';
+		result.className = 'text-[9px] font-mono text-amber-300 px-1.5 py-0.5 rounded bg-slate-900/60 border border-slate-700/40';
 		result.innerText = getClipBoxSummary(clip);
+		result.title = 'Boyut özeti';
 
 		var applyBtn = document.createElement('button');
-		applyBtn.className = 'text-slate-500 hover:text-cyan-400 p-0.5';
-		applyBtn.title = 'ClipBox uygula';
-		applyBtn.innerHTML = '<span class="material-symbols-outlined text-[13px]">content_cut</span>';
+		applyBtn.className = 'text-slate-400 hover:text-cyan-300 p-1 rounded hover:bg-slate-700/40';
+		applyBtn.title = 'ClipBox uygula ve odakla';
+		applyBtn.innerHTML = '<span class="material-symbols-outlined text-[13px]">play_arrow</span>';
 		applyBtn.onclick = function (e) {
 			e.stopPropagation();
 			applySavedClipBox(clip.id);
 		};
 
+		var editBtn = document.createElement('button');
+		editBtn.className = 'text-slate-400 hover:text-amber-300 p-1 rounded hover:bg-slate-700/40';
+		editBtn.title = 'Adı düzenle';
+		editBtn.innerHTML = '<span class="material-symbols-outlined text-[13px]">edit</span>';
+		editBtn.onclick = function (e) {
+			startEditingSavedClipBox(e, clip, name);
+		};
+
 		var del = document.createElement('button');
-		del.className = 'text-slate-500 hover:text-red-400 p-0.5';
-		del.innerHTML = '<span class="material-symbols-outlined text-[13px]">close</span>';
+		del.className = 'text-slate-400 hover:text-red-300 p-1 rounded hover:bg-slate-700/40';
+		del.innerHTML = '<span class="material-symbols-outlined text-[13px]">delete</span>';
 		del.title = 'ClipBox kaydını sil';
 		del.onclick = function (e) {
 			e.stopPropagation();
@@ -3754,6 +4603,7 @@ function renderSavedClipBoxGroupContent(groupWrapper, group) {
 
 		rightDiv.appendChild(result);
 		rightDiv.appendChild(applyBtn);
+		rightDiv.appendChild(editBtn);
 		rightDiv.appendChild(del);
 		row.appendChild(leftDiv);
 		row.appendChild(rightDiv);
@@ -3764,7 +4614,23 @@ function renderSavedClipBoxGroupContent(groupWrapper, group) {
 }
 
 // ─── 5. ÖLÇÜM LİSTESİ ─────────────────────────────────────────
-function renderList() {
+var _renderListScheduled = false;
+var _renderListLastTs = 0;
+function renderList(forceNow) {
+	if (!forceNow) {
+		var now = performance.now();
+		if (now - _renderListLastTs < 14) {
+			if (_renderListScheduled) return;
+			_renderListScheduled = true;
+			requestAnimationFrame(function () {
+				_renderListScheduled = false;
+				renderList(true);
+			});
+			return;
+		}
+		_renderListLastTs = now;
+	}
+
 	var container = document.getElementById('measureList');
 	container.innerHTML = '';
 
@@ -4013,6 +4879,13 @@ function renderGroupItem(container, group) {
 				}
 			}
 		});
+		if (!group.checked && activeHighlightId !== null) {
+			var activeMeasurement = measurements.find(function (m) { return m.id === activeHighlightId; });
+			if (activeMeasurement && activeMeasurement.groupId === group.id) {
+				activeHighlightId = null;
+				clearBatchedSelectionOverlay();
+			}
+		}
 		viewer.scene.requestRender();
 		renderList();
 	};
@@ -4023,9 +4896,9 @@ function renderGroupItem(container, group) {
 	btnDelGroup.title = "Grubu ve İçindekileri Sil";
 	btnDelGroup.onclick = function (e) {
 		e.stopPropagation();
-		if (confirm('"' + group.name + '" grubunu ve içindeki tüm ölçümleri silmek istediğinize emin misiniz?')) {
+		showResultConfirmDialog('"' + group.name + '" grubunu ve içindeki tüm ölçümleri silmek istediğinize emin misiniz?', function () {
 			deleteGroup(group.id);
-		}
+		});
 	};
 
 	// Renk butonu
@@ -4188,8 +5061,8 @@ function renderGroupItem(container, group) {
 		sep1.style.cssText = 'width:1px;height:12px;background:var(--border, rgba(71,85,105,0.3));margin:0 2px;';
 		controlBar.appendChild(sep1);
 
-		// Z kontrolleri — gerçek kot değeri
-		var currentZOffset = group._zOffset || 0;
+		// Z kontrolleri — gerçek kot toplamı (import + manuel)
+		var zState = ensureGroupZState(group);
 		var zBtnStyle = 'width:20px;height:20px;display:flex;align-items:center;justify-content:center;border-radius:4px;font-size:10px;font-weight:bold;cursor:pointer;border:1px solid var(--border-subtle, rgba(71,85,105,0.3));background:var(--bg-elevated, #1e293b);color:var(--text-muted, #94a3b8);transition:all 0.15s;';
 
 		var btnZDown = document.createElement('button');
@@ -4201,10 +5074,10 @@ function renderGroupItem(container, group) {
 
 		var zInput = document.createElement('input');
 		zInput.type = 'number';
-		zInput.value = currentZOffset;
-		zInput.step = '1';
+		zInput.value = zState.totalZ.toFixed(2);
+		zInput.step = '0.1';
 		zInput.style.cssText = 'width:40px;padding:1px 2px;font-size:9px;text-align:center;background:var(--bg-surface, #111827);border:1px solid var(--border-subtle, rgba(71,85,105,0.25));border-radius:3px;color:var(--text-primary, #cbd5e1);font-family:monospace;';
-		zInput.title = 'Gerçek kot ofseti (metre)';
+		zInput.title = 'Gerçek kot toplamı (import + manuel, metre)';
 
 		var btnZUp = document.createElement('button');
 		btnZUp.style.cssText = zBtnStyle;
@@ -4217,30 +5090,55 @@ function renderGroupItem(container, group) {
 		zUnit.style.cssText = 'font-size:8px;color:var(--text-muted, #64748b);font-family:monospace;';
 		zUnit.textContent = 'm';
 
+		var zSummary = document.createElement('span');
+		zSummary.style.cssText = 'font-size:8px;color:var(--text-secondary, #94a3b8);font-family:monospace;margin-left:4px;max-width:92px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+
+		function formatSignedZ(v) {
+			var n = Math.abs(v) < 0.0005 ? 0 : v;
+			return (n >= 0 ? '+' : '') + n.toFixed(2);
+		}
+
+		function refreshZUi() {
+			var state = ensureGroupZState(group);
+			zInput.value = (Math.abs(state.totalZ) < 0.0005 ? 0 : state.totalZ).toFixed(2);
+			zSummary.textContent = 'Toplam ' + formatSignedZ(state.totalZ) + 'm';
+			zSummary.title = 'Gerçek kot toplamı = Import ' + formatSignedZ(state.importZ) + 'm + Manuel ' + formatSignedZ(state.manualZ) + 'm';
+		}
+
+		function applyTotalZ(newTotal) {
+			var state = ensureGroupZState(group);
+			var delta = newTotal - state.totalZ;
+			if (Math.abs(delta) < 0.000001) {
+				refreshZUi();
+				return;
+			}
+			group._manualZOffset = state.manualZ + delta;
+			group._zOffset = group._importZOffset + group._manualZOffset;
+			adjustGroupZ(group.id, delta);
+			refreshZUi();
+		}
+
 		btnZDown.onclick = function () {
-			adjustGroupZ(group.id, -1);
-			group._zOffset = (group._zOffset || 0) - 1;
-			zInput.value = group._zOffset;
+			applyTotalZ(ensureGroupZState(group).totalZ - 1);
 		};
 		btnZUp.onclick = function () {
-			adjustGroupZ(group.id, 1);
-			group._zOffset = (group._zOffset || 0) + 1;
-			zInput.value = group._zOffset;
+			applyTotalZ(ensureGroupZState(group).totalZ + 1);
 		};
 		zInput.onchange = function () {
-			var newVal = parseFloat(zInput.value) || 0;
-			var oldVal = group._zOffset || 0;
-			var delta = newVal - oldVal;
-			if (delta !== 0) {
-				adjustGroupZ(group.id, delta);
-				group._zOffset = newVal;
+			var newVal = parseFloat(zInput.value);
+			if (!isFinite(newVal)) {
+				refreshZUi();
+				return;
 			}
+			applyTotalZ(newVal);
 		};
 
 		controlBar.appendChild(btnZDown);
 		controlBar.appendChild(zInput);
 		controlBar.appendChild(btnZUp);
 		controlBar.appendChild(zUnit);
+		controlBar.appendChild(zSummary);
+		refreshZUi();
 
 		// Spacer
 		var spacer = document.createElement('div');
@@ -4395,6 +5293,132 @@ function normalizeGroupName(str) {
 	return str.replace(/[çÇğĞıİöÖşŞüÜ]/g, function (c) { return trMap[c] || c; }).toUpperCase().replace(/\s+/g, '_');
 }
 
+function showCreateLayerDialog(onCreate) {
+	var existing = document.getElementById('cbsCreateLayerDialog');
+	if (existing) existing.remove();
+
+	var isLight = document.documentElement.classList.contains('light');
+	var overlay = document.createElement('div');
+	overlay.id = 'cbsCreateLayerDialog';
+	overlay.style.cssText = [
+		'position:fixed;inset:0;z-index:10021',
+		'display:flex;align-items:center;justify-content:center',
+		'background:' + (isLight ? 'rgba(15,23,42,0.35)' : 'rgba(2,6,23,0.6)'),
+		'backdrop-filter:blur(2px)'
+	].join(';');
+
+	var card = document.createElement('div');
+	card.style.cssText = [
+		'width:min(92vw,460px)',
+		'border-radius:12px',
+		'padding:16px',
+		'font-family:Inter,system-ui,sans-serif',
+		'background:' + (isLight ? '#ffffff' : '#0f172a'),
+		'border:1px solid ' + (isLight ? 'rgba(148,163,184,0.5)' : 'rgba(148,163,184,0.25)'),
+		'box-shadow:0 18px 36px rgba(0,0,0,0.35)'
+	].join(';');
+
+	var title = document.createElement('div');
+	title.textContent = 'Yeni Katman Oluştur';
+	title.style.cssText = 'font-size:14px;font-weight:700;margin-bottom:8px;color:' + (isLight ? '#0f172a' : '#e2e8f0') + ';';
+
+	var body = document.createElement('div');
+	body.textContent = 'Bu işlem sadece Ölçümler paneline katman ekler. Bilgisayarınızda klasör oluşturulmaz.';
+	body.style.cssText = 'font-size:12px;line-height:1.6;color:' + (isLight ? '#334155' : '#cbd5e1') + ';margin-bottom:12px;';
+
+	var label = document.createElement('label');
+	label.textContent = 'Katman Adı';
+	label.style.cssText = 'display:block;font-size:11px;font-weight:700;letter-spacing:0.2px;color:' + (isLight ? '#334155' : '#94a3b8') + ';margin-bottom:6px;';
+
+	var input = document.createElement('input');
+	input.type = 'text';
+	input.value = 'Yeni Katman';
+	input.maxLength = 64;
+	input.style.cssText = [
+		'width:100%',
+		'padding:9px 10px',
+		'border-radius:8px',
+		'outline:none',
+		'font-size:12px',
+		'font-weight:600',
+		'background:' + (isLight ? '#f8fafc' : '#1e293b'),
+		'color:' + (isLight ? '#0f172a' : '#e2e8f0'),
+		'border:1px solid ' + (isLight ? 'rgba(148,163,184,0.55)' : 'rgba(148,163,184,0.35)')
+	].join(';');
+
+	var helper = document.createElement('div');
+	helper.textContent = 'Katman adı otomatik olarak sistem formatına (BUYUK_HARF) çevrilir.';
+	helper.style.cssText = 'font-size:10px;line-height:1.5;color:' + (isLight ? '#64748b' : '#94a3b8') + ';margin-top:6px;';
+
+	var actions = document.createElement('div');
+	actions.style.cssText = 'display:flex;justify-content:flex-end;gap:8px;margin-top:14px;';
+
+	var cancelBtn = document.createElement('button');
+	cancelBtn.textContent = 'Vazgeç';
+	cancelBtn.style.cssText = [
+		'border:1px solid ' + (isLight ? 'rgba(148,163,184,0.6)' : 'rgba(148,163,184,0.35)'),
+		'background:' + (isLight ? '#f8fafc' : '#1e293b'),
+		'color:' + (isLight ? '#334155' : '#e2e8f0'),
+		'padding:7px 12px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer'
+	].join(';');
+
+	var createBtn = document.createElement('button');
+	createBtn.textContent = 'Katman Ekle';
+	createBtn.style.cssText = [
+		'border:1px solid rgba(20,184,166,0.45)',
+		'background:' + (isLight ? '#0f766e' : '#0d9488'),
+		'color:white',
+		'padding:7px 12px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer'
+	].join(';');
+
+	function closeDialog() {
+		document.removeEventListener('keydown', onKeyDown);
+		overlay.remove();
+	}
+
+	function submitDialog() {
+		var n = input.value.trim();
+		if (!n) {
+			input.style.borderColor = '#ef4444';
+			input.focus();
+			return;
+		}
+		closeDialog();
+		if (typeof onCreate === 'function') onCreate(n);
+	}
+
+	function onKeyDown(e) {
+		if (e.key === 'Escape') closeDialog();
+		else if (e.key === 'Enter') submitDialog();
+	}
+
+	input.addEventListener('input', function () {
+		input.style.borderColor = isLight ? 'rgba(148,163,184,0.55)' : 'rgba(148,163,184,0.35)';
+	});
+	cancelBtn.addEventListener('click', closeDialog);
+	createBtn.addEventListener('click', submitDialog);
+	overlay.addEventListener('click', function (e) {
+		if (e.target === overlay) closeDialog();
+	});
+	document.addEventListener('keydown', onKeyDown);
+
+	actions.appendChild(cancelBtn);
+	actions.appendChild(createBtn);
+	card.appendChild(title);
+	card.appendChild(body);
+	card.appendChild(label);
+	card.appendChild(input);
+	card.appendChild(helper);
+	card.appendChild(actions);
+	overlay.appendChild(card);
+	document.body.appendChild(overlay);
+
+	setTimeout(function () {
+		input.focus();
+		input.select();
+	}, 0);
+}
+
 function startEditing(e, m) {
 	e.stopPropagation();
 	var nameSpan = e.target;
@@ -4431,20 +5455,52 @@ function startEditing(e, m) {
 }
 
 document.getElementById('btnNewFolder').onclick = function () {
-	var n = prompt("Yeni klasör ismi:", "Yeni Grup");
-	if (n) {
+	showCreateLayerDialog(function (layerName) {
 		groupCount++;
-		var newGroup = { id: groupCount, name: normalizeGroupName(n), isOpen: true, checked: true };
+		var newGroup = { id: groupCount, name: normalizeGroupName(layerName), isOpen: true, checked: true };
 		groups.push(newGroup);
 		activeGroupId = newGroup.id;
 		renderList();
 		debouncedSave();
-	}
+	});
 };
+
+function findMeasurementFromPickedObject(pickedObject) {
+	if (!Cesium.defined(pickedObject)) return null;
+
+	function findById(value) {
+		if (typeof value !== 'number' || !isFinite(value)) return null;
+		return measurements.find(function (m) { return m.id === value; }) || null;
+	}
+
+	var direct = findById(pickedObject.id);
+	if (direct) return direct;
+
+	if (pickedObject.id && typeof pickedObject.id._measurementId === 'number') {
+		var tagged = findById(pickedObject.id._measurementId);
+		if (tagged) return tagged;
+	}
+
+	var obj = pickedObject.id || pickedObject.primitive;
+	if (obj && obj.owner) obj = obj.owner;
+
+	var fromObjId = findById(obj);
+	if (fromObjId) return fromObjId;
+
+	if (obj && typeof obj._measurementId === 'number') {
+		var fromObjTag = findById(obj._measurementId);
+		if (fromObjTag) return fromObjTag;
+	}
+
+	return measurements.find(function (m) {
+		return m.entities && m.entities.includes(obj);
+	}) || null;
+}
 
 function highlightMeasurement(id) {
 	activeHighlightId = (activeHighlightId === id) ? null : id;
 	renderList();
+	clearBatchedSelectionOverlay();
 	measurements.forEach(function (item) {
 		var isActive = item.id === activeHighlightId;
 		// Grubun rengini bul (seçim kalktığında grup rengine dön)
@@ -4473,6 +5529,12 @@ function highlightMeasurement(id) {
 			}
 		});
 	});
+	if (activeHighlightId !== null) {
+		var activeMeasurement = measurements.find(function (m) { return m.id === activeHighlightId; });
+		if (activeMeasurement && activeMeasurement.isBatched) {
+			renderBatchedSelectionOverlay(activeMeasurement);
+		}
+	}
 	// Seçili ölçüm varsa ve mobil cihazdaysak Sil FAB göster
 	var delFab = document.getElementById('deleteSelFab');
 	if (delFab) {
@@ -4497,17 +5559,342 @@ function highlightMeasurement(id) {
 // ═══════════════════════════════════════════════════════════════
 // INFO PANEL — Seçili ölçümün özelliklerini Properties panelinde gösterir
 // ═══════════════════════════════════════════════════════════════
+function getInfoPanelKadastroProps(rawProps) {
+	var props = rawProps || {};
+
+	function pickFirst(keys) {
+		for (var i = 0; i < keys.length; i++) {
+			var value = props[keys[i]];
+			if (value === undefined || value === null) continue;
+			var text = String(value).trim();
+			if (text) return text;
+		}
+		return '';
+	}
+
+	return {
+		ada_no: pickFirst(['ada_no', 'adano', 'ref_ada']),
+		parsel_no: pickFirst(['parsel_no', 'parselno', 'ref_parsel']),
+		cins: pickFirst(['cins', 'tapucinsaciklama', 'ref_cins'])
+	};
+}
+
+var infoPanelState = {
+	measureId: null,
+	baselineHash: '',
+	isDirty: false
+};
+
+var infoPanelDockSyncTimer = null;
+
+function isInfoPanelVisible() {
+	var panel = document.getElementById('infoPanel');
+	if (!panel) return false;
+	return panel.classList.contains('translate-x-0') && !panel.classList.contains('pointer-events-none');
+}
+
+function isInfoPanelReadOnlyMeasurement(measurement) {
+	if (!measurement) return false;
+	if (measurement.isImported) return true;
+	var grp = groups.find(function (g) { return g.id === measurement.groupId; });
+	return !!(grp && isRefGroup(grp));
+}
+
+function syncInfoPanelNoteToResultBar(noteText, tone) {
+	if (!noteText) return;
+	var colorClass = 'text-cyan-300';
+	if (tone === 'warn') colorClass = 'text-amber-300';
+	if (tone === 'ok') colorClass = 'text-emerald-300';
+	setResultDisplayMessage('<span class="' + colorClass + ' font-bold text-[11px]">ℹ️ ' + escapeHtmlText(noteText) + '</span>');
+}
+
+function setInfoPickButtonState(isActive) {
+	var pickBtn = document.getElementById('btnPickReference');
+	if (!pickBtn) return;
+
+	var isLight = document.documentElement.classList.contains('light');
+	if (isActive) {
+		pickBtn.style.background = isLight ? 'rgba(245,158,11,0.16)' : 'rgba(245,158,11,0.3)';
+		pickBtn.style.color = isLight ? '#b45309' : '#fbbf24';
+		pickBtn.style.borderColor = isLight ? 'rgba(180,83,9,0.45)' : 'rgba(251,191,36,0.45)';
+		return;
+	}
+
+	if (isLight) {
+		pickBtn.style.background = 'rgba(248,250,252,0.9)';
+		pickBtn.style.color = '#334155';
+		pickBtn.style.borderColor = 'rgba(148,163,184,0.6)';
+		return;
+	}
+
+	pickBtn.style.background = '';
+	pickBtn.style.color = '';
+	pickBtn.style.borderColor = '';
+}
+
+function setInfoPickStatus(text, tone) {
+	var statusEl = document.getElementById('infoPickStatus');
+	if (!statusEl) return;
+
+	var toneKey = tone || 'idle';
+	var isLight = document.documentElement.classList.contains('light');
+	var palette;
+
+	if (isLight) {
+		switch (toneKey) {
+			case 'active':
+				palette = { color: '#b45309', background: 'rgba(251,191,36,0.14)', border: 'rgba(217,119,6,0.35)' };
+				break;
+			case 'ok':
+				palette = { color: '#166534', background: 'rgba(34,197,94,0.14)', border: 'rgba(22,163,74,0.35)' };
+				break;
+			case 'warn':
+				palette = { color: '#92400e', background: 'rgba(245,158,11,0.14)', border: 'rgba(217,119,6,0.35)' };
+				break;
+			case 'error':
+				palette = { color: '#b91c1c', background: 'rgba(239,68,68,0.12)', border: 'rgba(220,38,38,0.35)' };
+				break;
+			default:
+				palette = { color: '#475569', background: 'rgba(241,245,249,0.82)', border: 'rgba(148,163,184,0.5)' };
+				break;
+		}
+	} else {
+		switch (toneKey) {
+			case 'active':
+				palette = { color: '#fcd34d', background: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.25)' };
+				break;
+			case 'ok':
+				palette = { color: '#6ee7b7', background: 'rgba(16,185,129,0.1)', border: 'rgba(16,185,129,0.28)' };
+				break;
+			case 'warn':
+				palette = { color: '#fcd34d', background: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.25)' };
+				break;
+			case 'error':
+				palette = { color: '#fda4af', background: 'rgba(244,63,94,0.12)', border: 'rgba(244,63,94,0.3)' };
+				break;
+			default:
+				palette = { color: '#94a3b8', background: 'rgba(15,23,42,0.4)', border: 'rgba(51,65,85,0.5)' };
+				break;
+		}
+	}
+
+	statusEl.className = 'text-[10px] rounded px-2 py-1 border leading-snug';
+	statusEl.style.color = palette.color;
+	statusEl.style.background = palette.background;
+	statusEl.style.borderColor = palette.border;
+	statusEl.setAttribute('data-tone', toneKey);
+	statusEl.textContent = text || '';
+}
+
+function resetInfoPickStatusForMeasurement(measurement) {
+	if (isInfoPanelReadOnlyMeasurement(measurement)) {
+		setInfoPickStatus('Referans veri salt okunur. Düzenleme yapılamaz.', 'warn');
+		return;
+	}
+
+	setInfoPickStatus('Haritadan ada/parsel almak için Ekranda Seç butonunu kullanın. Yalnız referans veriler okunur.', 'idle');
+}
+
+function setInfoPanelReadOnlyState(measurement) {
+	var isReadOnly = isInfoPanelReadOnlyMeasurement(measurement);
+	var editIds = [
+		'infoAda', 'infoParsel', 'infoCins',
+		'infoKat', 'infoYil', 'infoCikma',
+		'infoTasiyici', 'infoDurum', 'infoKullanim', 'infoNotlar'
+	];
+
+	for (var i = 0; i < editIds.length; i++) {
+		var field = document.getElementById(editIds[i]);
+		if (!field) continue;
+		var tag = (field.tagName || '').toUpperCase();
+		if (tag === 'SELECT') {
+			field.disabled = isReadOnly;
+		} else {
+			if (isReadOnly) field.setAttribute('readonly', 'readonly');
+			else field.removeAttribute('readonly');
+			if (tag === 'TEXTAREA' || tag === 'INPUT') field.disabled = false;
+		}
+		if (isReadOnly) field.classList.add('opacity-80');
+		else field.classList.remove('opacity-80');
+	}
+
+	var saveBtn = document.getElementById('btnSaveInfo');
+	if (saveBtn) {
+		saveBtn.setAttribute('data-readonly', isReadOnly ? 'true' : 'false');
+		saveBtn.disabled = isReadOnly;
+		saveBtn.classList.toggle('opacity-50', isReadOnly);
+		saveBtn.classList.toggle('cursor-not-allowed', isReadOnly);
+		saveBtn.title = isReadOnly ? 'Referans veri salt okunur' : 'Kaydet (Ctrl+S)';
+	}
+
+	var pickBtn = document.getElementById('btnPickReference');
+	if (pickBtn) {
+		pickBtn.disabled = isReadOnly;
+		pickBtn.classList.toggle('opacity-50', isReadOnly);
+		pickBtn.classList.toggle('cursor-not-allowed', isReadOnly);
+		pickBtn.title = isReadOnly ? 'Referans veride kadastro seçimi kapalı' : 'Haritadan Referans Ada/Parsel Seç';
+	}
+
+	var badge = document.getElementById('infoReadonlyBadge');
+	if (badge) badge.style.display = isReadOnly ? 'inline-flex' : 'none';
+
+	if (isReadOnly && typeof window !== 'undefined' && window.__infoPickModeActive && typeof window.__exitInfoPickMode === 'function') {
+		window.__exitInfoPickMode();
+	}
+
+	setInfoPickButtonState(typeof window !== 'undefined' && !!window.__infoPickModeActive);
+}
+
+function getInfoPanelDockLeftPx() {
+	var minLeft = 8;
+	var gapFromToolPanel = 12;
+	var left = minLeft;
+	var toolPanel = document.getElementById('toolPanel');
+
+	if (toolPanel && _toolPanelIsOpen) {
+		var toolRect = toolPanel.getBoundingClientRect();
+		if (isFinite(toolRect.right)) left = Math.round(toolRect.right + gapFromToolPanel);
+	}
+
+	var panel = document.getElementById('infoPanel');
+	if (panel) {
+		var panelWidth = panel.offsetWidth || Math.min(416, Math.max(220, window.innerWidth - (minLeft * 2)));
+		var maxLeft = Math.max(minLeft, window.innerWidth - panelWidth - minLeft);
+		left = Math.min(Math.max(minLeft, left), maxLeft);
+	}
+
+	return left;
+}
+
+function dockInfoPanelLeft() {
+	var panel = document.getElementById('infoPanel');
+	if (!panel) return;
+	panel.style.left = getInfoPanelDockLeftPx() + 'px';
+	panel.style.right = 'auto';
+	panel.style.top = '';
+}
+
+function scheduleInfoPanelDockSync() {
+	if (!isInfoPanelVisible()) return;
+	dockInfoPanelLeft();
+	if (infoPanelDockSyncTimer) clearTimeout(infoPanelDockSyncTimer);
+	infoPanelDockSyncTimer = setTimeout(function () {
+		if (isInfoPanelVisible()) dockInfoPanelLeft();
+	}, 230);
+}
+
+(function bindInfoPanelDockSync() {
+	if (typeof window !== 'undefined' && window.__infoPanelDockSyncBound) return;
+	window.addEventListener('resize', function () {
+		if (isInfoPanelVisible()) scheduleInfoPanelDockSync();
+	});
+	if (typeof window !== 'undefined') window.__infoPanelDockSyncBound = true;
+})();
+
+function getInfoPanelFormValues() {
+	function read(id) {
+		var el = document.getElementById(id);
+		if (!el) return '';
+		return (el.value || '').toString().trim();
+	}
+
+	return {
+		ada: read('infoAda'),
+		parsel: read('infoParsel'),
+		cins: read('infoCins'),
+		kat: read('infoKat'),
+		yil: read('infoYil'),
+		cikma: read('infoCikma'),
+		tasiyici: read('infoTasiyici'),
+		durum: read('infoDurum'),
+		kullanim: read('infoKullanim'),
+		notlar: read('infoNotlar')
+	};
+}
+
+function setInfoPanelDirtyState(isDirty) {
+	infoPanelState.isDirty = !!isDirty;
+	var saveBtn = document.getElementById('btnSaveInfo');
+	if (!saveBtn) return;
+
+	if (infoPanelState.isDirty) {
+		saveBtn.classList.add('ring-2', 'ring-amber-400/60', 'shadow-amber-400/20');
+		saveBtn.setAttribute('aria-label', 'Kaydet (değişiklik var)');
+	} else {
+		saveBtn.classList.remove('ring-2', 'ring-amber-400/60', 'shadow-amber-400/20');
+		saveBtn.setAttribute('aria-label', 'Kaydet');
+	}
+}
+
+function updateInfoPanelDirtyState(setAsBaseline) {
+	if (!infoPanelState.measureId) {
+		setInfoPanelDirtyState(false);
+		return;
+	}
+
+	var hash = JSON.stringify(getInfoPanelFormValues());
+	if (setAsBaseline) {
+		infoPanelState.baselineHash = hash;
+		setInfoPanelDirtyState(false);
+		return;
+	}
+
+	setInfoPanelDirtyState(hash !== infoPanelState.baselineHash);
+}
+
+function closeInfoPanel() {
+	if (typeof window !== 'undefined' && window.__infoPickModeActive && typeof window.__exitInfoPickMode === 'function') {
+		window.__exitInfoPickMode();
+	}
+
+	var panel = document.getElementById('infoPanel');
+	if (panel) {
+		panel.classList.add('-translate-x-[120%]', 'opacity-0', 'pointer-events-none');
+		panel.classList.remove('translate-x-0', 'opacity-100');
+		panel.setAttribute('aria-hidden', 'true');
+		panel.style.willChange = '';
+		panel.style.transition = '';
+	}
+
+	var badge = document.getElementById('infoReadonlyBadge');
+	if (badge) badge.style.display = 'none';
+
+	infoPanelState.measureId = null;
+	infoPanelState.baselineHash = '';
+	setInfoPanelDirtyState(false);
+}
+
+(function bindInfoPanelDirtyTracking() {
+	if (typeof window !== 'undefined' && window.__infoPanelDirtyBound) return;
+
+	var fields = ['infoAda', 'infoParsel', 'infoCins', 'infoKat', 'infoYil', 'infoCikma', 'infoTasiyici', 'infoDurum', 'infoKullanim', 'infoNotlar'];
+	function handleDirtyChange() {
+		updateInfoPanelDirtyState(false);
+	}
+
+	fields.forEach(function (id) {
+		var el = document.getElementById(id);
+		if (!el) return;
+		el.addEventListener('input', handleDirtyChange);
+		el.addEventListener('change', handleDirtyChange);
+	});
+
+	if (typeof window !== 'undefined') window.__infoPanelDirtyBound = true;
+})();
+
 function openInfoPanel(m) {
 	var panel = document.getElementById('infoPanel');
 	if (!panel) return;
+	applyInfoPanelTheme(panel);
 
 	// Normalize edilmiş properties
 	var props = m.properties || {};
+	var kadastroProps = getInfoPanelKadastroProps(props);
 
 	// ── Başlık: Vektör tipine göre özet ──
 	var summaryEl = document.getElementById('infoSummaryBlock');
+	var summary = '';
 	if (summaryEl) {
-		var summary = '';
 		if (m.type === 'polygon') {
 			summary = '🔷 Polygon · ' + (m.resultText || '—') + ' · ' + (m.points ? m.points.length : 0) + ' köşe';
 		} else if (m.type === 'line') {
@@ -4521,14 +5908,15 @@ function openInfoPanel(m) {
 		}
 		summaryEl.textContent = summary;
 	}
+	if (summary) syncInfoPanelNoteToResultBar(summary, 'info');
 
-	// ── Kadastro alanları (readonly) ──
+	// ── Kadastro alanları ──
 	var adaInput = document.getElementById('infoAda');
 	var parselInput = document.getElementById('infoParsel');
 	var cinsInput = document.getElementById('infoCins');
-	if (adaInput) adaInput.value = props.ada_no || '';
-	if (parselInput) parselInput.value = props.parsel_no || '';
-	if (cinsInput) cinsInput.value = props.cins || '';
+	if (adaInput) adaInput.value = kadastroProps.ada_no;
+	if (parselInput) parselInput.value = kadastroProps.parsel_no;
+	if (cinsInput) cinsInput.value = kadastroProps.cins;
 
 	// ── Kullanıcı giriş alanları ──
 	var katInput = document.getElementById('infoKat');
@@ -4551,11 +5939,41 @@ function openInfoPanel(m) {
 	var saveBtn = document.getElementById('btnSaveInfo');
 	if (saveBtn) {
 		saveBtn.setAttribute('data-measure-id', m.id);
+		if (!saveBtn.getAttribute('data-default-html')) {
+			saveBtn.setAttribute('data-default-html', saveBtn.innerHTML);
+		}
 	}
 
+	setInfoPanelReadOnlyState(m);
+	resetInfoPickStatusForMeasurement(m);
+
+	// Her açılışta paneli sol dock konumuna sıfırla
+	panel.style.left = '';
+	panel.style.top = '';
+	panel.style.right = 'auto';
+	panel.style.willChange = '';
+	panel.style.transition = '';
+	dockInfoPanelLeft();
+
 	// Paneli göster — CSS class'larını kaldır
-	panel.classList.remove('translate-x-[120%]', 'opacity-0', 'pointer-events-none');
+	panel.classList.remove('-translate-x-[120%]', 'opacity-0', 'pointer-events-none');
 	panel.classList.add('translate-x-0', 'opacity-100');
+	panel.setAttribute('aria-hidden', 'false');
+	scheduleInfoPanelDockSync();
+
+	infoPanelState.measureId = m.id;
+	updateInfoPanelDirtyState(true);
+
+	if (!_isMob) {
+		setTimeout(function () {
+			if (!isInfoPanelVisible()) return;
+			var focusTarget = document.getElementById('infoAda') || document.getElementById('infoParsel');
+			if (focusTarget && typeof focusTarget.focus === 'function') {
+				try { focusTarget.focus({ preventScroll: true }); }
+				catch (e) { focusTarget.focus(); }
+			}
+		}, 20);
+	}
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -4564,8 +5982,16 @@ function openInfoPanel(m) {
 (function () {
 	var saveBtn = document.getElementById('btnSaveInfo');
 	if (!saveBtn) return;
+	if (!saveBtn.getAttribute('data-default-html')) {
+		saveBtn.setAttribute('data-default-html', saveBtn.innerHTML);
+	}
 
 	saveBtn.addEventListener('click', function () {
+		if (saveBtn.getAttribute('data-readonly') === 'true') {
+			syncInfoPanelNoteToResultBar('Referans veriler salt okunur, kaydetme kapalıdır.', 'warn');
+			return;
+		}
+
 		var mid = parseInt(saveBtn.getAttribute('data-measure-id'), 10);
 		if (isNaN(mid)) return;
 
@@ -4602,52 +6028,123 @@ function openInfoPanel(m) {
 
 		// Kaydet
 		debouncedSave();
+		updateInfoPanelDirtyState(true);
 
 		// Görsel geri bildirim
-		var origText = saveBtn.textContent;
-		saveBtn.textContent = '✅ Kaydedildi!';
+		var defaultHtml = saveBtn.getAttribute('data-default-html') || saveBtn.innerHTML;
+		saveBtn.innerHTML = '<span class="material-symbols-outlined text-[16px]">check_circle</span><span>Kaydedildi</span>';
 		saveBtn.disabled = true;
 		setTimeout(function () {
-			saveBtn.textContent = origText;
+			saveBtn.innerHTML = defaultHtml;
 			saveBtn.disabled = false;
+			updateInfoPanelDirtyState(true);
 		}, 1500);
+		syncInfoPanelNoteToResultBar('Bilgi kartı güncellendi ve kaydedildi.', 'ok');
+	});
+
+	document.addEventListener('keydown', function (e) {
+		if (!isInfoPanelVisible()) return;
+		if (!(e.ctrlKey || e.metaKey)) return;
+		if (e.key.toLowerCase() !== 's') return;
+		e.preventDefault();
+		if (!saveBtn.disabled) saveBtn.click();
 	});
 
 	// ── Panel kapatma butonu ──
 	var closeBtn = document.getElementById('btnCloseInfo');
 	if (closeBtn) {
 		closeBtn.addEventListener('click', function () {
-			var panel = document.getElementById('infoPanel');
-			if (panel) {
-				panel.classList.add('translate-x-[120%]', 'opacity-0', 'pointer-events-none');
-				panel.classList.remove('translate-x-0', 'opacity-100');
-			}
+			closeInfoPanel();
 		});
 	}
 
 	// ── Panel sürükleme (drag) desteği ──
 	var header = document.getElementById('infoPanelHeader');
 	if (header) {
-		var isDragging = false, dragOffsetX = 0, dragOffsetY = 0;
-		header.addEventListener('mousedown', function (e) {
-			isDragging = true;
+		var isDragging = false;
+		var dragOffsetX = 0;
+		var dragOffsetY = 0;
+		var activePointerId = null;
+		var pendingClientX = 0;
+		var pendingClientY = 0;
+		var dragFrameId = 0;
+		var dragPanel = null;
+
+		function applyDragFrame() {
+			dragFrameId = 0;
+			if (!isDragging || !dragPanel) return;
+
+			var panelWidth = dragPanel.offsetWidth;
+			var panelHeight = dragPanel.offsetHeight;
+			var rawLeft = pendingClientX - dragOffsetX;
+			var rawTop = pendingClientY - dragOffsetY;
+			var maxLeft = Math.max(8, window.innerWidth - panelWidth - 8);
+			var maxTop = Math.max(8, window.innerHeight - panelHeight - 8);
+			var nextLeft = Math.min(Math.max(8, rawLeft), maxLeft);
+			var nextTop = Math.min(Math.max(8, rawTop), maxTop);
+
+			dragPanel.style.position = 'fixed';
+			dragPanel.style.left = nextLeft + 'px';
+			dragPanel.style.top = nextTop + 'px';
+			dragPanel.style.right = 'auto';
+		}
+
+		function stopDragging(e) {
+			if (!isDragging) return;
+			if (e && activePointerId !== null && typeof e.pointerId === 'number' && e.pointerId !== activePointerId) return;
+
+			isDragging = false;
+			activePointerId = null;
+			if (dragFrameId) {
+				cancelAnimationFrame(dragFrameId);
+				dragFrameId = 0;
+			}
+
+			var panelRef = dragPanel;
+			dragPanel = null;
+			if (panelRef) {
+				panelRef.style.willChange = '';
+				requestAnimationFrame(function () {
+					panelRef.style.transition = '';
+				});
+			}
+
+			if (header.releasePointerCapture && e && typeof e.pointerId === 'number') {
+				try { header.releasePointerCapture(e.pointerId); } catch (err) { }
+			}
+		}
+
+		header.addEventListener('pointerdown', function (e) {
+			if (e.pointerType === 'mouse' && e.button !== 0) return;
+				if (e.target && e.target.closest('button, input, select, textarea, a, [data-no-drag]')) return;
 			var panel = document.getElementById('infoPanel');
+			if (!panel || !isInfoPanelVisible()) return;
+
+			isDragging = true;
+			activePointerId = e.pointerId;
+			dragPanel = panel;
+			pendingClientX = e.clientX;
+			pendingClientY = e.clientY;
+
 			var rect = panel.getBoundingClientRect();
 			dragOffsetX = e.clientX - rect.left;
 			dragOffsetY = e.clientY - rect.top;
+			panel.style.transition = 'none';
+			panel.style.willChange = 'left, top';
+			if (header.setPointerCapture) {
+				try { header.setPointerCapture(e.pointerId); } catch (err) { }
+			}
 			e.preventDefault();
 		});
-		document.addEventListener('mousemove', function (e) {
+		document.addEventListener('pointermove', function (e) {
 			if (!isDragging) return;
-			var panel = document.getElementById('infoPanel');
-			panel.style.position = 'fixed';
-			panel.style.left = (e.clientX - dragOffsetX) + 'px';
-			panel.style.top = (e.clientY - dragOffsetY) + 'px';
-			panel.style.right = 'auto';
+			if (activePointerId !== null && e.pointerId !== activePointerId) return;
+			pendingClientX = e.clientX;
+			pendingClientY = e.clientY;
+			if (!dragFrameId) dragFrameId = requestAnimationFrame(applyDragFrame);
 		});
-		document.addEventListener('mouseup', function () {
-			isDragging = false;
-		});
+		document.addEventListener('pointerup', stopDragging);
+		document.addEventListener('pointercancel', stopDragging);
 	}
 })();
 
@@ -4660,103 +6157,273 @@ function openInfoPanel(m) {
 
 	var isPickMode = false;
 	var pickHandler = null;
+	var cadastrePickCache = [];
+	if (typeof window !== 'undefined' && typeof window.__infoPickModeActive === 'undefined') {
+		window.__infoPickModeActive = false;
+	}
+
+	function getPickCartesian(position) {
+		var cartesian;
+
+		try {
+			if (viewer.scene.pickPositionSupported) {
+				cartesian = viewer.scene.pickPosition(position);
+			}
+		} catch (e) { /* depth render hatası */ }
+
+		if (!Cesium.defined(cartesian)) {
+			var ray = viewer.camera.getPickRay(position);
+			if (ray && viewer.scene.globe) {
+				cartesian = viewer.scene.globe.pick(ray, viewer.scene);
+			}
+		}
+
+		if (!Cesium.defined(cartesian)) {
+			try {
+				cartesian = viewer.camera.pickEllipsoid(position, Cesium.Ellipsoid.WGS84);
+			} catch (e) { /* pickEllipsoid desteklenmiyor olabilir */ }
+		}
+
+		return cartesian;
+	}
+
+	function pickMeasurementFromScene(position) {
+		var picked;
+		try {
+			picked = viewer.scene.pick(position);
+		} catch (e) { /* picking hatası */ }
+		if (!Cesium.defined(picked)) return null;
+
+		var pickedMeasurement = findMeasurementFromPickedObject(picked);
+
+		if (!pickedMeasurement) return null;
+		var pickedGroup = groups.find(function (g) { return g.id === pickedMeasurement.groupId; });
+		if (!(pickedMeasurement.isImported || isRefGroup(pickedGroup))) return null;
+		var kadastro = getInfoPanelKadastroProps(pickedMeasurement.properties);
+		if (!kadastro.ada_no && !kadastro.parsel_no && !kadastro.cins) return null;
+
+		return {
+			measurement: pickedMeasurement,
+			kadastro: kadastro
+		};
+	}
+
+	function buildCadastrePickCache() {
+		var cache = [];
+		var groupsById = {};
+		for (var gi = 0; gi < groups.length; gi++) {
+			groupsById[groups[gi].id] = groups[gi];
+		}
+
+		for (var i = 0; i < measurements.length; i++) {
+			var m = measurements[i];
+			if (!m.checked) continue;
+			if (m.type !== 'polygon' || !m.points || m.points.length < 3) continue;
+			var grp = groupsById[m.groupId];
+			if (!(m.isImported || isRefGroup(grp))) continue;
+			if (grp && grp.checked === false) continue;
+
+			var kadastroProps = getInfoPanelKadastroProps(m.properties);
+			if (!kadastroProps.ada_no && !kadastroProps.parsel_no) continue;
+
+			var ring = [];
+			var minLon = Infinity, maxLon = -Infinity, minLat = Infinity, maxLat = -Infinity;
+			for (var p = 0; p < m.points.length; p++) {
+				var c = Cesium.Cartographic.fromCartesian(m.points[p]);
+				var lon = Cesium.Math.toDegrees(c.longitude);
+				var lat = Cesium.Math.toDegrees(c.latitude);
+				ring.push([lon, lat]);
+				if (lon < minLon) minLon = lon;
+				if (lon > maxLon) maxLon = lon;
+				if (lat < minLat) minLat = lat;
+				if (lat > maxLat) maxLat = lat;
+			}
+
+			if (ring.length < 3) continue;
+			var bboxArea = Math.max(0, (maxLon - minLon) * (maxLat - minLat));
+
+			cache.push({
+				measurement: m,
+				kadastro: kadastroProps,
+				ring: ring,
+				minLon: minLon,
+				maxLon: maxLon,
+				minLat: minLat,
+				maxLat: maxLat,
+				bboxArea: bboxArea
+			});
+		}
+
+		cache.sort(function (a, b) {
+			return a.bboxArea - b.bboxArea;
+		});
+
+		cadastrePickCache = cache;
+		return cadastrePickCache.length;
+	}
 
 	// 2D Point-in-Polygon (Ray Casting algoritması)
-	function pointInPolygon(testX, testY, polygon) {
+	function pointSegmentDistanceMeters(px, py, x1, y1, x2, y2) {
+		var latRad = Cesium.Math.toRadians(py);
+		var metersPerLon = 111320 * Math.max(0.2, Math.cos(latRad));
+		var metersPerLat = 110540;
+
+		var ax = (x1 - px) * metersPerLon;
+		var ay = (y1 - py) * metersPerLat;
+		var bx = (x2 - px) * metersPerLon;
+		var by = (y2 - py) * metersPerLat;
+
+		var abx = bx - ax;
+		var aby = by - ay;
+		var denom = abx * abx + aby * aby;
+		if (denom <= 1e-12) return Math.sqrt(ax * ax + ay * ay);
+
+		var t = -(ax * abx + ay * aby) / denom;
+		if (t < 0) t = 0;
+		else if (t > 1) t = 1;
+
+		var cx = ax + t * abx;
+		var cy = ay + t * aby;
+		return Math.sqrt(cx * cx + cy * cy);
+	}
+
+	function pointInPolygon(testX, testY, polygon, edgeTolMeters) {
 		var inside = false;
 		var len = polygon.length;
 		for (var i = 0, j = len - 1; i < len; j = i++) {
 			var xi = polygon[i][0], yi = polygon[i][1];
 			var xj = polygon[j][0], yj = polygon[j][1];
+			var denom = (yj - yi);
 			if (((yi > testY) !== (yj > testY)) &&
-				(testX < (xj - xi) * (testY - yi) / (yj - yi) + xi)) {
+				(testX < (xj - xi) * (testY - yi) / (Math.abs(denom) < 1e-12 ? 1e-12 : denom) + xi)) {
 				inside = !inside;
 			}
 		}
+		if (inside) return true;
+
+		if (!edgeTolMeters || edgeTolMeters <= 0) return false;
+		for (var a = 0, b = len - 1; a < len; b = a++) {
+			var x1 = polygon[a][0], y1 = polygon[a][1];
+			var x2 = polygon[b][0], y2 = polygon[b][1];
+			if (pointSegmentDistanceMeters(testX, testY, x1, y1, x2, y2) <= edgeTolMeters) {
+				return true;
+			}
+		}
+
 		return inside;
 	}
 
 	function exitPickMode() {
 		isPickMode = false;
+		cadastrePickCache = [];
+		if (typeof window !== 'undefined') window.__infoPickModeActive = false;
 		viewer.scene.canvas.style.cursor = isInfoModeActive ? 'help' : '';
-		pickBtn.style.background = '';
-		pickBtn.style.color = '';
+		setInfoPickButtonState(false);
 		pickBtn.textContent = '';
 		pickBtn.innerHTML = '<span class="material-symbols-outlined text-[14px]">ads_click</span> Ekranda Seç';
+		var activeMeasurement = measurements.find(function (m) { return m.id === infoPanelState.measureId; });
+		resetInfoPickStatusForMeasurement(activeMeasurement || null);
 		if (pickHandler) {
 			pickHandler.destroy();
 			pickHandler = null;
 		}
 	}
+	if (typeof window !== 'undefined') window.__exitInfoPickMode = exitPickMode;
+
+	document.addEventListener('keydown', function (e) {
+		if (e.key !== 'Escape') return;
+		if (!isPickMode) return;
+		e.preventDefault();
+		exitPickMode();
+	});
 
 	pickBtn.addEventListener('click', function () {
+		if (pickBtn.disabled) return;
 		if (isPickMode) {
 			exitPickMode();
 			return;
 		}
+		var candidateCount = buildCadastrePickCache();
+		pickBtn.title = 'Haritadan Referans Ada/Parsel Seç (' + candidateCount + ' aday)';
 		isPickMode = true;
+		if (typeof window !== 'undefined') window.__infoPickModeActive = true;
 		viewer.scene.canvas.style.cursor = 'crosshair';
-		pickBtn.style.background = 'rgba(239,68,68,0.3)';
-		pickBtn.style.color = '#fca5a5';
-		pickBtn.innerHTML = '<span class="material-symbols-outlined text-[14px]">close</span> İptal';
+		setInfoPickButtonState(true);
+		pickBtn.innerHTML = '<span class="material-symbols-outlined text-[14px]">close</span> Bitir';
+
+		if (candidateCount > 0) {
+			setInfoPickStatus('Seçim modu açık. Haritada sadece referans parsellerden seçim yapılır.', 'active');
+			syncInfoPanelNoteToResultBar('Kadastro seçim modu aktif. Sadece referans parsellerden seçim yapılır.', 'info');
+		} else {
+			setInfoPickStatus('Referans aday bulunamadı. Referans katman görünürlüğünü kontrol edin.', 'warn');
+			syncInfoPanelNoteToResultBar('Referans aday bulunamadı. Referans katmanı görünür değil veya boş olabilir.', 'warn');
+		}
 
 		pickHandler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
 		pickHandler.setInputAction(function (click) {
-			// Tıklanan noktayı WGS84'e çevir
-			var cartesian = viewer.scene.pickPosition(click.position);
-			if (!cartesian) {
-				var ray = viewer.camera.getPickRay(click.position);
-				cartesian = viewer.scene.globe.pick(ray, viewer.scene);
-			}
-			if (!cartesian) return;
+			// Önce doğrudan pick ile ölçüm yakalamayı dene (bireysel ölçümler için hızlı yol)
+			var found = pickMeasurementFromScene(click.position);
 
-			var carto = Cesium.Cartographic.fromCartesian(cartesian);
-			var clickLon = Cesium.Math.toDegrees(carto.longitude);
-			var clickLat = Cesium.Math.toDegrees(carto.latitude);
+			if (!found) {
+				// Tıklanan noktayı WGS84'e çevir
+				var cartesian = getPickCartesian(click.position);
+				if (!Cesium.defined(cartesian)) {
+					setInfoPickStatus('Konum alınamadı. Başka bir noktaya tıklayın.', 'error');
+					syncInfoPanelNoteToResultBar('Konum alınamadı. Farklı bir noktaya tıklayın.', 'warn');
+					return;
+				}
 
-			// Import edilmiş polygon measurements arasında Point-in-Polygon kontrolü
-			var found = null;
-			for (var i = 0; i < measurements.length; i++) {
-				var m = measurements[i];
-				if (!m.isImported || m.type !== 'polygon' || !m.points || m.points.length < 3) continue;
-				if (!m.properties || (!m.properties.adano && !m.properties.parselno)) continue;
+				var carto = Cesium.Cartographic.fromCartesian(cartesian);
+				var clickLon = Cesium.Math.toDegrees(carto.longitude);
+				var clickLat = Cesium.Math.toDegrees(carto.latitude);
+				var edgeToleranceMeters = 2.0;
+				if (cadastrePickCache.length === 0) {
+					buildCadastrePickCache();
+				}
 
-				// Polygon noktalarını WGS84 [lon, lat] dizisine çevir
-				var ring = m.points.map(function (pt) {
-					var c = Cesium.Cartographic.fromCartesian(pt);
-					return [Cesium.Math.toDegrees(c.longitude), Cesium.Math.toDegrees(c.latitude)];
-				});
+				// Polygon measurements arasında Point-in-Polygon kontrolü
+				var latTol = edgeToleranceMeters / 110540;
+				var lonTol = edgeToleranceMeters /
+					(111320 * Math.max(0.2, Math.cos(Cesium.Math.toRadians(clickLat))));
 
-				if (pointInPolygon(clickLon, clickLat, ring)) {
-					found = m;
-					break;
+				for (var i = 0; i < cadastrePickCache.length; i++) {
+					var candidate = cadastrePickCache[i];
+					if (clickLon < candidate.minLon - lonTol || clickLon > candidate.maxLon + lonTol ||
+						clickLat < candidate.minLat - latTol || clickLat > candidate.maxLat + latTol) {
+						continue;
+					}
+
+					if (pointInPolygon(clickLon, clickLat, candidate.ring, edgeToleranceMeters)) {
+						found = {
+							measurement: candidate.measurement,
+							kadastro: candidate.kadastro
+						};
+						break;
+					}
 				}
 			}
 
-			if (found && found.properties) {
-				var props = found.properties;
+			if (found && found.measurement) {
+				var selectedKadastro = found.kadastro;
+				var selectedLabel = (selectedKadastro.ada_no || selectedKadastro.parsel_no)
+					? (selectedKadastro.ada_no || '?') + '/' + (selectedKadastro.parsel_no || '?')
+					: (selectedKadastro.cins || 'Seçildi');
+
 				// Paneldeki Kadastro alanlarına yaz
 				var adaInput = document.getElementById('infoAda');
 				var parselInput = document.getElementById('infoParsel');
 				var cinsInput = document.getElementById('infoCins');
-				if (adaInput) adaInput.value = props.adano || props.ada_no || '';
-				if (parselInput) parselInput.value = props.parselno || props.parsel_no || '';
-				if (cinsInput) cinsInput.value = props.tapucinsaciklama || props.cins || '';
+				if (adaInput) adaInput.value = selectedKadastro.ada_no;
+				if (parselInput) parselInput.value = selectedKadastro.parsel_no;
+				if (cinsInput) cinsInput.value = selectedKadastro.cins;
+				updateInfoPanelDirtyState(false);
 
-				// Anlık görsel geri bildirim
-				pickBtn.innerHTML = '<span class="material-symbols-outlined text-[14px]">check_circle</span> ' +
-					(props.adano || '?') + '/' + (props.parselno || '?');
-				pickBtn.style.background = 'rgba(16,185,129,0.3)';
-				pickBtn.style.color = '#6ee7b7';
-				setTimeout(exitPickMode, 2000);
+				setInfoPickStatus('Seçilen referans parsel: ' + selectedLabel + ' · İsterseniz farklı parsel için tekrar tıklayın.', 'ok');
+				syncInfoPanelNoteToResultBar('Seçilen referans parsel: ' + selectedLabel + '. Alınacak ada/parsel güncellendi.', 'ok');
 			} else {
-				// Parsel bulunamadı
-				pickBtn.innerHTML = '<span class="material-symbols-outlined text-[14px]">error_outline</span> Parsel bulunamadı';
-				pickBtn.style.background = 'rgba(239,68,68,0.3)';
-				pickBtn.style.color = '#fca5a5';
-				setTimeout(function () {
-					pickBtn.innerHTML = '<span class="material-symbols-outlined text-[14px]">ads_click</span> Tekrar Seç';
-				}, 1500);
+				// Parsel bulunamadı — seçim modu kapanmaz
+				setInfoPickStatus('Referans parsel bulunamadı. Başka bir noktaya tıklayarak devam edin.', 'warn');
+				syncInfoPanelNoteToResultBar('Tıklanan noktada referans parsel bulunamadı. Seçim modu açık, tekrar tıklayın.', 'warn');
 			}
 		}, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 	});
@@ -4776,7 +6443,10 @@ function deleteMeasurement(id) {
 	// Sahneden entity/primitive'leri kaldır
 	m.entities.forEach(function (item) { safeRemoveItem(item); });
 	measurements.splice(idx, 1);
-	if (activeHighlightId === id) activeHighlightId = null;
+	if (activeHighlightId === id) {
+		activeHighlightId = null;
+		clearBatchedSelectionOverlay();
+	}
 	var delFab = document.getElementById('deleteSelFab');
 	if (delFab) delFab.style.display = 'none';
 	viewer.scene.requestRender();
@@ -4810,7 +6480,10 @@ function deleteGroup(id) {
 			if (!m.isBatched) {
 				m.entities.forEach(function (ent) { safeRemoveItem(ent); });
 			}
-			if (activeHighlightId === m.id) activeHighlightId = null;
+			if (activeHighlightId === m.id) {
+				activeHighlightId = null;
+				clearBatchedSelectionOverlay();
+			}
 		} else {
 			remainingMeasurements.push(m); // Silinmeyecekleri tut
 		}
@@ -4844,24 +6517,81 @@ document.addEventListener('keydown', function (e) {
 // Tümünü Sil
 document.getElementById('btnDeleteAll').onclick = function () {
 	var totalCount = measurements.length;
-	if (totalCount === 0) return;
-	if (!confirm('Tüm gruplardaki ' + totalCount + ' ölçüm haritadan ve listeden kalıcı olarak silinecek.\n\nBu işlem geri alınamaz. Devam etmek istediğinize emin misiniz?')) return;
-	measurements.forEach(function (m) {
-		m.entities.forEach(function (ent) { safeRemoveItem(ent); });
+	var hasReferenceLayer = groups.some(function (g) {
+		return g.id !== 0 && (g.isReferans || (g._batchPrimitives && g._batchPrimitives.length > 0));
 	});
-	savedClipBoxes.forEach(function (clip) {
-		clearClipOverlayEntities(clip._overlayEntities || []);
+	var hasSavedClip = !!(savedClipBoxes && savedClipBoxes.length > 0);
+	if (totalCount === 0 && !hasReferenceLayer && !hasSavedClip) return;
+
+	var refLayerCount = groups.filter(function (g) { return g.id !== 0 && g.isReferans; }).length;
+	var confirmText = 'Tüm gruplardaki ' + totalCount + ' ölçüm';
+	if (refLayerCount > 0) confirmText += ' ve ' + refLayerCount + ' referans katman';
+	confirmText += ' haritadan ve listeden kalıcı olarak silinecek.\n\nBu işlem geri alınamaz. Devam etmek istediğinize emin misiniz?';
+
+	showResultConfirmDialog(confirmText, function () {
+		// Bekleyen gecikmeli kayıt varsa iptal et; temizleme adımıyla yarışmasın
+		if (_saveTimer) {
+			clearTimeout(_saveTimer);
+			_saveTimer = null;
+		}
+
+		// Aktif kırpma varsa kapatıp geçici gizlemeleri geri yükle
+		if (typeof ClipBoxManager !== 'undefined' && (ClipBoxManager.active || ClipBoxManager._placementMode)) {
+			ClipBoxManager.deactivate();
+		}
+
+		// Referans/import batch primitiflerini sahneden kaldır
+		groups.forEach(function (g) {
+			if (!g || !g._batchPrimitives) return;
+			g._batchPrimitives.forEach(function (prim) {
+				try { viewer.scene.primitives.remove(prim); } catch (e) { }
+			});
+			g._batchPrimitives = null;
+		});
+
+		measurements.forEach(function (m) {
+			m.entities.forEach(function (ent) { safeRemoveItem(ent); });
+		});
+		savedClipBoxes.forEach(function (clip) {
+			clearClipOverlayEntities(clip._overlayEntities || []);
+		});
+		measurements = [];
+		savedClipBoxes = [];
+		selectedSavedClipBoxId = null;
+		activeHighlightId = null;
+		clearBatchedSelectionOverlay();
+		// Varsayılan grup (id:0) hariç tüm grupları sil
+		groups = groups.filter(function (g) { return g.id === 0; });
+		if (groups.length === 0) {
+			groups = [{ id: 0, name: 'Genel', isOpen: false, checked: true, color: '#14B8A6' }];
+		} else {
+			groups[0].name = groups[0].name || 'Genel';
+			groups[0].isOpen = false;
+			groups[0].checked = true;
+			groups[0].color = groups[0].color || '#14B8A6';
+			groups[0].isReferans = false;
+			groups[0].isClipBoxRoot = false;
+			groups[0]._batchPrimitives = null;
+		}
+		measureCount = 0;
+		groupCount = 0;
+		savedClipBoxCount = 0;
+		activeGroupId = 0;
+		viewer.scene.requestRender();
+		renderList();
+
+		// IndexedDB'deki import kayıtlarını da temizle; ardından temiz durumu kaydet
+		if (typeof CbsStorage !== 'undefined' && typeof CbsStorage.clearAll === 'function') {
+			CbsStorage.clearAll().then(function () {
+				saveToStorage();
+			}).catch(function (e) {
+				console.warn('Toplu temizleme depolama hatası:', e);
+				saveToStorage();
+			});
+		} else {
+			saveToStorage();
+		}
 	});
-	measurements = [];
-	savedClipBoxes = [];
-	selectedSavedClipBoxId = null;
-	activeHighlightId = null;
-	// Varsayılan grup (id:0) hariç tüm grupları sil
-	groups = groups.filter(function (g) { return g.id === 0; });
-	activeGroupId = 0;
-	viewer.scene.requestRender();
-	renderList();
-	debouncedSave();
 };
 
 
@@ -4876,6 +6606,10 @@ document.getElementById('selectAllToggle').addEventListener('click', function ()
 		m.checked = _allVisible;
 		m.entities.forEach(function (ent) { ent.show = _allVisible; if (ent.label) ent.label.show = _allVisible; });
 	});
+	if (!_allVisible) {
+		activeHighlightId = null;
+		clearBatchedSelectionOverlay();
+	}
 	viewer.scene.requestRender();
 	renderList();
 	debouncedSave();
@@ -4883,6 +6617,9 @@ document.getElementById('selectAllToggle').addEventListener('click', function ()
 
 // ─── 6. ÇİZİM ARAÇLARI ───────────────────────────────────────
 var handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+// main.js çekirdek bağımlılıkları hazır: edit-manager gibi modüller güvenle bağlanabilir.
+window.__cbsMainReady = true;
+window.dispatchEvent(new CustomEvent('cbs-main-ready'));
 var activeTool = null;
 var isInfoModeActive = false; // "i" tuşu ile aktifleşen salt-okunur inceleme modu
 var clickPoints = [];
@@ -5385,43 +7122,55 @@ function undoLastPoint() {
 
 		var prevHad = !!_snapCand;
 		_snapCand = null;
-		var bestD = 9999, bestPt = null;
+		var snapPx2 = SNAP_PX * SNAP_PX;
+		var bestD2 = Number.POSITIVE_INFINITY, bestPt = null;
+
+		var groupById = Object.create(null);
+		for (var gi = 0; gi < groups.length; gi++) {
+			groupById[groups[gi].id] = groups[gi];
+		}
 
 		// [P2a] Geçiş 1: KENDİ ölçümler + aktif çizim (referans gruplar bu geçişte atlanır)
 		measurements.forEach(function (m) {
-			if (!m.points) return;
-			var mGroup = groups.find(function (g) { return g.id === m.groupId; });
+			if (!m.points || m.checked === false) return;
+			var mGroup = groupById[m.groupId];
 			if (isRefGroup(mGroup) || m.isImported) return; // Referans bu geçişte atla
 			m.points.forEach(function (cp) {
 				var sp = _toScreen(cp);
 				if (!sp) return;
-				var d = Math.hypot(sp.x - _touchX, sp.y - _touchY);
-				if (d < bestD) { bestD = d; bestPt = { pos: cp, sp: sp }; }
+				var dx = sp.x - _touchX;
+				var dy = sp.y - _touchY;
+				var d2 = dx * dx + dy * dy;
+				if (d2 < bestD2) { bestD2 = d2; bestPt = { pos: cp, sp: sp }; }
 			});
 		});
 		clickPoints.forEach(function (cp) {
 			var sp = _toScreen(cp);
 			if (!sp) return;
-			var d = Math.hypot(sp.x - _touchX, sp.y - _touchY);
-			if (d < bestD) { bestD = d; bestPt = { pos: cp, sp: sp }; }
+			var dx = sp.x - _touchX;
+			var dy = sp.y - _touchY;
+			var d2 = dx * dx + dy * dy;
+			if (d2 < bestD2) { bestD2 = d2; bestPt = { pos: cp, sp: sp }; }
 		});
 
 		// [P2a] Geçiş 2: Geçiş 1'de snap bulunamazsa snapEnabled referans gruplar
-		if (!bestPt || bestD >= SNAP_PX) {
+		if (!bestPt || bestD2 >= snapPx2) {
 			measurements.forEach(function (m) {
-				if (!m.points) return;
-				var mGroup = groups.find(function (g) { return g.id === m.groupId; });
+				if (!m.points || m.checked === false) return;
+				var mGroup = groupById[m.groupId];
 				if (!mGroup || !isRefGroup(mGroup) || !mGroup.snapEnabled) return;
 				m.points.forEach(function (cp) {
 					var sp = _toScreen(cp);
 					if (!sp) return;
-					var d = Math.hypot(sp.x - _touchX, sp.y - _touchY);
-					if (d < bestD) { bestD = d; bestPt = { pos: cp, sp: sp }; }
+					var dx = sp.x - _touchX;
+					var dy = sp.y - _touchY;
+					var d2 = dx * dx + dy * dy;
+					if (d2 < bestD2) { bestD2 = d2; bestPt = { pos: cp, sp: sp }; }
 				});
 			});
 		}
 
-		if (bestPt && bestD < SNAP_PX) {
+		if (bestPt && bestD2 < snapPx2) {
 			_snapCand = bestPt;
 			var carto = Cesium.Cartographic.fromCartesian(bestPt.pos);
 			label.textContent = '⚡ SNAP';
@@ -5551,9 +7300,313 @@ function isRefGroup(grp) {
 	return grp.isReferans === true || grp.name.indexOf('📌') === 0;
 }
 
+var SNAP_INDEX_MAX_RESULTS = _isMob ? 260 : 900;
+var SNAP_INDEX_WINDOW_SCALE = _isMob ? 10 : 8;
+var SNAP_INDEX_FALLBACK_WINDOW_SCALE_MULT = _isMob ? 2.0 : 1.7;
+var _refSnapSpatialIndex = {
+	vertexTree: null,
+	edgeTree: null,
+	builtAt: 0,
+	signature: '',
+	vertexCount: 0,
+	edgeCount: 0
+};
+
+function _snapHashMix(seed, value) {
+	var v = (value | 0) >>> 0;
+	var h = (seed ^ v) >>> 0;
+	h = (h + ((h << 1) >>> 0) + ((h << 4) >>> 0) + ((h << 7) >>> 0) + ((h << 8) >>> 0) + ((h << 24) >>> 0)) >>> 0;
+	return h;
+}
+
+function _buildSnapKdTree(items, depth) {
+	if (!items || items.length === 0) return null;
+	var axis = (depth & 1) === 0 ? 'x' : 'y';
+	items.sort(function (a, b) { return a[axis] - b[axis]; });
+	var mid = (items.length / 2) | 0;
+	var item = items[mid];
+	var node = {
+		item: item,
+		left: null,
+		right: null,
+		minX: item.x,
+		maxX: item.x,
+		minY: item.y,
+		maxY: item.y,
+		maxReachX: item.reachX || 0,
+		maxReachY: item.reachY || 0
+	};
+
+	if (mid > 0) node.left = _buildSnapKdTree(items.slice(0, mid), depth + 1);
+	if (mid + 1 < items.length) node.right = _buildSnapKdTree(items.slice(mid + 1), depth + 1);
+
+	var kids = [node.left, node.right];
+	for (var k = 0; k < kids.length; k++) {
+		var child = kids[k];
+		if (!child) continue;
+		if (child.minX < node.minX) node.minX = child.minX;
+		if (child.maxX > node.maxX) node.maxX = child.maxX;
+		if (child.minY < node.minY) node.minY = child.minY;
+		if (child.maxY > node.maxY) node.maxY = child.maxY;
+		if (child.maxReachX > node.maxReachX) node.maxReachX = child.maxReachX;
+		if (child.maxReachY > node.maxReachY) node.maxReachY = child.maxReachY;
+	}
+
+	return node;
+}
+
+function _querySnapPointTree(node, minX, minY, maxX, maxY, out, maxOut) {
+	if (!node || out.length >= maxOut) return;
+	if (node.maxX < minX || node.minX > maxX || node.maxY < minY || node.minY > maxY) return;
+
+	var item = node.item;
+	if (item.x >= minX && item.x <= maxX && item.y >= minY && item.y <= maxY) {
+		out.push(item);
+		if (out.length >= maxOut) return;
+	}
+
+	_querySnapPointTree(node.left, minX, minY, maxX, maxY, out, maxOut);
+	if (out.length >= maxOut) return;
+	_querySnapPointTree(node.right, minX, minY, maxX, maxY, out, maxOut);
+}
+
+function _querySnapEdgeTree(node, minX, minY, maxX, maxY, out, maxOut) {
+	if (!node || out.length >= maxOut) return;
+	if ((node.maxX + node.maxReachX) < minX || (node.minX - node.maxReachX) > maxX) return;
+	if ((node.maxY + node.maxReachY) < minY || (node.minY - node.maxReachY) > maxY) return;
+
+	var item = node.item;
+	if (item.minX <= maxX && item.maxX >= minX && item.minY <= maxY && item.maxY >= minY) {
+		out.push(item);
+		if (out.length >= maxOut) return;
+	}
+
+	_querySnapEdgeTree(node.left, minX, minY, maxX, maxY, out, maxOut);
+	if (out.length >= maxOut) return;
+	_querySnapEdgeTree(node.right, minX, minY, maxX, maxY, out, maxOut);
+}
+
+function _estimateSnapMetersPerPixel() {
+	var viewH = Math.max(1, viewer.canvas.clientHeight || viewer.canvas.height || 1);
+	if (isOrthographic && viewer.camera && viewer.camera.frustum) {
+		var fr = viewer.camera.frustum;
+		var frWidth = (typeof fr.width === 'number' && isFinite(fr.width)) ? fr.width : null;
+		if (frWidth && frWidth > 0) {
+			var aspect = (typeof fr.aspectRatio === 'number' && fr.aspectRatio > 0)
+				? fr.aspectRatio
+				: (viewer.canvas.clientWidth / viewH);
+			var frHeight = frWidth / Math.max(0.01, aspect);
+			return frHeight / viewH;
+		}
+	}
+
+	var camCarto = viewer.camera.positionCartographic;
+	var camHeight = (camCarto && isFinite(camCarto.height)) ? Math.max(1, camCarto.height) : 150;
+	var fovy = (viewer.camera.frustum && typeof viewer.camera.frustum.fovy === 'number' && viewer.camera.frustum.fovy > 0)
+		? viewer.camera.frustum.fovy
+		: Cesium.Math.toRadians(60);
+	return (2 * camHeight * Math.tan(fovy * 0.5)) / viewH;
+}
+
+function _getSnapMouseCartographic(mousePos) {
+	if (!mousePos) return null;
+	var c3 = null;
+	try {
+		var ray = viewer.camera.getPickRay(mousePos);
+		if (ray) c3 = viewer.scene.globe.pick(ray, viewer.scene);
+	} catch (e) { }
+	if (!Cesium.defined(c3)) {
+		try { c3 = viewer.camera.pickEllipsoid(mousePos, viewer.scene.globe.ellipsoid); } catch (e2) { }
+	}
+	if (Cesium.defined(c3)) {
+		try { return Cesium.Cartographic.fromCartesian(c3); } catch (e3) { }
+	}
+	if (viewer.camera.positionCartographic) return viewer.camera.positionCartographic;
+	return null;
+}
+
+function _getSnapGeoQueryWindow(mousePos, thresholdPx, windowScaleMultiplier) {
+	var center = _getSnapMouseCartographic(mousePos);
+	if (!center) return null;
+
+	var mpp = _estimateSnapMetersPerPixel();
+	if (!isFinite(mpp) || mpp <= 0) mpp = 0.5;
+	var scale = (typeof windowScaleMultiplier === 'number' && isFinite(windowScaleMultiplier) && windowScaleMultiplier > 0)
+		? windowScaleMultiplier
+		: 1;
+	var meters = Math.max(1.5, mpp * Math.max(8, thresholdPx * SNAP_INDEX_WINDOW_SCALE * scale));
+
+	var earthR = 6378137.0;
+	var latPad = Cesium.Math.toDegrees(meters / earthR);
+	var cosLat = Math.abs(Math.cos(center.latitude));
+	if (cosLat < 0.12) cosLat = 0.12;
+	var lonPad = latPad / cosLat;
+
+	var lonDeg = Cesium.Math.toDegrees(center.longitude);
+	var latDeg = Cesium.Math.toDegrees(center.latitude);
+	return {
+		minX: lonDeg - lonPad,
+		maxX: lonDeg + lonPad,
+		minY: latDeg - latPad,
+		maxY: latDeg + latPad
+	};
+}
+
+function _buildReferenceSnapSignature(groupById) {
+	var refCount = 0;
+	var refPointCount = 0;
+	var refEdgeCount = 0;
+	var hash = 2166136261;
+
+	for (var i = 0; i < measurements.length; i++) {
+		var m = measurements[i];
+		if (!m || !m.checked || !m.points || m.points.length === 0) continue;
+		var mGroup = groupById[m.groupId];
+		if (!mGroup || !isRefGroup(mGroup) || !mGroup.snapEnabled) continue;
+
+		refCount++;
+		var len = m.points.length;
+		refPointCount += len;
+		var edgeAdd = 0;
+		if (m.type === 'line' || m.type === 'polygon' || m.type === 'height') {
+			edgeAdd = m.type === 'polygon' ? len : Math.max(0, len - 1);
+			refEdgeCount += edgeAdd;
+		}
+
+		hash = _snapHashMix(hash, len + (edgeAdd << 1) + i);
+		var p0 = m.points[0];
+		var pN = m.points[len - 1];
+		if (p0) {
+			hash = _snapHashMix(hash, Math.round((p0.x || 0) * 0.01));
+			hash = _snapHashMix(hash, Math.round((p0.y || 0) * 0.01));
+			hash = _snapHashMix(hash, Math.round((p0.z || 0) * 0.01));
+		}
+		if (pN) {
+			hash = _snapHashMix(hash, Math.round((pN.x || 0) * 0.01));
+			hash = _snapHashMix(hash, Math.round((pN.y || 0) * 0.01));
+			hash = _snapHashMix(hash, Math.round((pN.z || 0) * 0.01));
+		}
+	}
+
+	return {
+		signature: refCount + '|' + refPointCount + '|' + refEdgeCount + '|' + (hash >>> 0),
+		refCount: refCount,
+		refPointCount: refPointCount,
+		refEdgeCount: refEdgeCount
+	};
+}
+
+function _rebuildReferenceSnapSpatialIndex(groupById, now, sigInfo) {
+	var vertexItems = [];
+	var edgeItems = [];
+
+	for (var mi = 0; mi < measurements.length; mi++) {
+		var m = measurements[mi];
+		if (!m || !m.checked || !m.points || m.points.length === 0) continue;
+		var mGroup = groupById[m.groupId];
+		if (!mGroup || !isRefGroup(mGroup) || !mGroup.snapEnabled) continue;
+
+		var pts = m.points;
+		var geoPts = new Array(pts.length);
+		for (var pi = 0; pi < pts.length; pi++) {
+			var p = pts[pi];
+			if (!p) continue;
+			var carto;
+			try { carto = Cesium.Cartographic.fromCartesian(p); } catch (e) { carto = null; }
+			if (!carto) continue;
+
+			var lon = Cesium.Math.toDegrees(carto.longitude);
+			var lat = Cesium.Math.toDegrees(carto.latitude);
+			var vertexItem = { x: lon, y: lat, point: p };
+			vertexItems.push(vertexItem);
+			geoPts[pi] = vertexItem;
+		}
+
+		if (m.type === 'line' || m.type === 'polygon' || m.type === 'height') {
+			var edgeLen = m.type === 'polygon' ? pts.length : pts.length - 1;
+			for (var ei = 0; ei < edgeLen; ei++) {
+				var gp1 = geoPts[ei];
+				var gp2 = geoPts[(ei + 1) % pts.length];
+				if (!gp1 || !gp2) continue;
+
+				var minX = Math.min(gp1.x, gp2.x);
+				var maxX = Math.max(gp1.x, gp2.x);
+				var minY = Math.min(gp1.y, gp2.y);
+				var maxY = Math.max(gp1.y, gp2.y);
+				edgeItems.push({
+					x: (minX + maxX) * 0.5,
+					y: (minY + maxY) * 0.5,
+					minX: minX,
+					maxX: maxX,
+					minY: minY,
+					maxY: maxY,
+					reachX: (maxX - minX) * 0.5,
+					reachY: (maxY - minY) * 0.5,
+					p1: pts[ei],
+					p2: pts[(ei + 1) % pts.length]
+				});
+			}
+		}
+	}
+
+	_refSnapSpatialIndex.vertexTree = vertexItems.length ? _buildSnapKdTree(vertexItems, 0) : null;
+	_refSnapSpatialIndex.edgeTree = edgeItems.length ? _buildSnapKdTree(edgeItems, 0) : null;
+	_refSnapSpatialIndex.vertexCount = vertexItems.length;
+	_refSnapSpatialIndex.edgeCount = edgeItems.length;
+	_refSnapSpatialIndex.signature = sigInfo.signature;
+	_refSnapSpatialIndex.builtAt = now;
+}
+
+function _ensureReferenceSnapSpatialIndex(groupById, now) {
+	var sigInfo = _buildReferenceSnapSignature(groupById);
+	if (_refSnapSpatialIndex.signature === sigInfo.signature) {
+		return _refSnapSpatialIndex;
+	}
+	_rebuildReferenceSnapSpatialIndex(groupById, now, sigInfo);
+	return _refSnapSpatialIndex;
+}
+
+function _queryReferenceVertexCandidates(mousePos, thresholdPx, groupById, now) {
+	var idx = _ensureReferenceSnapSpatialIndex(groupById, now);
+	if (!idx || !idx.vertexTree || idx.vertexCount === 0) return [];
+	var win = _getSnapGeoQueryWindow(mousePos, thresholdPx, 1);
+	if (!win) return [];
+	var out = [];
+	_querySnapPointTree(idx.vertexTree, win.minX, win.minY, win.maxX, win.maxY, out, SNAP_INDEX_MAX_RESULTS);
+	if (out.length === 0) {
+		var fallbackWin = _getSnapGeoQueryWindow(mousePos, thresholdPx, SNAP_INDEX_FALLBACK_WINDOW_SCALE_MULT);
+		if (fallbackWin) {
+			_querySnapPointTree(idx.vertexTree, fallbackWin.minX, fallbackWin.minY, fallbackWin.maxX, fallbackWin.maxY, out, SNAP_INDEX_MAX_RESULTS);
+		}
+	}
+	return out;
+}
+
+function _queryReferenceEdgeCandidates(mousePos, thresholdPx, groupById, now) {
+	var idx = _ensureReferenceSnapSpatialIndex(groupById, now);
+	if (!idx || !idx.edgeTree || idx.edgeCount === 0) return [];
+	var win = _getSnapGeoQueryWindow(mousePos, thresholdPx, 1);
+	if (!win) return [];
+	var out = [];
+	_querySnapEdgeTree(idx.edgeTree, win.minX, win.minY, win.maxX, win.maxY, out, SNAP_INDEX_MAX_RESULTS);
+	if (out.length === 0) {
+		var fallbackWin = _getSnapGeoQueryWindow(mousePos, thresholdPx, SNAP_INDEX_FALLBACK_WINDOW_SCALE_MULT);
+		if (fallbackWin) {
+			_querySnapEdgeTree(idx.edgeTree, fallbackWin.minX, fallbackWin.minY, fallbackWin.maxX, fallbackWin.maxY, out, SNAP_INDEX_MAX_RESULTS);
+		}
+	}
+	return out;
+}
+
 // ─── EKLENEN ÖZELLİK: FARE HAREKETİ İLE NOKTA YAKALAMA (SNAP) ───
 // Optimizasyon: 1) 33ms throttle, 2) Vertex önceliği, 3) Globe pick yok, 4) Viewport+kutu clipping
 var _lastSnapTime = 0;
+var _snapThrottleMs = 33;
+var _snapCostAvgMs = 0;
+var _snapHeavyModeNotified = false;
+var SNAP_REF_MEASUREMENT_LIMIT = _isMob ? 120 : 320;
+var RUBBER_PICK_FALLBACK_INTERVAL_MS = _isMob ? 90 : 55;
+var _lastRubberPickFallbackAt = 0;
 var _prevSnapState = null; // [P3] 'vertex' | 'edge' | null — gereksiz requestRender'ı önler
 handler.setInputAction(function (movement) {
 	// EditManager sürükleme sırasında snap aktif kalmalı
@@ -5569,25 +7622,62 @@ handler.setInputAction(function (movement) {
 
 	// [OPT-1] Throttle: saniyede ~30 kez çalışsın (33ms aralık — CAD benzeri tepki)
 	var now = performance.now();
-	if (now - _lastSnapTime < 33) return;
+	if (now - _lastSnapTime < _snapThrottleMs) return;
 	_lastSnapTime = now;
+	var _snapPassStart = now;
+	function _finishSnapPass() {
+		var _cost = performance.now() - _snapPassStart;
+		if (!isFinite(_cost)) return;
+		_snapCostAvgMs = (_snapCostAvgMs * 0.85) + (_cost * 0.15);
+		if (_snapCostAvgMs > 14) _snapThrottleMs = 100;
+		else if (_snapCostAvgMs > 10) _snapThrottleMs = 66;
+		else if (_snapCostAvgMs > 7) _snapThrottleMs = 50;
+		else _snapThrottleMs = 33;
+	}
 
 	var threshold = 15; // px (Yakalaşma mesafesi)
+	var threshold2 = threshold * threshold;
 	var mousePos = movement.endPosition;
 
 	// [OPT-4] Viewport sınırları — ekran dışı noktaları hızlıca elemek için
 	var viewW = viewer.canvas.clientWidth;
 	var viewH = viewer.canvas.clientHeight;
 	var margin = 50; // px — ekran kenarı toleransı
+	var groupById = Object.create(null);
+	for (var gi = 0; gi < groups.length; gi++) {
+		groupById[groups[gi].id] = groups[gi];
+	}
+
+	// Çok yoğun referans veri varken tam tarama fallback pointermove'u kilitleyebilir.
+	// KD-tree aday araması her zaman çalışır; bu guard sadece tam taramayı kapatır.
+	var _refSnapMeasurementCount = 0;
+	for (var mi = 0; mi < measurements.length; mi++) {
+		var _m = measurements[mi];
+		if (!_m.checked) continue;
+		var _g = groupById[_m.groupId];
+		if (_g && isRefGroup(_g) && _g.snapEnabled) {
+			_refSnapMeasurementCount++;
+			if (_refSnapMeasurementCount > SNAP_REF_MEASUREMENT_LIMIT) break;
+		}
+	}
+	var _skipReferenceSnap = _refSnapMeasurementCount > SNAP_REF_MEASUREMENT_LIMIT;
+	if (_skipReferenceSnap && !_snapHeavyModeNotified) {
+		_snapHeavyModeNotified = true;
+		console.info('[CBS] Snap guard aktif: referans tam taraması yoğunluk nedeniyle devre dışı, KD-tree aday araması kullanılacak.', {
+			refMeasurements: _refSnapMeasurementCount,
+			limit: SNAP_REF_MEASUREMENT_LIMIT
+		});
+		TelemetryManager.addLog('SNAP_GUARD_ENABLED', { refMeasurements: _refSnapMeasurementCount, limit: SNAP_REF_MEASUREMENT_LIMIT }, false);
+	}
 
 	// ─── PASS 1: VERTEX SNAP — Öncelik: Kendi Vektör > Referans > Snap Yok ─────
-	var vertexDist = threshold + 1;
+	var vertexDist = threshold2 + 1;
 	var vertexCartesian = null;
 
 	// 1a. KENDİ ölçüm noktaları (referans olmayan — en yüksek öncelik)
 	measurements.forEach(function (m) {
 		if (!m.checked) return;
-		var mGroup = groups.find(function (g) { return g.id === m.groupId; });
+		var mGroup = groupById[m.groupId];
 		if (isRefGroup(mGroup) || m.isImported) return; // Referans grupları bu geçişte atla
 		m.points.forEach(function (p) {
 			var winPos = Cesium.SceneTransforms.wgs84ToWindowCoordinates(viewer.scene, p);
@@ -5595,8 +7685,10 @@ handler.setInputAction(function (movement) {
 			if (winPos.x < -margin || winPos.x > viewW + margin || winPos.y < -margin || winPos.y > viewH + margin) return;
 			// [P1] 2D kutu filtresi: threshold dışındakiler distance hesabına girmez
 			if (Math.abs(winPos.x - mousePos.x) > threshold || Math.abs(winPos.y - mousePos.y) > threshold) return;
-			var dist = Cesium.Cartesian2.distance(winPos, mousePos);
-			if (dist < vertexDist) { vertexDist = dist; vertexCartesian = p; }
+			var dx = winPos.x - mousePos.x;
+			var dy = winPos.y - mousePos.y;
+			var dist2 = dx * dx + dy * dy;
+			if (dist2 < vertexDist) { vertexDist = dist2; vertexCartesian = p; }
 		});
 	});
 
@@ -5607,26 +7699,46 @@ handler.setInputAction(function (movement) {
 		if (winPos.x < -margin || winPos.x > viewW + margin || winPos.y < -margin || winPos.y > viewH + margin) return;
 		// [P1] 2D kutu filtresi
 		if (Math.abs(winPos.x - mousePos.x) > threshold || Math.abs(winPos.y - mousePos.y) > threshold) return;
-		var dist = Cesium.Cartesian2.distance(winPos, mousePos);
-		if (dist < vertexDist) { vertexDist = dist; vertexCartesian = p; }
+		var dx = winPos.x - mousePos.x;
+		var dy = winPos.y - mousePos.y;
+		var dist2 = dx * dx + dy * dy;
+		if (dist2 < vertexDist) { vertexDist = dist2; vertexCartesian = p; }
 	});
 
-	// 1c. REFERANS ölçüm noktaları — SADECE kendi verisinde snap bulunamazsa
-	if (!vertexCartesian) {
-		measurements.forEach(function (m) {
-			if (!m.checked) return;
-			var mGroup = groups.find(function (g) { return g.id === m.groupId; });
-			if (!mGroup || !isRefGroup(mGroup) || !mGroup.snapEnabled) return; // snapEnabled kapalıysa atla
-			m.points.forEach(function (p) {
-				var winPos = Cesium.SceneTransforms.wgs84ToWindowCoordinates(viewer.scene, p);
-				if (!winPos) return;
-				if (winPos.x < -margin || winPos.x > viewW + margin || winPos.y < -margin || winPos.y > viewH + margin) return;
-				// [P1] 2D kutu filtresi
-				if (Math.abs(winPos.x - mousePos.x) > threshold || Math.abs(winPos.y - mousePos.y) > threshold) return;
-				var dist = Cesium.Cartesian2.distance(winPos, mousePos);
-				if (dist < vertexDist) { vertexDist = dist; vertexCartesian = p; }
+	// 1c. REFERANS ölçüm noktaları — önce KD-tree adayları, gerekirse tam tarama fallback
+	if (!vertexCartesian && _refSnapMeasurementCount > 0) {
+		var _refVertexCandidates = _queryReferenceVertexCandidates(mousePos, threshold, groupById, now);
+		for (var rvi = 0; rvi < _refVertexCandidates.length; rvi++) {
+			var _rv = _refVertexCandidates[rvi];
+			var p = _rv.point;
+			if (!p) continue;
+			var winPos = Cesium.SceneTransforms.wgs84ToWindowCoordinates(viewer.scene, p);
+			if (!winPos) continue;
+			if (winPos.x < -margin || winPos.x > viewW + margin || winPos.y < -margin || winPos.y > viewH + margin) continue;
+			if (Math.abs(winPos.x - mousePos.x) > threshold || Math.abs(winPos.y - mousePos.y) > threshold) continue;
+			var dx = winPos.x - mousePos.x;
+			var dy = winPos.y - mousePos.y;
+			var dist2 = dx * dx + dy * dy;
+			if (dist2 < vertexDist) { vertexDist = dist2; vertexCartesian = p; }
+		}
+
+		if (!vertexCartesian && !_skipReferenceSnap) {
+			measurements.forEach(function (m) {
+				if (!m.checked) return;
+				var mGroup = groupById[m.groupId];
+				if (!mGroup || !isRefGroup(mGroup) || !mGroup.snapEnabled) return;
+				m.points.forEach(function (p) {
+					var winPos = Cesium.SceneTransforms.wgs84ToWindowCoordinates(viewer.scene, p);
+					if (!winPos) return;
+					if (winPos.x < -margin || winPos.x > viewW + margin || winPos.y < -margin || winPos.y > viewH + margin) return;
+					if (Math.abs(winPos.x - mousePos.x) > threshold || Math.abs(winPos.y - mousePos.y) > threshold) return;
+					var dx = winPos.x - mousePos.x;
+					var dy = winPos.y - mousePos.y;
+					var dist2 = dx * dx + dy * dy;
+					if (dist2 < vertexDist) { vertexDist = dist2; vertexCartesian = p; }
+				});
 			});
-		});
+		}
 	}
 
 	// [OPT-2] Vertex bulunduysa edge aramayı ATLA — titreşim önlenir
@@ -5638,11 +7750,12 @@ handler.setInputAction(function (movement) {
 		snapIndicator.show = true;
 		// [P3] Sadece durum değişince render iste
 		if (_prevSnapState !== 'vertex') { _prevSnapState = 'vertex'; viewer.scene.requestRender(); }
+		_finishSnapPass();
 		return;
 	}
 
 	// ─── PASS 2: EDGE SNAP (Kenar — vertex yoksa) ───
-	var edgeDist = threshold + 1;
+	var edgeDist = threshold2 + 1;
 	var edgeCartesian = null;
 
 	function checkEdges(pts, isClosed) {
@@ -5658,11 +7771,19 @@ handler.setInputAction(function (movement) {
 			var closest2D = getClosestPointOnSegment(mousePos, w1, w2);
 			// [P1] Edge 2D kutu filtresi: closest point fare kutusunda değilse atla
 			if (Math.abs(closest2D.x - mousePos.x) > threshold || Math.abs(closest2D.y - mousePos.y) > threshold) continue;
-			var d = Cesium.Cartesian2.distance(mousePos, closest2D);
-			if (d < edgeDist) {
-				edgeDist = d;
-				var segLen = Cesium.Cartesian2.distance(w1, w2);
-				var t = segLen > 0 ? Cesium.Cartesian2.distance(w1, closest2D) / segLen : 0;
+			var dx = mousePos.x - closest2D.x;
+			var dy = mousePos.y - closest2D.y;
+			var d2 = dx * dx + dy * dy;
+			if (d2 < edgeDist) {
+				edgeDist = d2;
+				var segDx = w2.x - w1.x;
+				var segDy = w2.y - w1.y;
+				var segLen2 = segDx * segDx + segDy * segDy;
+				var t = segLen2 > 0
+					? ((closest2D.x - w1.x) * segDx + (closest2D.y - w1.y) * segDy) / segLen2
+					: 0;
+				if (t < 0) t = 0;
+				if (t > 1) t = 1;
 				edgeCartesian = Cesium.Cartesian3.lerp(p1, p2, t, new Cesium.Cartesian3());
 			}
 		}
@@ -5671,7 +7792,7 @@ handler.setInputAction(function (movement) {
 	// 2a. KENDİ ölçüm kenarları (önce)
 	measurements.forEach(function (m) {
 		if (!m.checked) return;
-		var mGroup = groups.find(function (g) { return g.id === m.groupId; });
+		var mGroup = groupById[m.groupId];
 		if (isRefGroup(mGroup) || m.isImported) return; // Referans bu geçişte atla
 		if (m.type === 'line' || m.type === 'polygon' || m.type === 'height') {
 			checkEdges(m.points, m.type === 'polygon');
@@ -5683,11 +7804,45 @@ handler.setInputAction(function (movement) {
 		checkEdges(clickPoints, false);
 	}
 
-	// 2c. REFERANS kenarları — sadece kendi verisinde edge bulunamazsa
-	if (!edgeCartesian) {
+	// 2c. REFERANS kenarları — önce KD-tree adayları, gerekirse tam tarama fallback
+	if (!edgeCartesian && _refSnapMeasurementCount > 0) {
+		var _refEdgeCandidates = _queryReferenceEdgeCandidates(mousePos, threshold, groupById, now);
+		for (var rei = 0; rei < _refEdgeCandidates.length; rei++) {
+			var _seg = _refEdgeCandidates[rei];
+			var p1 = _seg.p1;
+			var p2 = _seg.p2;
+			if (!p1 || !p2) continue;
+
+			var w1 = Cesium.SceneTransforms.wgs84ToWindowCoordinates(viewer.scene, p1);
+			var w2 = Cesium.SceneTransforms.wgs84ToWindowCoordinates(viewer.scene, p2);
+			if (!w1 || !w2) continue;
+			if ((w1.x < -margin && w2.x < -margin) || (w1.x > viewW + margin && w2.x > viewW + margin)) continue;
+			if ((w1.y < -margin && w2.y < -margin) || (w1.y > viewH + margin && w2.y > viewH + margin)) continue;
+
+			var closest2D = getClosestPointOnSegment(mousePos, w1, w2);
+			if (Math.abs(closest2D.x - mousePos.x) > threshold || Math.abs(closest2D.y - mousePos.y) > threshold) continue;
+			var dx = mousePos.x - closest2D.x;
+			var dy = mousePos.y - closest2D.y;
+			var d2 = dx * dx + dy * dy;
+			if (d2 < edgeDist) {
+				edgeDist = d2;
+				var segDx = w2.x - w1.x;
+				var segDy = w2.y - w1.y;
+				var segLen2 = segDx * segDx + segDy * segDy;
+				var t = segLen2 > 0
+					? ((closest2D.x - w1.x) * segDx + (closest2D.y - w1.y) * segDy) / segLen2
+					: 0;
+				if (t < 0) t = 0;
+				if (t > 1) t = 1;
+				edgeCartesian = Cesium.Cartesian3.lerp(p1, p2, t, new Cesium.Cartesian3());
+			}
+		}
+	}
+
+	if (!edgeCartesian && !_skipReferenceSnap && _refSnapMeasurementCount > 0) {
 		measurements.forEach(function (m) {
 			if (!m.checked) return;
-			var mGroup = groups.find(function (g) { return g.id === m.groupId; });
+			var mGroup = groupById[m.groupId];
 			if (!mGroup || !isRefGroup(mGroup) || !mGroup.snapEnabled) return;
 			if (m.type === 'line' || m.type === 'polygon' || m.type === 'height') {
 				checkEdges(m.points, m.type === 'polygon');
@@ -5722,6 +7877,9 @@ handler.setInputAction(function (movement) {
 		clickPoints.length > 0;
 	if (_rbActive) {
 		var _rbCartesian = snappedCartesian;
+		if (!Cesium.defined(_rbCartesian) && Cesium.defined(_rubberEnd)) {
+			_rbCartesian = _rubberEnd;
+		}
 		if (!Cesium.defined(_rbCartesian)) {
 			// P0: Tek try/catch zinciri — globe.pick önce (CPU matematik, GPU yok),
 			// başarısızsa pickPosition (GPU), asla ikisi aynı anda çalışmaz.
@@ -5733,8 +7891,11 @@ handler.setInputAction(function (movement) {
 						_rbCartesian = _globePt;
 					} else {
 						// globe.pick miss: terrain kapalı veya model üzerinde — GPU fallback
-						var _scenePt = viewer.scene.pickPosition(movement.endPosition);
-						if (Cesium.defined(_scenePt)) _rbCartesian = _scenePt;
+						if ((now - _lastRubberPickFallbackAt) >= RUBBER_PICK_FALLBACK_INTERVAL_MS) {
+							var _scenePt = viewer.scene.pickPosition(movement.endPosition);
+							_lastRubberPickFallbackAt = now;
+							if (Cesium.defined(_scenePt)) _rbCartesian = _scenePt;
+						}
 					}
 				}
 			} catch (e) { /* Context kaybı veya frustum hatası — sessizce atla */ }
@@ -5748,12 +7909,152 @@ handler.setInputAction(function (movement) {
 		_rubberBandLine.show = false;
 		viewer.scene.requestRender();
 	}
+
+	_finishSnapPass();
 }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
+
+var CLICK_SNAP_THRESHOLD_PX = _isMob ? 18 : 15;
+
+function _resolvePreciseClickSnap(clickPos, thresholdPx) {
+	if (!clickPos) return null;
+
+	var threshold = Math.max(4, thresholdPx || 15);
+	var threshold2 = threshold * threshold;
+	var viewW = viewer.canvas.clientWidth;
+	var viewH = viewer.canvas.clientHeight;
+	var margin = 50;
+	var groupById = Object.create(null);
+	for (var gi = 0; gi < groups.length; gi++) {
+		groupById[groups[gi].id] = groups[gi];
+	}
+
+	var vertexDist = threshold2 + 1;
+	var vertexCartesian = null;
+
+	function _tryVertexCandidate(p) {
+		if (!p) return;
+		var winPos = Cesium.SceneTransforms.wgs84ToWindowCoordinates(viewer.scene, p);
+		if (!winPos) return;
+		if (winPos.x < -margin || winPos.x > viewW + margin || winPos.y < -margin || winPos.y > viewH + margin) return;
+		if (Math.abs(winPos.x - clickPos.x) > threshold || Math.abs(winPos.y - clickPos.y) > threshold) return;
+		var dx = winPos.x - clickPos.x;
+		var dy = winPos.y - clickPos.y;
+		var dist2 = dx * dx + dy * dy;
+		if (dist2 < vertexDist) {
+			vertexDist = dist2;
+			vertexCartesian = p;
+		}
+	}
+
+	// Hali hazirda gorunen snap varsa once onu dogrula.
+	if (snappedCartesian) {
+		_tryVertexCandidate(snappedCartesian);
+		if (vertexCartesian) return vertexCartesian;
+	}
+
+	measurements.forEach(function (m) {
+		if (!m.checked || !m.points || m.points.length === 0) return;
+		var mGroup = groupById[m.groupId];
+		if (isRefGroup(mGroup) || m.isImported) return;
+		m.points.forEach(_tryVertexCandidate);
+	});
+
+	clickPoints.forEach(_tryVertexCandidate);
+
+	var now = performance.now();
+	var _refVertexCandidates = _queryReferenceVertexCandidates(clickPos, threshold, groupById, now);
+	for (var rvi = 0; rvi < _refVertexCandidates.length; rvi++) {
+		var _rv = _refVertexCandidates[rvi];
+		_tryVertexCandidate(_rv && _rv.point);
+	}
+
+	if (!vertexCartesian) {
+		measurements.forEach(function (m) {
+			if (!m.checked || !m.points || m.points.length === 0) return;
+			var mGroup = groupById[m.groupId];
+			if (!mGroup || !isRefGroup(mGroup) || !mGroup.snapEnabled) return;
+			m.points.forEach(_tryVertexCandidate);
+		});
+	}
+
+	if (vertexCartesian) return vertexCartesian;
+
+	var edgeDist = threshold2 + 1;
+	var edgeCartesian = null;
+
+	function _tryEdgeCandidate(p1, p2) {
+		if (!p1 || !p2) return;
+		var w1 = Cesium.SceneTransforms.wgs84ToWindowCoordinates(viewer.scene, p1);
+		var w2 = Cesium.SceneTransforms.wgs84ToWindowCoordinates(viewer.scene, p2);
+		if (!w1 || !w2) return;
+		if ((w1.x < -margin && w2.x < -margin) || (w1.x > viewW + margin && w2.x > viewW + margin)) return;
+		if ((w1.y < -margin && w2.y < -margin) || (w1.y > viewH + margin && w2.y > viewH + margin)) return;
+
+		var closest2D = getClosestPointOnSegment(clickPos, w1, w2);
+		if (Math.abs(closest2D.x - clickPos.x) > threshold || Math.abs(closest2D.y - clickPos.y) > threshold) return;
+		var dx = clickPos.x - closest2D.x;
+		var dy = clickPos.y - closest2D.y;
+		var d2 = dx * dx + dy * dy;
+		if (d2 < edgeDist) {
+			edgeDist = d2;
+			var segDx = w2.x - w1.x;
+			var segDy = w2.y - w1.y;
+			var segLen2 = segDx * segDx + segDy * segDy;
+			var t = segLen2 > 0
+				? ((closest2D.x - w1.x) * segDx + (closest2D.y - w1.y) * segDy) / segLen2
+				: 0;
+			if (t < 0) t = 0;
+			if (t > 1) t = 1;
+			edgeCartesian = Cesium.Cartesian3.lerp(p1, p2, t, new Cesium.Cartesian3());
+		}
+	}
+
+	function _checkEdges(pts, isClosed) {
+		if (!pts || pts.length < 2) return;
+		var len = isClosed ? pts.length : pts.length - 1;
+		for (var i = 0; i < len; i++) {
+			_tryEdgeCandidate(pts[i], pts[(i + 1) % pts.length]);
+		}
+	}
+
+	measurements.forEach(function (m) {
+		if (!m.checked || !m.points || m.points.length < 2) return;
+		var mGroup = groupById[m.groupId];
+		if (isRefGroup(mGroup) || m.isImported) return;
+		if (m.type === 'line' || m.type === 'polygon' || m.type === 'height') {
+			_checkEdges(m.points, m.type === 'polygon');
+		}
+	});
+
+	if (clickPoints.length > 1) {
+		_checkEdges(clickPoints, false);
+	}
+
+	var _refEdgeCandidates = _queryReferenceEdgeCandidates(clickPos, threshold, groupById, now);
+	for (var rei = 0; rei < _refEdgeCandidates.length; rei++) {
+		var _seg = _refEdgeCandidates[rei];
+		_tryEdgeCandidate(_seg && _seg.p1, _seg && _seg.p2);
+	}
+
+	if (!edgeCartesian) {
+		measurements.forEach(function (m) {
+			if (!m.checked || !m.points || m.points.length < 2) return;
+			var mGroup = groupById[m.groupId];
+			if (!mGroup || !isRefGroup(mGroup) || !mGroup.snapEnabled) return;
+			if (m.type === 'line' || m.type === 'polygon' || m.type === 'height') {
+				_checkEdges(m.points, m.type === 'polygon');
+			}
+		});
+	}
+
+	return edgeCartesian;
+}
 
 // ─── 7. SOL TIK: ÇİZİM VEYA SEÇİM ───────────────────────────────
 handler.setInputAction(function (click) {
 	// EditManager sürükleme sırasında LEFT_CLICK'i engelle
 	if (typeof EditManager !== 'undefined' && EditManager.isDragging) return;
+	if (typeof window !== 'undefined' && window.__infoPickModeActive) return;
 
 	// Eğer aktif bir araç yoksa, haritadaki objeleri (ölçümleri) seçme işlemi yap
 	if (!activeTool) {
@@ -5774,11 +8075,7 @@ handler.setInputAction(function (click) {
 		// addPointLabel → pickedObject.id = PointPrimitiveCollection (m.entities'te)
 		// createStablePolyline/Polygon → pickedObject.primitive = Primitive (m.entities'te)
 		if (Cesium.defined(_pickCheck)) {
-			var _obj = _pickCheck.id || _pickCheck.primitive;
-			if (_obj && _obj.owner) _obj = _obj.owner;
-			var foundMeasurement = measurements.find(function (m) {
-				return m.entities.includes(_obj);
-			});
+			var foundMeasurement = findMeasurementFromPickedObject(_pickCheck);
 			if (foundMeasurement) {
 				highlightMeasurement(foundMeasurement.id);
 				return;
@@ -5797,9 +8094,10 @@ handler.setInputAction(function (click) {
 	var _gc = Cesium.Color.fromCssColorString(_grp && _grp.color ? _grp.color : '#14B8A6');
 
 	var cartesian;
-	if (snappedCartesian !== null) {
-		// Snap olduysa o noktayı kullan (Referans kopması için clone aldık)
-		cartesian = Cesium.Cartesian3.clone(snappedCartesian);
+	var _preciseSnap = _resolvePreciseClickSnap(click.position, CLICK_SNAP_THRESHOLD_PX);
+	if (Cesium.defined(_preciseSnap)) {
+		// Click aninda snap karari yeniden dogrulanir.
+		cartesian = Cesium.Cartesian3.clone(_preciseSnap);
 	} else {
 		// 3D Model Picking — sadece tile/vektör yüzeyine yapışır, zemine düşmez
 		try { cartesian = viewer.scene.pickPosition(click.position); } catch (e) { /* depth render hatası */ }
@@ -6141,6 +8439,43 @@ handler.setInputAction(function () {
 }, Cesium.ScreenSpaceEventType.RIGHT_CLICK);
 
 // ─── 9. ACİL ÇIKIŞ VE KLAVYE KISAYOLLARI (ESCAPE / UNDO / INFO) ─────────────────
+
+// ── toggleInfoMode: Bilgi modunu aç/kapat ──
+// Hem "i" tuşu hem de toolbar butonu tarafından çağrılır
+function toggleInfoMode() {
+	// Çizim aracı aktifken info moduna geçme
+	if (activeTool) return;
+	
+	isInfoModeActive = !isInfoModeActive;
+	var legacyInfoToast = document.getElementById('infoModeToast');
+	if (legacyInfoToast) legacyInfoToast.remove();
+	var btnInfoMode = document.getElementById('btnInfoMode');
+	
+	if (isInfoModeActive) {
+		// Info modunu aç — cursor'ı değiştir
+		viewer.scene.canvas.style.cursor = 'help';
+		
+		// Button'u aktif yap
+		if (btnInfoMode) {
+			btnInfoMode.classList.add('active');
+			btnInfoMode.style.backgroundColor = 'rgba(6, 182, 212, 0.2)';
+			btnInfoMode.style.color = '#06b6d4';
+		}
+	} else {
+		// Info modunu kapat
+		viewer.scene.canvas.style.cursor = '';
+		
+		// Button'u pasif yap
+		if (btnInfoMode) {
+			btnInfoMode.classList.remove('active');
+			btnInfoMode.style.backgroundColor = '';
+			btnInfoMode.style.color = '';
+		}
+		
+		closeInfoPanel();
+	}
+}
+
 document.addEventListener('keydown', function (e) {
 	// Input/Textarea içindeyken klavye kısayollarını atla
 	var tag = (e.target.tagName || '').toLowerCase();
@@ -6148,41 +8483,25 @@ document.addEventListener('keydown', function (e) {
 
 	// ── INFO MODU TOGGLE (i tuşu) ──
 	if (e.key === 'i' || e.key === 'I') {
-		// Çizim aracı aktifken info moduna geçme
-		if (activeTool) return;
-		isInfoModeActive = !isInfoModeActive;
-		var infoToast = document.getElementById('infoModeToast');
-		if (isInfoModeActive) {
-			// Info modunu aç — cursor'ı değiştir, bilgi toast göster
-			viewer.scene.canvas.style.cursor = 'help';
-			if (!infoToast) {
-				infoToast = document.createElement('div');
-				infoToast.id = 'infoModeToast';
-				infoToast.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:9990;padding:6px 16px;border-radius:8px;background:rgba(6,182,212,0.9);color:#fff;font-size:12px;font-weight:700;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,0.3);';
-				infoToast.textContent = 'ℹ️ İnceleme Modu — Ölçüme tıklayarak bilgi görüntüleyin';
-				document.body.appendChild(infoToast);
-			}
-		} else {
-			// Info modunu kapat
-			viewer.scene.canvas.style.cursor = '';
-			if (infoToast) infoToast.remove();
-			// Info panelini kapat
-			var ip = document.getElementById('infoPanel');
-			if (ip) { ip.classList.add('translate-x-[120%]', 'opacity-0', 'pointer-events-none'); ip.classList.remove('translate-x-0', 'opacity-100'); }
-		}
+		toggleInfoMode();
 		return;
 	}
 
 	// PHASE 3: Defensive Escapes
 	if (e.key === 'Escape') {
+		if (typeof window !== 'undefined' && window.__infoPickModeActive && typeof window.__exitInfoPickMode === 'function') {
+			window.__exitInfoPickMode();
+			return;
+		}
+
 		// Info modu açıkken Escape: info modunu kapat
 		if (isInfoModeActive) {
-			isInfoModeActive = false;
-			viewer.scene.canvas.style.cursor = '';
-			var it = document.getElementById('infoModeToast');
-			if (it) it.remove();
-			var ip = document.getElementById('infoPanel');
-			if (ip) { ip.classList.add('translate-x-[120%]', 'opacity-0', 'pointer-events-none'); ip.classList.remove('translate-x-0', 'opacity-100'); }
+			toggleInfoMode();
+			return;
+		}
+
+		if (isInfoPanelVisible()) {
+			closeInfoPanel();
 			return;
 		}
 		if (activeTool) {
@@ -6237,7 +8556,7 @@ document.getElementById('btnExportGeoJSON').onclick = function () {
 	if (!requireCrsSelection()) return;
 	var crs = document.getElementById('exportCrs').value;
 	var selected = getExportMeasurements();
-	if (selected.length === 0) { alert('Seçili kapsamda dışa aktarılacak ölçüm bulunamadı!'); return; }
+	if (selected.length === 0) { showResultErrorMessage('Seçili kapsamda dışa aktarılacak ölçüm bulunamadı!'); return; }
 
 	var features = [];
 	selected.forEach(function (m) {
@@ -6275,7 +8594,7 @@ document.getElementById('btnExportDXF').onclick = function () {
 	if (!requireCrsSelection()) return;
 	var crs = document.getElementById('exportCrs').value;
 	var selected = getExportMeasurements();
-	if (selected.length === 0) { alert('Seçili kapsamda dışa aktarılacak ölçüm bulunamadı!'); return; }
+	if (selected.length === 0) { showResultErrorMessage('Seçili kapsamda dışa aktarılacak ölçüm bulunamadı!'); return; }
 
 	var dxf = "0\nSECTION\n2\nENTITIES\n";
 
@@ -6323,7 +8642,7 @@ document.getElementById('btnExportCSV').onclick = function () {
 	if (!requireCrsSelection()) return;
 	var crs = document.getElementById('exportCrs').value;
 	var selected = getExportMeasurements();
-	if (selected.length === 0) { alert('Seçili kapsamda dışa aktarılacak ölçüm bulunamadı!'); return; }
+	if (selected.length === 0) { showResultErrorMessage('Seçili kapsamda dışa aktarılacak ölçüm bulunamadı!'); return; }
 
 	var csv = crs === '5254' ? 'NoktaAdi,Y_Saga,X_Yukari,Z_Kot,Grup\n' : 'NoktaAdi,Boylam,Enlem,Z_Kot,Grup\n';
 
@@ -6404,9 +8723,47 @@ function getOrCreateReferansGroup(fileName) {
 		deleteGroup(existing.id);
 	}
 	groupCount++;
-	var refGroup = { id: groupCount, name: groupName, isOpen: true, checked: true, isReferans: true };
+	var refGroup = { id: groupCount, name: groupName, isOpen: true, checked: true, isReferans: true, _importZOffset: 0, _manualZOffset: 0, _zOffset: 0 };
 	groups.push(refGroup);
 	return refGroup.id;
+}
+
+function _toFiniteNumber(value, fallback) {
+	var n = typeof value === 'number' ? value : parseFloat(value);
+	return isFinite(n) ? n : fallback;
+}
+
+function ensureGroupZState(group) {
+	if (!group) return { importZ: 0, manualZ: 0, totalZ: 0 };
+
+	var importZ = _toFiniteNumber(group._importZOffset, 0);
+	var manualZ;
+
+	if (isFinite(group._manualZOffset)) {
+		manualZ = _toFiniteNumber(group._manualZOffset, 0);
+	} else if (isFinite(group._zOffset)) {
+		manualZ = _toFiniteNumber(group._zOffset, 0);
+	} else {
+		manualZ = 0;
+	}
+
+	group._importZOffset = importZ;
+	group._manualZOffset = manualZ;
+	group._zOffset = importZ + manualZ;
+
+	return {
+		importZ: group._importZOffset,
+		manualZ: group._manualZOffset,
+		totalZ: group._zOffset
+	};
+}
+
+function applyImportZOffsetToGroup(group, importZOffset) {
+	if (!group) return;
+	var state = ensureGroupZState(group);
+	group._importZOffset = _toFiniteNumber(importZOffset, 0);
+	group._manualZOffset = state.manualZ;
+	group._zOffset = group._importZOffset + group._manualZOffset;
 }
 
 // Bir gruptaki tüm ölçümlerin Z (yükseklik) değerini delta kadar kaydır
@@ -6478,7 +8835,7 @@ function hideImportLoading() {
 
 function importError(message) {
 	hideImportLoading();
-	alert('İçe aktarma hatası: ' + message);
+	showResultErrorMessage('İçe aktarma hatası: ' + message);
 }
 
 // ─── FORMAT BİLGİ MESAJLARI (Z Dialog İçin) ─────────────────────
@@ -6633,14 +8990,17 @@ document.getElementById('btnImportCSV').addEventListener('change', function (e) 
 
 			if (parsedRows.length === 0) { importError('CSV dosyasında geçerli nokta bulunamadı.'); return; }
 
-			updateImportLoading('Z ayarı bekleniyor…');
+			updateImportLoading('Gerçek kot ayarı bekleniyor…');
 			showImportZDialog(function (zOffset) {
 				if (zOffset === null) { hideImportLoading(); resultBar.innerHTML = '<span class="text-slate-400 text-[11px]">İçe aktarma iptal edildi.</span>'; return; }
 				updateImportLoading('Veriler oluşturuluyor…');
 				var refGroupId = getOrCreateReferansGroup(file.name);
 				if (refGroupId === null) { hideImportLoading(); resultBar.innerHTML = '<span class="text-slate-400 text-[11px]">İçe aktarma iptal edildi.</span>'; return; }
+				var refGroup = groups.find(function (g) { return g.id === refGroupId; });
+				applyImportZOffsetToGroup(refGroup, zOffset);
+				var effectiveGroupZ = refGroup ? refGroup._zOffset : zOffset;
 				parsedRows.forEach(function (row, i) {
-					var pos = Cesium.Cartesian3.fromDegrees(row.lon, row.lat, row.z + zOffset);
+					var pos = Cesium.Cartesian3.fromDegrees(row.lon, row.lat, row.z + effectiveGroupZ);
 					var m = {
 						id: ++measureCount,
 						groupId: refGroupId,
@@ -6662,13 +9022,12 @@ document.getElementById('btnImportCSV').addEventListener('change', function (e) 
 				var csvFeats = parsedRows.map(function (row) {
 					return { name: row.name, type: 'coord', resultText: row.lat.toFixed(6) + ', ' + row.lon.toFixed(6), coords: [{ lat: row.lat, lon: row.lon, z: row.z }] };
 				});
-				var csvGroup = groups.find(function (g) { return g.id === refGroupId; });
-				CbsStorage.saveImport(refGroupId, file.name, csvGroup && csvGroup.color || '#14B8A6', csvFeats, zOffset)
+				CbsStorage.saveImport(refGroupId, file.name, refGroup && refGroup.color || '#14B8A6', csvFeats, zOffset)
 					.catch(function (e) { console.warn('CSV import kayıt hatası:', e); });
 
 				hideImportLoading();
 				document.querySelector('#resultDisplay > div').innerHTML =
-					'<span class="text-green-400 font-bold text-[11px]">✓ ' + parsedRows.length + ' nokta "' + file.name + '" grubuna aktarıldı.' + (zOffset !== 0 ? ' (Z+' + zOffset + 'm)' : '') + '</span>';
+					'<span class="text-green-400 font-bold text-[11px]">✓ ' + parsedRows.length + ' nokta "' + file.name + '" grubuna aktarıldı.' + (zOffset !== 0 ? ' (Gerçek Z +' + zOffset + 'm)' : '') + '</span>';
 			}, 'csv');
 		} catch (csvErr) {
 			console.error('CSV içe aktırma hatası:', csvErr);
@@ -6698,13 +9057,15 @@ document.getElementById('btnImportGeoJSON').addEventListener('change', function 
 		function startBatchRendering(parsedFeats, crsInfo) {
 			if (parsedFeats.length === 0) { importError('GeoJSON dosyasında geçerli öğe bulunamadı.'); return; }
 
-			updateImportLoading('Z ayarı bekleniyor…');
+			updateImportLoading('Gerçek kot ayarı bekleniyor…');
 			showImportZDialog(function (zOffset) {
 				if (zOffset === null) { hideImportLoading(); resultBar.innerHTML = '<span class="text-slate-400 text-[11px]">İçe aktarma iptal edildi.</span>'; return; }
 				updateImportLoading('Geometriler hazırlanıyor…');
 				var refGroupId = getOrCreateReferansGroup(fileName);
 				if (refGroupId === null) { hideImportLoading(); resultBar.innerHTML = '<span class="text-slate-400 text-[11px]">İçe aktarma iptal edildi.</span>'; return; }
 				var refGroup = groups.find(function (g) { return g.id === refGroupId; });
+				applyImportZOffsetToGroup(refGroup, zOffset);
+				var effectiveGroupZ = refGroup ? refGroup._zOffset : zOffset;
 				var hexColor = refGroup && refGroup.color ? refGroup.color : '#14B8A6';
 				var cesColor = Cesium.Color.fromCssColorString(hexColor);
 				var total = parsedFeats.length;
@@ -6723,7 +9084,7 @@ document.getElementById('btnImportGeoJSON').addEventListener('change', function 
 					for (var i = startIdx; i < end; i++) {
 						var feat = parsedFeats[i];
 						var points = feat.coords.map(function (c) {
-							return Cesium.Cartesian3.fromDegrees(c.lon, c.lat, c.z + zOffset);
+							return Cesium.Cartesian3.fromDegrees(c.lon, c.lat, c.z + effectiveGroupZ);
 						});
 
 						// İlk noktayı pivot olarak kullan (anti-jitter)
@@ -6747,6 +9108,7 @@ document.getElementById('btnImportGeoJSON').addEventListener('change', function 
 							// Polygon dolgu instance'ı
 							try {
 								polyFillInstances.push(new Cesium.GeometryInstance({
+									id: m.id,
 									geometry: new Cesium.CoplanarPolygonGeometry({
 										polygonHierarchy: new Cesium.PolygonHierarchy(points),
 										vertexFormat: Cesium.MaterialAppearance.MaterialSupport.BASIC.vertexFormat
@@ -6758,6 +9120,7 @@ document.getElementById('btnImportGeoJSON').addEventListener('change', function 
 							try {
 								var closedPts = points.concat([points[0]]);
 								polyLineInstances.push(new Cesium.GeometryInstance({
+									id: m.id,
 									geometry: new Cesium.PolylineGeometry({
 										positions: closedPts,
 										width: VEC_STYLE.polygon.edgeWidth || 2,
@@ -6770,10 +9133,11 @@ document.getElementById('btnImportGeoJSON').addEventListener('change', function 
 							// Etiket verisi
 							var labelText = m.resultText || m.name || '';
 							var cx = centroid(points);
-							labelEntries.push({ position: cx, text: labelText });
+							labelEntries.push({ position: cx, text: labelText, measurementId: m.id });
 						} else if (feat.type === 'line' && points.length >= 2) {
 							try {
 								polyLineInstances.push(new Cesium.GeometryInstance({
+									id: m.id,
 									geometry: new Cesium.PolylineGeometry({
 										positions: points,
 										width: VEC_STYLE.line.width || 3,
@@ -6783,7 +9147,7 @@ document.getElementById('btnImportGeoJSON').addEventListener('change', function 
 								}));
 							} catch (e) { /* geçersiz geometri */ }
 							if (!_isMob) {
-								labelEntries.push({ position: midpointAlongLine(points), text: m.resultText || m.name || '' });
+								labelEntries.push({ position: midpointAlongLine(points), text: m.resultText || m.name || '', measurementId: m.id });
 							}
 						} else if (feat.type === 'coord') {
 							// Noktalar bireysel kalır (az sayıda)
@@ -6821,7 +9185,7 @@ document.getElementById('btnImportGeoJSON').addEventListener('change', function 
 											faceForward: true
 										}),
 										asynchronous: true, // GPU'da async derle
-										allowPicking: false
+											allowPicking: true
 									}));
 									fillPrim._isImportBatch = true;
 									fillPrim._isFillBatch = true;
@@ -6841,7 +9205,7 @@ document.getElementById('btnImportGeoJSON').addEventListener('change', function 
 											translucent: false
 										}),
 										asynchronous: true,
-										allowPicking: false
+											allowPicking: true
 									}));
 									linePrim._isImportBatch = true;
 									linePrim._isPolylineBatch = true;
@@ -6855,6 +9219,7 @@ document.getElementById('btnImportGeoJSON').addEventListener('change', function 
 								labelEntries.forEach(function (le) {
 									var lifted = liftPosition(le.position);
 									labelCol.add({
+										id: le.measurementId,
 										position: lifted,
 										text: le.text,
 										font: VEC_STYLE.label.font,
@@ -6888,7 +9253,7 @@ document.getElementById('btnImportGeoJSON').addEventListener('change', function 
 
 							hideImportLoading();
 							resultBar.innerHTML =
-								'<span class="text-green-400 font-bold text-[11px]">✓ ' + total + ' öğe "' + fileName + '" grubuna aktarıldı.' + crsInfo + (zOffset !== 0 ? ' (Z+' + zOffset + 'm)' : '') + ' [' + (polyFillInstances.length + polyLineInstances.length) + ' geometri → 3 draw call]</span>';
+								'<span class="text-green-400 font-bold text-[11px]">✓ ' + total + ' öğe "' + fileName + '" grubuna aktarıldı.' + crsInfo + (zOffset !== 0 ? ' (Gerçek Z +' + zOffset + 'm)' : '') + ' [' + (polyFillInstances.length + polyLineInstances.length) + ' geometri → 3 draw call]</span>';
 						});
 					}
 				}
@@ -6903,21 +9268,34 @@ document.getElementById('btnImportGeoJSON').addEventListener('change', function 
 
 			worker.onmessage = function (msg) {
 				var d = msg.data;
-				if (d.error) { importError(d.error); return; }
+				if (d.error) {
+					if (worker) {
+						try { worker.terminate(); } catch (terminateErr) { }
+						worker = null;
+					}
+					importError(d.error);
+					return;
+				}
 				if (d.progress) {
 					resultBar.innerHTML = '<span class="text-cyan-400 font-bold text-[11px]">⏳ ' + d.progress + ' öğe parse edildi…</span>';
 					updateImportLoading(d.progress + ' öğe parse edildi…');
 					return;
 				}
 				if (d.features) {
-					worker.terminate();
+					if (worker) {
+						worker.terminate();
+						worker = null;
+					}
 					startBatchRendering(d.features, d.crsInfo || '');
 				}
 			};
 
 			worker.onerror = function (err) {
 				console.warn('Worker başarısız, inline fallback:', err.message);
-				worker.terminate();
+				if (worker) {
+					try { worker.terminate(); } catch (terminateErr) { }
+					worker = null;
+				}
 				inlineParse();
 			};
 
@@ -6944,6 +9322,10 @@ document.getElementById('btnImportGeoJSON').addEventListener('change', function 
 			}
 			var effectiveCrs = fileCrs || userCrs;
 			var crsInfo = fileCrs ? ' (CRS otomatik algılandı: EPSG:' + fileCrs + ')' : '';
+			if (effectiveCrs === '5254' && typeof proj4 === 'undefined') {
+				importError('EPSG:5254 dönüşümü için proj4 yüklenemedi. Lütfen internet bağlantınızı kontrol edip tekrar deneyin.');
+				return;
+			}
 			var feats = data.features || (data.type === 'Feature' ? [data] : []);
 			var parsedFeats = [];
 			var globalIdx = measurements.length;
@@ -7231,15 +9613,18 @@ document.getElementById('btnImportDXF').addEventListener('change', function (e) 
 			if (parsedEntities.length === 0) { importError('DXF dosyasında geçerli öğe bulunamadı.'); return; }
 
 			// Faz 2: Z diyaloğu → oluştur
-			updateImportLoading('Z ayarı bekleniyor…');
+			updateImportLoading('Gerçek kot ayarı bekleniyor…');
 			showImportZDialog(function (zOffset) {
 				if (zOffset === null) { hideImportLoading(); resultBar.innerHTML = '<span class="text-slate-400 text-[11px]">İçe aktarma iptal edildi.</span>'; return; }
 				updateImportLoading('Veriler oluşturuluyor…');
 				var refGroupId = getOrCreateReferansGroup(file.name);
 				if (refGroupId === null) { hideImportLoading(); resultBar.innerHTML = '<span class="text-slate-400 text-[11px]">İçe aktarma iptal edildi.</span>'; return; }
+				var dxfGroup = groups.find(function (g) { return g.id === refGroupId; });
+				applyImportZOffsetToGroup(dxfGroup, zOffset);
+				var effectiveGroupZ = dxfGroup ? dxfGroup._zOffset : zOffset;
 				parsedEntities.forEach(function (ent, idx) {
 					var points = ent.coords.map(function (c) {
-						return Cesium.Cartesian3.fromDegrees(c.lon, c.lat, c.z + zOffset);
+						return Cesium.Cartesian3.fromDegrees(c.lon, c.lat, c.z + effectiveGroupZ);
 					});
 					var m = {
 						id: ++measureCount,
@@ -7259,13 +9644,12 @@ document.getElementById('btnImportDXF').addEventListener('change', function (e) 
 				renderList();
 				viewer.scene.requestRender();
 				// ─── Import verisini IndexedDB'ye kaydet ───
-				var dxfGroup = groups.find(function (g) { return g.id === refGroupId; });
 				CbsStorage.saveImport(refGroupId, file.name, dxfGroup && dxfGroup.color || '#14B8A6', parsedEntities, zOffset)
 					.catch(function (e) { console.warn('DXF import kayıt hatası:', e); });
 
 				hideImportLoading();
 				document.querySelector('#resultDisplay > div').innerHTML =
-					'<span class="text-green-400 font-bold text-[11px]">✓ ' + parsedEntities.length + ' öğe "' + file.name + '" grubuna aktarıldı.' + (zOffset !== 0 ? ' (Z+' + zOffset + 'm)' : '') + '</span>';
+					'<span class="text-green-400 font-bold text-[11px]">✓ ' + parsedEntities.length + ' öğe "' + file.name + '" grubuna aktarıldı.' + (zOffset !== 0 ? ' (Gerçek Z +' + zOffset + 'm)' : '') + '</span>';
 			}, 'dxf');
 		} catch (dxfErr) {
 			console.error('DXF içe aktarma hatası:', dxfErr);
@@ -7353,15 +9737,18 @@ document.getElementById('btnImportKML').addEventListener('change', function (e) 
 
 			if (parsedFeats.length === 0) { importError('KML dosyasında geçerli öğe bulunamadı.'); return; }
 
-			updateImportLoading('Z ayarı bekleniyor…');
+			updateImportLoading('Gerçek kot ayarı bekleniyor…');
 			showImportZDialog(function (zOffset) {
 				if (zOffset === null) { hideImportLoading(); resultBar.innerHTML = '<span class="text-slate-400 text-[11px]">İçe aktarma iptal edildi.</span>'; return; }
 				updateImportLoading('Veriler oluşturuluyor…');
 				var refGroupId = getOrCreateReferansGroup(fileName);
 				if (refGroupId === null) { hideImportLoading(); resultBar.innerHTML = '<span class="text-slate-400 text-[11px]">İçe aktarma iptal edildi.</span>'; return; }
+				var kmlGroup = groups.find(function (g) { return g.id === refGroupId; });
+				applyImportZOffsetToGroup(kmlGroup, zOffset);
+				var effectiveGroupZ = kmlGroup ? kmlGroup._zOffset : zOffset;
 				parsedFeats.forEach(function (feat) {
 					var points = feat.coords.map(function (c) {
-						return Cesium.Cartesian3.fromDegrees(c.lon, c.lat, c.z + zOffset);
+						return Cesium.Cartesian3.fromDegrees(c.lon, c.lat, c.z + effectiveGroupZ);
 					});
 					var m = {
 						id: ++measureCount,
@@ -7383,13 +9770,12 @@ document.getElementById('btnImportKML').addEventListener('change', function (e) 
 				viewer.scene.requestRender();
 
 				// ─── Import verisini IndexedDB'ye kaydet ───
-				var kmlGroup = groups.find(function (g) { return g.id === refGroupId; });
 				CbsStorage.saveImport(refGroupId, fileName, kmlGroup && kmlGroup.color || '#14B8A6', parsedFeats, zOffset)
 					.catch(function (e) { console.warn('KML import kayıt hatası:', e); });
 
 				hideImportLoading();
 				document.querySelector('#resultDisplay > div').innerHTML =
-					'<span class="text-green-400 font-bold text-[11px]">✓ ' + parsedFeats.length + ' öğe "' + fileName + '" grubuna aktarıldı.' + (zOffset !== 0 ? ' (Z+' + zOffset + 'm)' : '') + '</span>';
+					'<span class="text-green-400 font-bold text-[11px]">✓ ' + parsedFeats.length + ' öğe "' + fileName + '" grubuna aktarıldı.' + (zOffset !== 0 ? ' (Gerçek Z +' + zOffset + 'm)' : '') + '</span>';
 			}, 'kml');
 		} catch (kmlErr) {
 			console.error('KML içe aktarma hatası:', kmlErr);
@@ -7434,7 +9820,7 @@ document.getElementById('btnImportKML').addEventListener('change', function (e) 
 document.getElementById('btnExportKML').addEventListener('click', function () {
 	if (!requireCrsSelection()) return;
 	var exportMeasurements = getExportMeasurements();
-	if (exportMeasurements.length === 0) { alert('Dışa aktarılacak ölçüm bulunamadı.'); return; }
+	if (exportMeasurements.length === 0) { showResultErrorMessage('Dışa aktarılacak ölçüm bulunamadı.'); return; }
 
 	// WGS84'e dönüştür (KML spec her zaman WGS84)
 	function cartesianToWgs84(cart) {
@@ -7510,10 +9896,10 @@ document.getElementById('btnExportKML').addEventListener('click', function () {
 // ─── EXCEL METADATA RAPORU ────────────────────────────────────
 document.getElementById('btnExportExcel').addEventListener('click', function () {
 	var selected = getExportMeasurements();
-	if (selected.length === 0) { alert('Dışa aktarılacak ölçüm bulunamadı.'); return; }
+	if (selected.length === 0) { showResultErrorMessage('Dışa aktarılacak ölçüm bulunamadı.'); return; }
 
 	if (typeof XLSX === 'undefined') {
-		alert('SheetJS kütüphanesi yüklenemedi. Lütfen internet bağlantısını kontrol edin.');
+		showResultErrorMessage('SheetJS kütüphanesi yüklenemedi. Lütfen internet bağlantısını kontrol edin.');
 		return;
 	}
 
@@ -7765,6 +10151,11 @@ document.addEventListener('keydown', function (e) {
 
 	// Klavye kısayolları log
 	document.addEventListener('keydown', function (e) {
+		if (e.repeat) return;
+		var target = e.target;
+		var tag = target && target.tagName ? target.tagName.toUpperCase() : '';
+		if (tag === 'INPUT' || tag === 'TEXTAREA' || (target && target.isContentEditable)) return;
+
 		if (e.key >= '1' && e.key <= '4') {
 			var tools = { '1': 'Nokta', '2': 'Mesafe', '3': 'Alan', '4': 'Yükseklik' };
 			TelemetryManager.addLog('Kısayol: ' + (tools[e.key] || e.key) + ' aracı');
@@ -7798,3 +10189,5 @@ document.addEventListener('keydown', function (e) {
 	window._appReady = true;
 	document.dispatchEvent(new CustomEvent('appReady'));
 })();
+
+}

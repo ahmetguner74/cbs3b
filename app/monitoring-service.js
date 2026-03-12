@@ -3,8 +3,9 @@
  * Supabase tabanlı gerçek zamanlı izleme ve telemetri servisi.
  */
 (function () {
-    const SUPABASE_URL = 'https://qnobscsbcsrhizqcraif.supabase.co';
-    const SUPABASE_KEY = 'sb_publishable_VmFm70pf-3g3xDfXNBxcpw_ji_Dj-Ee';
+    const APP_CONFIG = window.CBS_CONFIG || {};
+    const SUPABASE_URL = (APP_CONFIG.supabaseUrl || '').trim();
+    const SUPABASE_KEY = (APP_CONFIG.supabaseAnonKey || '').trim();
 
     let supabaseClient = null;
     let sessionId = 'session_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
@@ -15,13 +16,35 @@
     let logBuffer = [];
     let isOffline = !navigator.onLine;
     let staticInfo = null;
+    let isFlushing = false;
+    let flushTimer = null;
+    let fpsLoopStarted = false;
+    let systemInfoCache = null;
+    let systemInfoCacheAt = 0;
+    let localStorageSizeCache = '0.00KB';
+    let localStorageSizeCacheAt = 0;
     let lastInteractionTime = 0;
     const INTERACTION_DEBOUNCE = 500; // ms
+    const LOG_BUFFER_MAX = 200;
+    const LOG_BATCH_SIZE = 25;
+    const LOG_FLUSH_INTERVAL = 1500; // ms
+    const SYSTEM_INFO_CACHE_TTL = 5000; // ms
+    const STORAGE_SIZE_CACHE_TTL = 30000; // ms
 
     const MonitoringService = {
         init: function () {
+            if (window.__CBS_MONITORING_INIT_DONE__) {
+                return;
+            }
+            window.__CBS_MONITORING_INIT_DONE__ = true;
+
             if (typeof supabase === 'undefined') {
                 console.warn('Supabase SDK yüklenemedi. İzleme devre dışı.');
+                return;
+            }
+
+            if (!SUPABASE_URL || !SUPABASE_KEY) {
+                console.warn('Supabase yapılandırması eksik (CBS_CONFIG.supabaseUrl / supabaseAnonKey). İzleme devre dışı.');
                 return;
             }
 
@@ -29,38 +52,35 @@
             console.log('🚀 Monitoring Service ID:', sessionId);
             console.log("%c[Monitoring] Oturum Başladı: " + sessionId, "color: #38bdf8; font-weight: bold;");
 
-            window.onerror = (msg, url, line, col, error) => {
-                this.log('CRITICAL_ERROR', {
-                    message: msg,
-                    url: url,
-                    line: line,
-                    col: col,
-                    stack: error ? error.stack : 'N/A'
-                }, true);
-            };
+            this.bindGlobalErrorFallbacks();
 
             window.addEventListener('online', () => {
                 isOffline = false;
-                this.flushBuffer();
+                this.scheduleFlush(true);
             });
-            window.addEventListener('offline', () => isOffline = true);
+            window.addEventListener('offline', () => {
+                isOffline = true;
+                this.clearFlushTimer();
+            });
 
             // IP tabanlı yaklaşık konum (Fallback 1 - Hızlı ve izinsiz)
-            fetch('https://ipapi.co/json/')
-                .then(res => res.json())
-                .then(data => {
-                    if (data && data.latitude && data.longitude) {
-                        ipLocation = {
-                            lat: data.latitude,
-                            lng: data.longitude,
-                            city: data.city,
-                            country: data.country_name,
-                            isApprox: true
-                        };
-                        console.log('[Monitoring] Yaklaşık konum (IP):', ipLocation.city);
-                    }
-                })
-                .catch(() => { });
+            if (!isOffline) {
+                fetch('https://ipapi.co/json/')
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data && data.latitude && data.longitude) {
+                            ipLocation = {
+                                lat: data.latitude,
+                                lng: data.longitude,
+                                city: data.city,
+                                country: data.country_name,
+                                isApprox: true
+                            };
+                            console.log('[Monitoring] Yaklaşık konum (IP):', ipLocation.city);
+                        }
+                    })
+                    .catch(() => { });
+            }
 
             // Konum yakalama (İzin istenirse - Fallback 0 - Kesin Konum)
             try {
@@ -78,6 +98,7 @@
             } catch (e) { }
 
             // İlk açılış logu ve sistem bilgisi
+            this.cacheStaticInfo();
             this.log('SESSION_START', {
                 referrer: document.referrer,
                 url: window.location.href
@@ -85,7 +106,6 @@
 
             this.startFpsMonitoring();
             this.startHeartbeat();
-            this.cacheStaticInfo();
             this.setupInteractionTracking();
             this.setupSystemControls();
         },
@@ -104,12 +124,69 @@
             };
         },
 
+        bindGlobalErrorFallbacks: function () {
+            var self = this;
+            if (!window.__CBS_MONITORING_ERROR_FALLBACK_BOUND__) {
+                window.addEventListener('error', function (e) {
+                    // main.js zaten global hata listener'ı kurduysa duplicate üretme.
+                    if (window.__CBS_GLOBAL_ERROR_LISTENER_BOUND__ && window.TelemetryManager) {
+                        return;
+                    }
+                    self.log('CRITICAL_ERROR', {
+                        message: e && e.message ? e.message : 'N/A',
+                        url: e && e.filename ? e.filename : window.location.href,
+                        line: e && typeof e.lineno === 'number' ? e.lineno : null,
+                        col: e && typeof e.colno === 'number' ? e.colno : null,
+                        stack: e && e.error && e.error.stack ? e.error.stack : 'N/A'
+                    }, true);
+                });
+                window.__CBS_MONITORING_ERROR_FALLBACK_BOUND__ = true;
+            }
+
+            if (!window.__CBS_MONITORING_REJECTION_FALLBACK_BOUND__) {
+                window.addEventListener('unhandledrejection', function (e) {
+                    if (window.__CBS_GLOBAL_REJECTION_LISTENER_BOUND__ && window.TelemetryManager) {
+                        return;
+                    }
+                    self.log('PROMISE_REJECTION', { reason: e ? e.reason : null }, true);
+                });
+                window.__CBS_MONITORING_REJECTION_FALLBACK_BOUND__ = true;
+            }
+        },
+
+        clearFlushTimer: function () {
+            if (flushTimer) {
+                clearTimeout(flushTimer);
+                flushTimer = null;
+            }
+        },
+
+        scheduleFlush: function (forceNow) {
+            if (!supabaseClient || isOffline) return;
+
+            if (forceNow) {
+                this.clearFlushTimer();
+                this.flushBuffer();
+                return;
+            }
+
+            if (flushTimer) return;
+            var self = this;
+            flushTimer = setTimeout(function () {
+                flushTimer = null;
+                self.flushBuffer();
+            }, LOG_FLUSH_INTERVAL);
+        },
+
         setupInteractionTracking: function () {
             document.addEventListener('click', (e) => {
                 const now = Date.now();
                 if (now - lastInteractionTime < INTERACTION_DEBOUNCE) return;
 
-                const toolElement = e.target.closest('.tool-btn, .area-mode-btn, .cesium-button, #measureList .m-row, .camera-angle-btn');
+                const target = e.target;
+                if (!target || typeof target.closest !== 'function') return;
+
+                const toolElement = target.closest('.tool-btn, .area-mode-btn, .cesium-button, #measureList .m-row, .camera-angle-btn');
                 if (toolElement) {
                     let toolName = toolElement.getAttribute('title') ||
                         toolElement.textContent.trim() ||
@@ -135,7 +212,7 @@
             this.updateFeatureFlags();
 
             // 2. Realtime Table Subscription (Persistent Changes)
-            const controlsSubscription = supabaseClient
+            supabaseClient
                 .channel('public:system_controls')
                 .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'system_controls' }, payload => {
                     if (payload.new.key === 'feature_flags') {
@@ -159,18 +236,32 @@
         },
 
         updateFeatureFlags: async function () {
-            const { data, error } = await supabaseClient
-                .from('system_controls')
-                .select('value')
-                .eq('key', 'feature_flags')
-                .single();
+            if (!supabaseClient) return;
+            try {
+                const { data, error } = await supabaseClient
+                    .from('system_controls')
+                    .select('value')
+                    .eq('key', 'feature_flags')
+                    .single();
 
-            if (data) {
-                this.applyFeatureFlags(data.value);
+                if (error) {
+                    console.warn('[Monitoring] feature_flags okunamadı:', error.message || error);
+                    return;
+                }
+
+                if (data && data.value) {
+                    this.applyFeatureFlags(data.value);
+                }
+            } catch (e) {
+                console.warn('[Monitoring] feature_flags isteği başarısız:', e && e.message ? e.message : e);
             }
         },
 
         applyFeatureFlags: function (flags) {
+            if (!flags || typeof flags !== 'object') {
+                console.warn('[Monitoring] Geçersiz feature_flags alındı:', flags);
+                return;
+            }
             console.log('[Monitoring] Uygulanan Özellikler:', flags);
             // feature-toggle CSS class'ına sahip elemanları yönet
             // Örn: <div class="feature-toggle" data-feature="measure">...</div>
@@ -187,19 +278,34 @@
         showBroadcastMessage: function (msg) {
             // Basit bir duyuru barı oluştur veya var olanı güncelle
             let alertBar = document.getElementById('system-alert-bar');
+            let messageNode = null;
             if (!alertBar) {
                 alertBar = document.createElement('div');
                 alertBar.id = 'system-alert-bar';
                 alertBar.style = 'position:fixed; top:0; left:0; width:100%; padding:15px; background:#f59e0b; color:#000; text-align:center; font-weight:bold; z-index:99999; animation: slideDown 0.5s ease-out;';
-                document.body.appendChild(alertBar);
+
+                messageNode = document.createElement('span');
+                messageNode.id = 'system-alert-message';
+                alertBar.appendChild(messageNode);
 
                 const closeBtn = document.createElement('span');
-                closeBtn.innerHTML = ' &times;';
+                closeBtn.textContent = ' ×';
                 closeBtn.style = 'margin-left:20px; cursor:pointer; font-size:1.5rem;';
                 closeBtn.onclick = () => alertBar.remove();
                 alertBar.appendChild(closeBtn);
+
+                document.body.appendChild(alertBar);
+            } else {
+                messageNode = document.getElementById('system-alert-message');
             }
-            alertBar.innerHTML = `📢 ${msg}`;
+
+            if (!messageNode) {
+                messageNode = document.createElement('span');
+                messageNode.id = 'system-alert-message';
+                alertBar.insertBefore(messageNode, alertBar.firstChild);
+            }
+
+            messageNode.textContent = '📢 ' + (msg || 'Sistem duyurusu');
             // 10 saniye sonra kapat (opsiyonel)
             // setTimeout(() => alertBar.remove(), 10000);
         },
@@ -225,20 +331,36 @@
         },
 
         getSystemInfoSync: function () {
-            const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.protocol === 'file:';
+            var now = Date.now();
+            if (systemInfoCache && (now - systemInfoCacheAt) < SYSTEM_INFO_CACHE_TTL) {
+                return systemInfoCache;
+            }
 
-            // Storage Health
-            let lsSize = 0;
-            try {
-                for (let key in localStorage) {
-                    if (localStorage.hasOwnProperty(key)) lsSize += (localStorage[key].length + key.length) * 2;
-                }
-            } catch (e) { }
+            if ((now - localStorageSizeCacheAt) > STORAGE_SIZE_CACHE_TTL) {
+                var lsSize = 0;
+                try {
+                    for (var i = 0; i < localStorage.length; i++) {
+                        var key = localStorage.key(i) || '';
+                        var value = localStorage.getItem(key) || '';
+                        lsSize += (key.length + value.length) * 2;
+                    }
+                } catch (e) { }
+                localStorageSizeCache = (lsSize / 1024).toFixed(2) + 'KB';
+                localStorageSizeCacheAt = now;
+            }
 
             // Network Health
-            const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+            var conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+            var navStart = now;
+            if (typeof performance !== 'undefined') {
+                if (typeof performance.timeOrigin === 'number' && performance.timeOrigin > 0) {
+                    navStart = performance.timeOrigin;
+                } else if (performance.timing && performance.timing.navigationStart) {
+                    navStart = performance.timing.navigationStart;
+                }
+            }
 
-            const info = {
+            var info = {
                 ...(staticInfo || {}),
                 userAgent: navigator.userAgent,
                 location: userLocation || ipLocation || (cesiumViewer ? this.getCameraLocation() : null),
@@ -249,38 +371,44 @@
                     rtt: conn ? conn.rtt + 'ms' : 'N/A'
                 },
                 storage: {
-                    localStorage: (lsSize / 1024).toFixed(2) + 'KB',
+                    localStorage: localStorageSizeCache,
                     indexedDB: !!window.indexedDB
                 },
                 page: {
                     visible: !document.hidden,
-                    duration: Math.round((Date.now() - performance.timing.navigationStart) / 1000) + 's'
+                    duration: Math.max(0, Math.round((now - navStart) / 1000)) + 's'
                 }
             };
 
             // 3D Kamera ve Sahne Bağlamı (Cesium varsa)
-            if (cesiumViewer) {
-                const cam = cesiumViewer.camera;
-                const carto = cam.positionCartographic;
-                const scene = cesiumViewer.scene;
+            if (cesiumViewer && cesiumViewer.camera && cesiumViewer.scene) {
+                try {
+                    var cam = cesiumViewer.camera;
+                    var carto = cam.positionCartographic;
+                    var scene = cesiumViewer.scene;
 
-                info.camera = {
-                    lat: (carto.latitude * 180 / Math.PI).toFixed(6),
-                    lng: (carto.longitude * 180 / Math.PI).toFixed(6),
-                    height: carto.height.toFixed(2),
-                    heading: (cam.heading * 180 / Math.PI).toFixed(2),
-                    pitch: (cam.pitch * 180 / Math.PI).toFixed(2)
-                };
+                    info.camera = {
+                        lat: (carto.latitude * 180 / Math.PI).toFixed(6),
+                        lng: (carto.longitude * 180 / Math.PI).toFixed(6),
+                        height: carto.height.toFixed(2),
+                        heading: (cam.heading * 180 / Math.PI).toFixed(2),
+                        pitch: (cam.pitch * 180 / Math.PI).toFixed(2)
+                    };
 
-                // Sahne Karmaşıklığı ve Bellek
-                info.scene = {
-                    primitives: scene.primitives.length,
-                    groundPrimitives: scene.groundPrimitives.length,
-                    objects: scene.primitives._primitives?.length || 'N/A',
-                    vram: scene.context._textureCache?._count || 'N/A' // Yaklaşık texture sayısı
-                };
+                    // Sahne Karmaşıklığı ve Bellek
+                    info.scene = {
+                        primitives: scene.primitives && typeof scene.primitives.length === 'number' ? scene.primitives.length : 'N/A',
+                        groundPrimitives: scene.groundPrimitives && typeof scene.groundPrimitives.length === 'number' ? scene.groundPrimitives.length : 'N/A',
+                        objects: scene.primitives && scene.primitives._primitives ? scene.primitives._primitives.length : 'N/A',
+                        vram: scene.context && scene.context._textureCache && typeof scene.context._textureCache._count === 'number' ? scene.context._textureCache._count : 'N/A'
+                    };
+                } catch (e) {
+                    info.scene = { error: 'scene_info_unavailable' };
+                }
             }
 
+            systemInfoCache = info;
+            systemInfoCacheAt = now;
             return info;
         },
 
@@ -296,6 +424,8 @@
 
         setViewer: function (viewer) {
             cesiumViewer = viewer;
+            systemInfoCache = null;
+            systemInfoCacheAt = 0;
             this.log('VIEWER_READY');
         },
 
@@ -312,10 +442,10 @@
         /**
          * Log gönderimi
          */
-        log: async function (action, details = {}, isError = false) {
+        log: function (action, details = {}, isError = false) {
             if (!supabaseClient) return;
 
-            const payload = {
+            var payload = {
                 session_id: sessionId,
                 user_id: 'guest',
                 action: action,
@@ -326,45 +456,57 @@
                 created_at: new Date().toISOString()
             };
 
-            if (isOffline) {
-                logBuffer.push(payload);
-                if (logBuffer.length > 50) logBuffer.shift(); // Limit buffer
+            logBuffer.push(payload);
+            if (logBuffer.length > LOG_BUFFER_MAX) {
+                logBuffer.splice(0, logBuffer.length - LOG_BUFFER_MAX);
+            }
+
+            if (isOffline) return;
+
+            if (isError || logBuffer.length >= LOG_BATCH_SIZE) {
+                this.scheduleFlush(true);
                 return;
             }
 
-            this.sendToCloud(payload);
+            this.scheduleFlush(false);
         },
 
-        sendToCloud: async function (payload) {
+        sendToCloud: async function (batch) {
             try {
                 const { error } = await supabaseClient
                     .from('telemetry_logs')
-                    .insert([payload]);
+                    .insert(batch);
 
-                if (error) console.error('Monitoring Error:', error);
+                if (error) {
+                    console.error('Monitoring Error:', error);
+                    return false;
+                }
+                return true;
             } catch (e) {
                 console.error('Failed to send log:', e);
-                logBuffer.push(payload);
+                if (!navigator.onLine) {
+                    isOffline = true;
+                }
+                return false;
             }
         },
 
         flushBuffer: async function () {
-            if (logBuffer.length === 0) return;
-            console.log(`[Monitoring] Flushing ${logBuffer.length} buffered logs...`);
+            if (!supabaseClient || isOffline || isFlushing || logBuffer.length === 0) return;
 
-            const toSend = [...logBuffer];
-            logBuffer = [];
+            isFlushing = true;
+            this.clearFlushTimer();
 
-            try {
-                const { error } = await supabaseClient
-                    .from('telemetry_logs')
-                    .insert(toSend);
-                if (error) {
-                    console.error('Flush Error:', error);
-                    logBuffer = [...toSend, ...logBuffer];
-                }
-            } catch (e) {
-                logBuffer = [...toSend, ...logBuffer];
+            var toSend = logBuffer.splice(0, LOG_BATCH_SIZE);
+            var ok = await this.sendToCloud(toSend);
+            if (!ok) {
+                logBuffer = toSend.concat(logBuffer);
+            }
+
+            isFlushing = false;
+
+            if (!isOffline && logBuffer.length > 0) {
+                this.scheduleFlush(logBuffer.length >= LOG_BATCH_SIZE);
             }
         },
 
@@ -372,10 +514,20 @@
          * FPS Takibi
          */
         startFpsMonitoring: function () {
+            if (fpsLoopStarted) return;
+            fpsLoopStarted = true;
+
             let lastTime = performance.now();
             let frames = 0;
 
             const updateFps = () => {
+                if (document.hidden) {
+                    frames = 0;
+                    lastTime = performance.now();
+                    requestAnimationFrame(updateFps);
+                    return;
+                }
+
                 frames++;
                 const now = performance.now();
                 if (now >= lastTime + 1000) {

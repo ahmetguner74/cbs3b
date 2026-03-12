@@ -7,6 +7,7 @@
     <title>3D CBS | Yönetim Paneli - Live Monitoring</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="admin-style.css">
+    <script src="config.js?v=0.9.3"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -164,15 +165,24 @@
     </div>
 
     <script>
-        const SUPABASE_URL = 'https://qnobscsbcsrhizqcraif.supabase.co';
-        const SUPABASE_KEY = 'sb_publishable_VmFm70pf-3g3xDfXNBxcpw_ji_Dj-Ee';
-        const supabaseAdmin = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        const APP_CONFIG = window.CBS_CONFIG || {};
+        const SUPABASE_URL = (APP_CONFIG.supabaseUrl || '').trim();
+        const SUPABASE_KEY = (APP_CONFIG.supabaseAnonKey || '').trim();
+        const ADMIN_PASSWORD_SHA256 = (APP_CONFIG.adminPasswordSha256 || '').trim().toLowerCase();
+        const ADMIN_AUTH_SESSION_KEY = 'cbsAdminAuthedAt';
+        const ADMIN_AUTH_TTL_MS = 30 * 60 * 1000;
+
+        const supabaseAdmin = (typeof supabase !== 'undefined' && SUPABASE_URL && SUPABASE_KEY)
+            ? supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
+            : null;
 
         let sessions = new Set();
         let sessionActivity = {}; // Track last seen time
         let logs = [];
         let selectedSession = null;
         let deviceFilter = 'all';
+        let adminBootstrapped = false;
+        let adminAuthenticated = false;
 
         function setDeviceFilter(filter) {
             deviceFilter = filter;
@@ -190,33 +200,102 @@
         }
         let map, markers = {};
 
-        window.checkAccess = function (manualKey) {
-            const key = manualKey || document.getElementById('admin-key').value;
-            if (key === 'bursa16') {
-                localStorage.setItem('adminKey', key);
-                document.getElementById('access-overlay').style.display = 'none';
-                document.getElementById('admin-content').style.display = 'flex';
-                initMap();
-                fetchInitialSessions();
-                setupRealtime();
-            } else {
-                alert('Geçersiz anahtar!');
+        function hasSupabaseConfig() {
+            return !!supabaseAdmin;
+        }
+
+        function hideAccessError() {
+            const accessError = document.getElementById('access-error');
+            if (!accessError) return;
+            accessError.style.display = 'none';
+        }
+
+        function showAccessError(message) {
+            const accessError = document.getElementById('access-error');
+            if (!accessError) return;
+            accessError.textContent = message || 'Hatalı Anahtar!';
+            accessError.style.display = 'block';
+        }
+
+        function unlockAdminUi() {
+            hideAccessError();
+            document.getElementById('access-overlay').style.display = 'none';
+            document.getElementById('admin-content').style.display = 'flex';
+        }
+
+        async function sha256Hex(value) {
+            const encoded = new TextEncoder().encode(value);
+            const digest = await crypto.subtle.digest('SHA-256', encoded);
+            return Array.from(new Uint8Array(digest)).map(function (b) {
+                return b.toString(16).padStart(2, '0');
+            }).join('');
+        }
+
+        async function validateAdminKey(rawKey) {
+            if (!ADMIN_PASSWORD_SHA256) {
+                console.warn('[Admin] adminPasswordSha256 yapılandırılmamış (config.js).');
+                return false;
             }
+            if (!window.crypto || !window.crypto.subtle) {
+                console.warn('[Admin] crypto.subtle desteklenmiyor, anahtar doğrulanamıyor.');
+                return false;
+            }
+            const normalized = (rawKey || '').trim();
+            if (!normalized) return false;
+            const hash = await sha256Hex(normalized);
+            return hash === ADMIN_PASSWORD_SHA256;
+        }
+
+        function hasValidAdminSession() {
+            const authAt = Number(sessionStorage.getItem(ADMIN_AUTH_SESSION_KEY) || '0');
+            return authAt > 0 && (Date.now() - authAt) < ADMIN_AUTH_TTL_MS;
+        }
+
+        async function bootstrapAdminPanel() {
+            if (adminBootstrapped) return;
+
+            initMap();
+
+            if (hasSupabaseConfig()) {
+                await fetchFeatureFlags();
+                await init();
+            } else {
+                console.warn('[Admin] Supabase yapılandırması eksik (CBS_CONFIG.supabaseUrl / supabaseAnonKey).');
+            }
+
+            adminBootstrapped = true;
+        }
+
+        window.checkAccess = async function (manualKey) {
+            const key = (manualKey || document.getElementById('admin-key').value || '').trim();
+            const isValid = await validateAdminKey(key);
+
+            if (!isValid) {
+                showAccessError('Geçersiz anahtar!');
+                return;
+            }
+
+            adminAuthenticated = true;
+            sessionStorage.setItem(ADMIN_AUTH_SESSION_KEY, String(Date.now()));
+            unlockAdminUi();
+            await bootstrapAdminPanel();
         };
 
-        function switchTab(tabId) {
-            document.querySelectorAll('.nav-tab').forEach(tab => {
-                tab.classList.toggle('active', tab.onclick.toString().includes(`'${tabId}'`));
-            });
-
+        async function switchTab(tabId) {
             if (tabId === 'management') {
-                // Ekstra güvenlik kontrolü istenirse buraya eklenebilir
                 const managementKey = prompt('Yönetim Merkezi için yetki anahtarını girin:');
-                if (managementKey !== 'bursa16') {
+                if (!managementKey) return;
+
+                const managementValid = await validateAdminKey(managementKey);
+                if (!managementValid) {
                     alert('Yetkisiz erişim!');
                     return;
                 }
             }
+
+            document.querySelectorAll('.nav-tab').forEach(tab => {
+                tab.classList.toggle('active', tab.onclick.toString().includes(`'${tabId}'`));
+            });
 
             document.querySelectorAll('.tab-view').forEach(view => {
                 view.style.display = view.id === `${tabId}-view` ? (tabId === 'monitoring' ? 'block' : 'flex') : 'none';
@@ -229,6 +308,8 @@
 
         // Özellik Kontrolü (Global)
         async function fetchFeatureFlags() {
+            if (!hasSupabaseConfig()) return;
+
             const { data, error } = await supabaseAdmin
                 .from('system_controls')
                 .select('value')
@@ -247,6 +328,11 @@
         }
 
         async function toggleFeature(feature) {
+            if (!hasSupabaseConfig()) {
+                alert('Supabase yapılandırması eksik. config.js dosyasını kontrol edin.');
+                return;
+            }
+
             const { data: current, error: fetchError } = await supabaseAdmin
                 .from('system_controls')
                 .select('value')
@@ -266,6 +352,11 @@
         }
 
         async function sendBroadcast() {
+            if (!hasSupabaseConfig()) {
+                alert('Supabase yapılandırması eksik. config.js dosyasını kontrol edin.');
+                return;
+            }
+
             const msgInput = document.getElementById('broadcast-msg');
             const msg = msgInput.value;
             if (!msg) return;
@@ -286,6 +377,11 @@
         }
 
         async function reloadAllClients() {
+            if (!hasSupabaseConfig()) {
+                alert('Supabase yapılandırması eksik. config.js dosyasını kontrol edin.');
+                return;
+            }
+
             if (confirm('Tüm aktif kullanıcılarda sayfa yenilenecek. Emin misiniz?')) {
                 const channel = supabaseAdmin.channel('system-commands');
                 await channel.subscribe(async (status) => {
@@ -302,6 +398,11 @@
         }
 
         async function clearOldLogs() {
+            if (!hasSupabaseConfig()) {
+                alert('Supabase yapılandırması eksik. config.js dosyasını kontrol edin.');
+                return;
+            }
+
             if (confirm('30 günden eski tüm telemetri kayıtları silinecek. Emin misiniz?')) {
                 const thirtyDaysAgo = new Date();
                 thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -327,12 +428,12 @@
         }
 
         // Otomatik giriş kontrolü
-        document.addEventListener('DOMContentLoaded', () => {
-            const savedKey = localStorage.getItem('adminKey');
-            if (savedKey) checkAccess(savedKey);
-
-            // Yönetim Merkezi verilerini çek
-            fetchFeatureFlags();
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (hasValidAdminSession()) {
+                adminAuthenticated = true;
+                unlockAdminUi();
+                await bootstrapAdminPanel();
+            }
 
             // Periyodik temizlik ve aktif oturum sayısını güncelle
             setInterval(updateActiveSessionStats, 10000);
@@ -348,7 +449,7 @@
                     activeCount++;
                 } else if (now - sessionActivity[sid] > 30 * 60 * 1000) {
                     // 30 dakikadır ses yoksa marker'ı kaldır (tercihe bağlı)
-                    if (markers[sid]) {
+                    if (markers[sid] && map) {
                         map.removeLayer(markers[sid]);
                         if (markers[sid].headingLine) map.removeLayer(markers[sid].headingLine);
                         delete markers[sid];
@@ -359,6 +460,8 @@
         }
 
         async function init() {
+            if (!hasSupabaseConfig()) return;
+
             // Mevcut verileri çek
             const { data, error } = await supabaseAdmin
                 .from('telemetry_logs')
@@ -690,8 +793,6 @@
             const rate = logs.length > 0 ? ((errorCount / logs.length) * 100).toFixed(1) : 0;
             document.getElementById('error-rate').innerText = rate + '%';
         }
-
-        init();
     </script>
 </body>
 

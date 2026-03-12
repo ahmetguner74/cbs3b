@@ -42,6 +42,7 @@ Scene/yedek/
 # ── Analiz / Debug ──
 app/analyze.js
 app/audit_results.txt
+app/config.js
 
 # ── Büyük Veri (Pointcloud) ──
 pointcloud/

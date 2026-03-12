@@ -160,7 +160,10 @@ var CbsStorage = (function () {
                     checked: g.checked,
                     color: g.color || '#14B8A6',
                     isReferans: g.isReferans || false,
-                    isClipBoxRoot: g.isClipBoxRoot || false
+                    isClipBoxRoot: g.isClipBoxRoot || false,
+                    _importZOffset: isFinite(g._importZOffset) ? Number(g._importZOffset) : 0,
+                    _manualZOffset: isFinite(g._manualZOffset) ? Number(g._manualZOffset) : 0,
+                    _zOffset: isFinite(g._zOffset) ? Number(g._zOffset) : 0
                 };
             }),
             measurements: data.measurements.filter(function (m) { return !m.isImported; }).map(function (m) {
