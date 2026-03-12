@@ -1,6 +1,12 @@
 # Logo tasarım dosyaları
 logo/
 
+# Node bağımlılıkları
+node_modules/
+
+# Build çıktıları
+dist/
+
 # Lokal çalıştırma scripti
 serve.bat
 
