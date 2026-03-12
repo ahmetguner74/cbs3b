@@ -525,6 +525,12 @@ var ClipBoxManager = {
 	_halfSize: { x: 15, y: 15, z: 15 },
 	// Z ekseni etrafında dönüş (derece)
 	_rotationDeg: 0,
+	// Kırpma modu: box | plane
+	_sliceMode: 'box',
+	// Tek düzlem modunda (plane) yatay kesit ofseti (metre)
+	_planeOffset: 0,
+	// Tek düzlem kesit çizgisi görünürlüğü (edge width)
+	_sliceEdgeWidth: 9,
 
 	// Clipping planes modelMatrix
 	_clipModelMatrix: null,
@@ -538,6 +544,8 @@ var ClipBoxManager = {
 	_inverseOriginMatrix: null,
 	// Wireframe entity'leri
 	_wireframeEntities: [],
+	// Tek duzlemde kamera etkileşimlerini stabil tutmak için önceki kontrol durumu
+	_slicePrevControllerState: null,
 	// Gizlenen entity'ler (vektör kırpma)
 	_hiddenEntities: [],
 	// Gizlenen primitives (referans + ölçüm)
@@ -565,6 +573,29 @@ var ClipBoxManager = {
 		);
 	},
 
+	_applySliceInteractionLock: function (enabled) {
+		var controller = viewer && viewer.scene && viewer.scene.screenSpaceCameraController;
+		if (!controller) return;
+
+		if (enabled) {
+			if (!this._slicePrevControllerState) {
+				this._slicePrevControllerState = {
+					enableTilt: controller.enableTilt,
+					enableLook: controller.enableLook
+				};
+			}
+			controller.enableTilt = false;
+			controller.enableLook = false;
+			return;
+		}
+
+		if (this._slicePrevControllerState) {
+			controller.enableTilt = this._slicePrevControllerState.enableTilt;
+			controller.enableLook = this._slicePrevControllerState.enableLook;
+			this._slicePrevControllerState = null;
+		}
+	},
+
 	_enterPlacementMode: function () {
 		if (!tileset) {
 			console.warn('ClipBox: Tileset henüz yüklenmedi.');
@@ -579,7 +610,11 @@ var ClipBoxManager = {
 
 		// Cursor crosshair + buton aktif
 		viewer.canvas.style.cursor = 'crosshair';
-		var btn = document.getElementById('btnClipBox');
+		var clipBtn = document.getElementById('btnClipBox');
+		var sliceBtn = document.getElementById('btnSingleSlice');
+		if (clipBtn) clipBtn.classList.remove('active');
+		if (sliceBtn) sliceBtn.classList.remove('active');
+		var btn = document.getElementById(this._sliceMode === 'plane' ? 'btnSingleSlice' : 'btnClipBox');
 		if (btn) btn.classList.add('active');
 
 		// İpucu mesajı
@@ -589,8 +624,12 @@ var ClipBoxManager = {
 			var rdDiv = rd.querySelector('div');
 			if (rdDiv) {
 				rdDiv.textContent = this._preserveTransformOnNextPlacement
-					? '✂️ Yeni merkez seçin — mevcut boyut ve rotasyon korunacak'
-					: '✂️ Kırpma noktası seçmek için haritaya tıklayın';
+					? (this._sliceMode === 'plane'
+						? '✂️ Yeni merkez seçin — mevcut kesit kotu korunacak'
+						: '✂️ Yeni merkez seçin — mevcut boyut ve rotasyon korunacak')
+					: (this._sliceMode === 'plane'
+						? '✂️ Yatay kesit merkezi için haritaya tıklayın'
+						: '✂️ Kırpma noktası seçmek için haritaya tıklayın');
 			}
 		}
 
@@ -650,6 +689,44 @@ var ClipBoxManager = {
 		this._enterPlacementMode();
 	},
 
+	setSliceMode: function (mode) {
+		var nextMode = mode === 'plane' ? 'plane' : 'box';
+		if (this._sliceMode === nextMode) {
+			syncClipMiniActionButtons();
+			syncSingleSliceActionButtons();
+			return;
+		}
+
+		this._sliceMode = nextMode;
+
+		if (this.active && this._worldCenter) {
+			this._applyClipping();
+			if (this._sliceMode === 'box') {
+				this._applySliceInteractionLock(false);
+				this._drawWireframe(this._worldCenter);
+				this._clipEntities();
+			} else {
+				this._clearWireframe();
+				this._restoreEntities();
+				this._applySliceInteractionLock(true);
+			}
+			viewer.scene.requestRender();
+		}
+
+		if (nextMode === 'box') {
+			this._applySliceInteractionLock(false);
+			hideSingleSlicePanel();
+		}
+		if (nextMode === 'plane') {
+			var clipPanel = document.getElementById('clipMiniPanel');
+			if (clipPanel) clipPanel.classList.remove('show');
+		}
+
+		syncClipMiniActionButtons();
+		syncSingleSliceActionButtons();
+		TelemetryManager.addLog(this._sliceMode === 'plane' ? 'Tek düzlem kesit modu aktif' : 'ClipBox modu aktif');
+	},
+
 	// ── HARİTAYA TIKLANDIĞINDA ──────────────────────────────
 	_onMapClick: function (click) {
 		if (!this._placementMode) return;
@@ -704,11 +781,17 @@ var ClipBoxManager = {
 		// Kırpma uygula
 		this._applyClipping();
 
-		// Wireframe kutu çiz (vektör kırpmadan ÖNCE, böylece wireframe hariç tutulur)
-		this._drawWireframe(worldPos);
+		if (this._sliceMode === 'box') {
+			// Wireframe kutu çiz (vektör kırpmadan ÖNCE, böylece wireframe hariç tutulur)
+			this._drawWireframe(worldPos);
 
-		// Vektör verileri de kırp (wireframe'den SONRA çağır)
-		this._clipEntities();
+			// Vektör verileri de kırp (wireframe'den SONRA çağır)
+			this._clipEntities();
+		} else {
+			this._clearWireframe();
+			this._restoreEntities();
+			this._applySliceInteractionLock(true);
+		}
 
 		// Mini panel göster
 		this._showMiniPanel();
@@ -718,7 +801,11 @@ var ClipBoxManager = {
 		if (rd) {
 			rd.style.display = '';
 			var rdDiv = rd.querySelector('div');
-			if (rdDiv) rdDiv.textContent = '✂️ Kırpma aktif — kapatmak için ✂️ butonuna veya ESC\'e basın';
+			if (rdDiv) {
+				rdDiv.textContent = this._sliceMode === 'plane'
+					? '✂️ Tek düzlem kesit aktif — kapatmak için ✂️ butonuna veya ESC\'e basın'
+					: '✂️ Kırpma aktif — kapatmak için ✂️ butonuna veya ESC\'e basın';
+			}
 		}
 
 		// Kamera kırpma bölgesine uçur
@@ -731,6 +818,44 @@ var ClipBoxManager = {
 	// ── KIRPMA DÜZLEMLERİNİ UYGULA ──────────────────────────
 	_applyClipping: function () {
 		if (!tileset || !this._clipModelMatrix) return;
+
+		if (this._sliceMode === 'plane') {
+			var planeOffset = Number(this._planeOffset || 0);
+			var sliceDistance = -planeOffset;
+			var edgeWidth = Math.max(1.5, Math.min(20, Number(this._sliceEdgeWidth || 9)));
+			var edgeRatio = (edgeWidth - 1.5) / (20 - 1.5);
+			var edgeAlpha = Math.max(0.35, Math.min(1.0, 0.35 + edgeRatio * 0.65));
+			var edgeColor = Cesium.Color.fromCssColorString('#FFD60A').withAlpha(edgeAlpha);
+
+			try {
+				var existingPlane = tileset.clippingPlanes;
+				if (existingPlane && !existingPlane.isDestroyed() && existingPlane.length === 1) {
+					existingPlane.modelMatrix = Cesium.Matrix4.clone(
+						this._clipModelMatrix,
+						existingPlane.modelMatrix || new Cesium.Matrix4()
+					);
+					existingPlane.get(0).distance = sliceDistance;
+					existingPlane.edgeColor = edgeColor;
+					existingPlane.edgeWidth = edgeWidth;
+					existingPlane.unionClippingRegions = false;
+					existingPlane.enabled = true;
+					return;
+				}
+			} catch (e) { /* collection bozuksa, aşağıda yeniden oluştur */ }
+
+			tileset.clippingPlanes = new Cesium.ClippingPlaneCollection({
+				planes: [
+					// Negatif tarafta kalan (düzlemin altı) geometri kesilir.
+					new Cesium.ClippingPlane(new Cesium.Cartesian3(0, 0, 1), sliceDistance)
+				],
+				unionClippingRegions: false,
+				edgeColor: edgeColor,
+				edgeWidth: edgeWidth,
+				modelMatrix: this._clipModelMatrix,
+				enabled: true
+			});
+			return;
+		}
 
 		var hx = this._halfSize.x, hy = this._halfSize.y, hz = this._halfSize.z;
 
@@ -777,6 +902,11 @@ var ClipBoxManager = {
 
 	// ── WİREFRAME KUTU ÇİZ ──────────────────────────────────
 	_drawWireframe: function (worldCenter) {
+		if (this._sliceMode !== 'box') {
+			this._clearWireframe();
+			return;
+		}
+
 		drawClipOverlayEntities(
 			this._wireframeEntities,
 			worldCenter,
@@ -798,6 +928,10 @@ var ClipBoxManager = {
 	// ── VEKTÖR VERİLERİ KIRP ───────────────────────────────
 	_clipEntities: function () {
 		this._restoreEntities();
+
+		if (this._sliceMode === 'plane') {
+			return;
+		}
 
 		if (!this._enuAtClick) return;
 
@@ -1046,6 +1180,20 @@ var ClipBoxManager = {
 
 	// ── MİNİ PANEL GÖSTER/GİZLE ────────────────────────────
 	_showMiniPanel: function () {
+		if (this._sliceMode === 'plane') {
+			var clipPanel = document.getElementById('clipMiniPanel');
+			if (clipPanel) clipPanel.classList.remove('show');
+			updateSliceMiniOffsetUi(this._planeOffset || 0);
+			updateSliceMiniVisibilityUi(this._sliceEdgeWidth || 9);
+			this._applySliceInteractionLock(true);
+			syncSingleSliceActionButtons();
+			var slicePanel = document.getElementById('sliceMiniPanel');
+			if (slicePanel) slicePanel.classList.add('show');
+			return;
+		}
+
+		this._applySliceInteractionLock(false);
+		hideSingleSlicePanel();
 		var panel = document.getElementById('clipMiniPanel');
 		if (!panel) return;
 		updateClipMiniSliderUi('X', this._halfSize.x * 2);
@@ -1060,10 +1208,15 @@ var ClipBoxManager = {
 		flushClipMiniPreview(false);
 		var panel = document.getElementById('clipMiniPanel');
 		if (panel) panel.classList.remove('show');
+		this._applySliceInteractionLock(false);
+		hideSingleSlicePanel();
+		syncSingleSliceActionButtons();
 	},
 
 	// ── BOYUT GÜNCELLE (performanslı) ───────────────────────
 	_updateSize: function (axis, fullSize, updateEntities) {
+		if (this._sliceMode !== 'box') return;
+
 		this._halfSize[axis] = fullSize / 2;
 
 		// Tileset clipping güncelle (çok hızlı — sadece distance değişiyor)
@@ -1083,6 +1236,8 @@ var ClipBoxManager = {
 	},
 
 	_updateRotation: function (degrees, updateEntities) {
+		if (this._sliceMode !== 'box') return;
+
 		this._rotationDeg = degrees;
 
 		if (!this._worldCenter) return;
@@ -1098,9 +1253,49 @@ var ClipBoxManager = {
 		viewer.scene.requestRender();
 	},
 
+	_updatePlaneOffset: function (offsetMeters) {
+		this._planeOffset = Number(offsetMeters || 0);
+		updateSliceMiniOffsetUi(this._planeOffset);
+		syncSingleSlicePanelMeta();
+		if (!this.active || !this._worldCenter) return;
+		this._applyClipping();
+		viewer.scene.requestRender();
+	},
+
+	_updateSliceVisibility: function (visibilityValue) {
+		var nextVisibility = Number(visibilityValue);
+		if (!isFinite(nextVisibility)) nextVisibility = 9;
+		this._sliceEdgeWidth = Math.max(1.5, Math.min(20, nextVisibility));
+		updateSliceMiniVisibilityUi(this._sliceEdgeWidth);
+		syncSingleSlicePanelMeta();
+		if (!this.active || !this._worldCenter || this._sliceMode !== 'plane') return;
+		this._applyClipping();
+		viewer.scene.requestRender();
+	},
+
 	// ── KAMERA KIRPMA BÖLGESİNE UÇUR ────────────────────────
 	_flyToBox: function (worldCenter) {
 		var maxDim = Math.max(this._halfSize.x, this._halfSize.y, this._halfSize.z) * 2;
+		if (this._sliceMode === 'plane') {
+			var currentPitch = Cesium.Math.clamp(
+				viewer.camera.pitch,
+				Cesium.Math.toRadians(-85),
+				Cesium.Math.toRadians(-15)
+			);
+			viewer.camera.flyToBoundingSphere(
+				new Cesium.BoundingSphere(worldCenter, maxDim / 2),
+				{
+					offset: new Cesium.HeadingPitchRange(
+						viewer.camera.heading,
+						currentPitch,
+						Math.max(100, maxDim * 2.0)
+					),
+					duration: 1.0
+				}
+			);
+			return;
+		}
+
 		viewer.camera.flyToBoundingSphere(
 			new Cesium.BoundingSphere(worldCenter, maxDim / 2),
 			{
@@ -1118,6 +1313,8 @@ var ClipBoxManager = {
 		if (!clip || !clip.center || !tileset) return;
 
 		this.deactivate();
+		this._sliceMode = 'box';
+		this._planeOffset = 0;
 		this.active = true;
 		this._placementMode = false;
 		this._worldCenter = Cesium.Cartesian3.clone(clip.center);
@@ -1181,6 +1378,7 @@ var ClipBoxManager = {
 
 		// Wireframe kaldır
 		this._clearWireframe();
+		this._applySliceInteractionLock(false);
 
 		// Referans batch gruplarını normal haline döndür
 		this._restoreClippedBatchGroups();
@@ -1199,8 +1397,10 @@ var ClipBoxManager = {
 			if (rdDiv) rdDiv.textContent = 'Araç seçin ve haritaya tıklayın.';
 		}
 
-		var btn = document.getElementById('btnClipBox');
-		if (btn) btn.classList.remove('active');
+		var clipBtn = document.getElementById('btnClipBox');
+		if (clipBtn) clipBtn.classList.remove('active');
+		var sliceBtn = document.getElementById('btnSingleSlice');
+		if (sliceBtn) sliceBtn.classList.remove('active');
 
 		this._clipModelMatrix = null;
 		this._worldCenter = null;
@@ -1210,6 +1410,8 @@ var ClipBoxManager = {
 		this._hiddenPrimitives = [];
 		this._clippedBatchGroupIds = [];
 		this._rotationDeg = 0;
+		this._planeOffset = 0;
+		this._sliceEdgeWidth = 9;
 
 		viewer.scene.requestRender();
 		TelemetryManager.addLog('ClipBox kapatıldı');
@@ -1221,7 +1423,7 @@ var ClipBoxManager = {
 	// ── Slider canlı önizleme: rAF ile sınırlı, entity clip commit'i sadece bırakınca
 
 	// ── ± Buton Handler'ları ──
-	var pmBtns = document.querySelectorAll('.clip-pm-btn-lg');
+	var pmBtns = document.querySelectorAll('#clipMiniPanel .clip-pm-btn-lg');
 	pmBtns.forEach(function (btn) {
 		btn.addEventListener('click', function () {
 			flushClipMiniPreview(false);
@@ -1230,7 +1432,7 @@ var ClipBoxManager = {
 			var slider = document.getElementById('clipMini' + axis);
 			if (!slider) return;
 
-			var currentVal = parseInt(slider.value, 10) || 0;
+			var currentVal = parseFloat(slider.value) || 0;
 			var newVal = axis === 'R'
 				? Math.max(-180, Math.min(180, currentVal + dir * 5))
 				: Math.max(5, Math.min(100, currentVal + dir * 5));
@@ -1238,17 +1440,17 @@ var ClipBoxManager = {
 		});
 	});
 
-	var sliders = document.querySelectorAll('.clip-mini-slider');
+	var sliders = document.querySelectorAll('#clipMiniPanel .clip-mini-slider');
 	sliders.forEach(function (slider) {
 		slider.addEventListener('input', function () {
 			var axis = slider.getAttribute('data-axis');
-			var newVal = parseInt(slider.value, 10) || 0;
+			var newVal = parseFloat(slider.value) || 0;
 			scheduleClipMiniPreview(axis, newVal);
 		});
 
 		slider.addEventListener('change', function () {
 			var axis = slider.getAttribute('data-axis');
-			var newVal = parseInt(slider.value, 10) || 0;
+			var newVal = parseFloat(slider.value) || 0;
 			flushClipMiniPreview(false);
 			applyClipMiniAxisValue(axis, newVal, true);
 		});
@@ -1332,6 +1534,21 @@ var ClipBoxManager = {
 	var btnClipBox = document.getElementById('btnClipBox');
 	if (btnClipBox) {
 		btnClipBox.addEventListener('click', function () {
+			if (ClipBoxManager._sliceMode === 'plane' && (ClipBoxManager.active || ClipBoxManager._placementMode)) {
+				ClipBoxManager.deactivate();
+			}
+			ClipBoxManager.setSliceMode('box');
+			ClipBoxManager.activate();
+		});
+	}
+
+	var btnSingleSlice = document.getElementById('btnSingleSlice');
+	if (btnSingleSlice) {
+		btnSingleSlice.addEventListener('click', function () {
+			if (ClipBoxManager._sliceMode === 'box' && (ClipBoxManager.active || ClipBoxManager._placementMode)) {
+				ClipBoxManager.deactivate();
+			}
+			ClipBoxManager.setSliceMode('plane');
 			ClipBoxManager.activate();
 		});
 	}
@@ -1343,6 +1560,127 @@ var ClipBoxManager = {
 	if (!Array.isArray(savedClipBoxes)) savedClipBoxes = [];
 	if (typeof selectedSavedClipBoxId === 'undefined') selectedSavedClipBoxId = null;
 	syncClipMiniActionButtons();
+	syncSingleSliceActionButtons();
+})();
+
+// ── TEK DÜZLEM PANEL EVENT BAĞLANTILARI ───────────────────────
+(function () {
+	var slider = document.getElementById('sliceMiniOffset');
+	var plusBtn = document.getElementById('sliceMiniPlus');
+	var minusBtn = document.getElementById('sliceMiniMinus');
+	var visibilitySlider = document.getElementById('sliceMiniVisibility');
+	var visibilityPlusBtn = document.getElementById('sliceMiniVisPlus');
+	var visibilityMinusBtn = document.getElementById('sliceMiniVisMinus');
+	var resetBtn = document.getElementById('sliceMiniReset');
+	var flyBtn = document.getElementById('sliceMiniFlyTo');
+	var repositionBtn = document.getElementById('sliceMiniReposition');
+	var closeBtn = document.getElementById('sliceMiniClose');
+	var minimizeBtn = document.getElementById('sliceMiniMinimize');
+
+	function stepOffset(dir) {
+		if (!slider || !window.ClipBoxManager) return;
+		var currentVal = parseFloat(slider.value) || 0;
+		var nextVal = Math.max(-120, Math.min(120, currentVal + (dir > 0 ? 1 : -1)));
+		updateSliceMiniOffsetUi(nextVal);
+		ClipBoxManager._updatePlaneOffset(nextVal);
+	}
+
+	function stepVisibility(dir) {
+		if (!visibilitySlider || !window.ClipBoxManager) return;
+		var currentVal = parseFloat(visibilitySlider.value) || 9;
+		var min = Number(visibilitySlider.min || 1.5);
+		var max = Number(visibilitySlider.max || 20);
+		var nextVal = Math.max(min, Math.min(max, currentVal + (dir > 0 ? 0.5 : -0.5)));
+		nextVal = Math.round(nextVal * 10) / 10;
+		updateSliceMiniVisibilityUi(nextVal);
+		ClipBoxManager._updateSliceVisibility(nextVal);
+	}
+
+	if (slider) {
+		slider.addEventListener('input', function () {
+			if (!window.ClipBoxManager) return;
+			var nextVal = parseFloat(slider.value) || 0;
+			updateSliceMiniOffsetUi(nextVal);
+			ClipBoxManager._updatePlaneOffset(nextVal);
+		});
+	}
+
+	if (visibilitySlider) {
+		visibilitySlider.addEventListener('input', function () {
+			if (!window.ClipBoxManager) return;
+			var nextVal = parseFloat(visibilitySlider.value) || 9;
+			updateSliceMiniVisibilityUi(nextVal);
+			ClipBoxManager._updateSliceVisibility(nextVal);
+		});
+	}
+
+	if (plusBtn) {
+		plusBtn.addEventListener('click', function () { stepOffset(1); });
+	}
+
+	if (minusBtn) {
+		minusBtn.addEventListener('click', function () { stepOffset(-1); });
+	}
+
+	if (visibilityPlusBtn) {
+		visibilityPlusBtn.addEventListener('click', function () { stepVisibility(1); });
+	}
+
+	if (visibilityMinusBtn) {
+		visibilityMinusBtn.addEventListener('click', function () { stepVisibility(-1); });
+	}
+
+	if (resetBtn) {
+		resetBtn.addEventListener('click', function () {
+			if (!window.ClipBoxManager) return;
+			updateSliceMiniOffsetUi(0);
+			updateSliceMiniVisibilityUi(9);
+			ClipBoxManager._updateSliceVisibility(9);
+			ClipBoxManager._updatePlaneOffset(0);
+		});
+	}
+
+	if (flyBtn) {
+		flyBtn.addEventListener('click', function () {
+			if (window.ClipBoxManager && ClipBoxManager._worldCenter) {
+				ClipBoxManager._flyToBox(ClipBoxManager._worldCenter);
+			}
+		});
+	}
+
+	if (repositionBtn) {
+		repositionBtn.addEventListener('click', function () {
+			if (!window.ClipBoxManager) return;
+			ClipBoxManager.reposition();
+			syncSingleSliceActionButtons();
+		});
+	}
+
+	if (closeBtn) {
+		closeBtn.addEventListener('click', function () {
+			if (!window.ClipBoxManager) return;
+			ClipBoxManager.deactivate();
+			hideSingleSlicePanel();
+			syncSingleSliceActionButtons();
+		});
+	}
+
+	if (minimizeBtn) {
+		minimizeBtn.addEventListener('click', function () {
+			var panel = document.getElementById('sliceMiniPanel');
+			var icon = minimizeBtn.querySelector('.material-symbols-outlined');
+			if (!panel) return;
+			if (panel.classList.toggle('minimized')) {
+				if (icon) icon.textContent = 'add';
+			} else {
+				if (icon) icon.textContent = 'remove';
+			}
+		});
+	}
+
+	updateSliceMiniOffsetUi(0);
+	updateSliceMiniVisibilityUi(9);
+	syncSingleSliceActionButtons();
 })();
 
 // ─── SPLASH SCREEN: Gerçek tileset yükleme progress'i ───
@@ -3196,8 +3534,104 @@ function flushClipMiniPreview(commitEntities) {
 	applyClipMiniAxisValue(preview.axis, preview.value, !!commitEntities);
 }
 
+function updateSliceMiniOffsetUi(rawValue) {
+	var slider = document.getElementById('sliceMiniOffset');
+	if (!slider) return;
+	var safeValue = Number(rawValue || 0);
+	var min = Number(slider.min || -120);
+	var max = Number(slider.max || 120);
+	var progress = max === min ? 0 : ((safeValue - min) / (max - min)) * 100;
+	slider.value = safeValue;
+	slider.style.setProperty('--clip-progress', Math.max(0, Math.min(100, progress)) + '%');
+	var label = document.getElementById('sliceMiniOffsetVal');
+	if (label) label.textContent = safeValue + 'm';
+}
+
+function updateSliceMiniVisibilityUi(rawValue) {
+	var slider = document.getElementById('sliceMiniVisibility');
+	if (!slider) return;
+	var safeValue = Math.max(1.5, Math.min(20, Number(rawValue || 9)));
+	var min = Number(slider.min || 1.5);
+	var max = Number(slider.max || 20);
+	var progress = max === min ? 0 : ((safeValue - min) / (max - min)) * 100;
+	slider.value = safeValue;
+	slider.style.setProperty('--clip-progress', Math.max(0, Math.min(100, progress)) + '%');
+	var label = document.getElementById('sliceMiniVisibilityVal');
+	if (label) label.textContent = safeValue.toFixed(1) + 'px';
+}
+
+function syncSingleSlicePanelMeta() {
+	var stateEl = document.getElementById('sliceMiniState');
+	if (!stateEl) return;
+
+	var tone = 'idle';
+	var text = 'Kapalı';
+	if (window.ClipBoxManager && ClipBoxManager._sliceMode === 'plane' && ClipBoxManager._placementMode) {
+		tone = 'warn';
+		text = 'Haritada merkez seçin';
+	} else if (window.ClipBoxManager && ClipBoxManager._sliceMode === 'plane' && ClipBoxManager.active && ClipBoxManager._worldCenter) {
+		tone = 'active';
+		text = 'Aktif tek düzlem kesit';
+	}
+
+	stateEl.dataset.tone = tone;
+	stateEl.textContent = text;
+}
+
+function syncSingleSliceActionButtons() {
+	var isPlaneLive = !!(window.ClipBoxManager && ClipBoxManager._sliceMode === 'plane' && ClipBoxManager.active && ClipBoxManager._worldCenter);
+	var resetBtn = document.getElementById('sliceMiniReset');
+	var flyBtn = document.getElementById('sliceMiniFlyTo');
+	var repositionBtn = document.getElementById('sliceMiniReposition');
+
+	if (resetBtn) {
+		resetBtn.disabled = !isPlaneLive;
+		resetBtn.title = isPlaneLive ? 'Kesit kotunu sıfırla' : 'Önce tek düzlem kesiti aktif edin';
+	}
+	if (flyBtn) {
+		flyBtn.disabled = !isPlaneLive;
+		flyBtn.title = isPlaneLive ? 'Kesit merkezine odaklan' : 'Önce tek düzlem kesiti aktif edin';
+	}
+	if (repositionBtn) {
+		repositionBtn.disabled = !isPlaneLive;
+		repositionBtn.title = isPlaneLive ? 'Mevcut kesit kotunu koruyup merkezi yeniden seç' : 'Önce tek düzlem kesiti aktif edin';
+	}
+
+	syncSingleSlicePanelMeta();
+}
+
+function hideSingleSlicePanel() {
+	var panel = document.getElementById('sliceMiniPanel');
+	if (panel) panel.classList.remove('show');
+}
+
+function syncClipMiniModeUi() {
+	var isPlaneMode = !!(window.ClipBoxManager && ClipBoxManager._sliceMode === 'plane');
+	var modeBoxBtn = document.getElementById('clipMiniModeBox');
+	var modePlaneBtn = document.getElementById('clipMiniModePlane');
+	var titleEl = document.querySelector('#clipMiniPanel .clip-mini-title');
+
+	if (modeBoxBtn) modeBoxBtn.classList.toggle('active', !isPlaneMode);
+	if (modePlaneBtn) modePlaneBtn.classList.toggle('active', isPlaneMode);
+
+	var boxRows = document.querySelectorAll('[data-clip-layout="box"]');
+	boxRows.forEach(function (row) {
+		row.style.display = isPlaneMode ? 'none' : '';
+	});
+
+	var planeRows = document.querySelectorAll('[data-clip-layout="plane"]');
+	planeRows.forEach(function (row) {
+		row.style.display = isPlaneMode ? '' : 'none';
+	});
+
+	if (titleEl) {
+		titleEl.textContent = isPlaneMode ? 'Tek Düzlem Kesit' : 'Kırpma Kutusu';
+	}
+}
+
 function syncClipMiniPanelMeta() {
 	var stateEl = document.getElementById('clipMiniState');
+	var isPlaneMode = !!(window.ClipBoxManager && ClipBoxManager._sliceMode === 'plane');
 	if (stateEl) {
 		var tone = 'idle';
 		var text = 'Kapalı';
@@ -3206,7 +3640,7 @@ function syncClipMiniPanelMeta() {
 			text = 'Haritada merkez seçin';
 		} else if (window.ClipBoxManager && ClipBoxManager.active && ClipBoxManager._worldCenter) {
 			tone = 'active';
-			text = 'Aktif kırpma';
+			text = isPlaneMode ? 'Aktif tek düzlem kesit' : 'Aktif kırpma';
 		}
 		stateEl.dataset.tone = tone;
 		stateEl.textContent = text;
@@ -3214,6 +3648,11 @@ function syncClipMiniPanelMeta() {
 
 	var selectionInfo = document.getElementById('clipMiniSelectionInfo');
 	if (selectionInfo) {
+		if (isPlaneMode) {
+			selectionInfo.innerHTML = '<strong>Tek düzlem modu:</strong> Kayıt işlemleri bu modda kapalıdır.';
+			return;
+		}
+
 		var selectedClip = findSavedClipBox(selectedSavedClipBoxId);
 		if (selectedClip) {
 			selectionInfo.innerHTML = '<strong>Seçili kayıt:</strong> ' + escapeHtmlText(selectedClip.name);
@@ -3225,15 +3664,20 @@ function syncClipMiniPanelMeta() {
 
 function syncClipMiniActionButtons() {
 	var isLiveClip = !!(window.ClipBoxManager && ClipBoxManager.active && ClipBoxManager._worldCenter);
+	var isPlaneMode = !!(window.ClipBoxManager && ClipBoxManager._sliceMode === 'plane');
+	var isBoxMode = !isPlaneMode;
 	var saveBtn = document.getElementById('clipMiniSave');
 	var flyBtn = document.getElementById('clipMiniFlyTo');
 	var repositionBtn = document.getElementById('clipMiniReposition');
 	var updateBtn = document.getElementById('clipMiniUpdate');
 	var hasSelected = !!findSavedClipBox(selectedSavedClipBoxId);
+	syncClipMiniModeUi();
 
 	if (saveBtn) {
-		saveBtn.disabled = !isLiveClip;
-		saveBtn.title = isLiveClip ? 'Geçerli ClipBox ayarlarıyla yeni kayıt oluştur' : 'Önce aktif bir ClipBox yerleştirin';
+		saveBtn.disabled = !isLiveClip || !isBoxMode;
+		saveBtn.title = isPlaneMode
+			? 'Tek düzlem modunda kayıt kapalıdır'
+			: (isLiveClip ? 'Geçerli ClipBox ayarlarıyla yeni kayıt oluştur' : 'Önce aktif bir ClipBox yerleştirin');
 	}
 
 	if (flyBtn) {
@@ -3243,14 +3687,18 @@ function syncClipMiniActionButtons() {
 
 	if (repositionBtn) {
 		repositionBtn.disabled = !isLiveClip;
-		repositionBtn.title = isLiveClip ? 'Mevcut boyut ve rotasyonu koruyup merkezi yeniden seç' : 'Önce aktif bir ClipBox yerleştirin';
+		repositionBtn.title = isLiveClip
+			? (isPlaneMode ? 'Mevcut kesit kotunu koruyup merkezi yeniden seç' : 'Mevcut boyut ve rotasyonu koruyup merkezi yeniden seç')
+			: 'Önce aktif bir kırpma/kesit yerleştirin';
 	}
 
 	if (updateBtn) {
-		updateBtn.disabled = !(hasSelected && isLiveClip);
-		updateBtn.title = hasSelected
-			? (isLiveClip ? 'Seçili ClipBox kaydını güncelle' : 'Önce güncellenecek ClipBox sahnede aktif olmalı')
-			: 'Önce listeden bir ClipBox kaydı seçin';
+		updateBtn.disabled = !(hasSelected && isLiveClip && isBoxMode);
+		updateBtn.title = isPlaneMode
+			? 'Tek düzlem modunda kayıt güncelleme kapalıdır'
+			: (hasSelected
+				? (isLiveClip ? 'Seçili ClipBox kaydını güncelle' : 'Önce güncellenecek ClipBox sahnede aktif olmalı')
+				: 'Önce listeden bir ClipBox kaydı seçin');
 	}
 
 	syncClipMiniPanelMeta();
@@ -3277,6 +3725,11 @@ function syncSavedClipBoxOverlay(clip) {
 }
 
 function saveCurrentClipBox() {
+	if (ClipBoxManager._sliceMode === 'plane') {
+		setResultDisplayMessage('<span class="text-amber-400 font-bold text-[11px]">Tek düzlem modunda ClipBox kaydı kapalıdır.</span>');
+		return;
+	}
+
 	if (!ClipBoxManager.active || !ClipBoxManager._worldCenter) {
 		setResultDisplayMessage('<span class="text-amber-400 font-bold text-[11px]">Önce aktif bir ClipBox yerleştirin.</span>');
 		return;
@@ -3312,6 +3765,11 @@ function saveCurrentClipBox() {
 }
 
 function updateSelectedSavedClipBox() {
+	if (ClipBoxManager._sliceMode === 'plane') {
+		setResultDisplayMessage('<span class="text-amber-400 font-bold text-[11px]">Tek düzlem modunda ClipBox güncelleme kapalıdır.</span>');
+		return;
+	}
+
 	var clip = findSavedClipBox(selectedSavedClipBoxId);
 	if (!clip) {
 		setResultDisplayMessage('<span class="text-amber-400 font-bold text-[11px]">Önce listeden güncellenecek ClipBox kaydını seçin.</span>');
