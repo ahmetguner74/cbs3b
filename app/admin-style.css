@@ -1,9 +1,13 @@
 :root {
-    --bg-dark: #0f172a;
+    --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --bg-app: #0b0f19;
+    --bg-surface: #111827;
+    --bg-elevated: #1e293b;
     --panel-bg: rgba(30, 41, 59, 0.7);
-    --accent: #38bdf8;
-    --text-main: #f1f5f9;
-    --text-dim: #94a3b8;
+    --primary: #3B82F6;
+    --accent: #14B8A6;
+    --text-primary: #f1f5f9;
+    --text-secondary: #94a3b8;
     --error: #ef4444;
     --success: #22c55e;
     --border: rgba(255, 255, 255, 0.1);
@@ -12,9 +16,9 @@
 body {
     margin: 0;
     padding: 0;
-    font-family: 'Inter', sans-serif;
-    background-color: var(--bg-dark);
-    color: var(--text-main);
+    font-family: var(--font-sans);
+    background-color: var(--bg-app);
+    color: var(--text-primary);
     height: 100vh;
     overflow: hidden;
 }
@@ -44,7 +48,7 @@ header {
 .logo h1 {
     font-size: 1.25rem;
     margin: 0;
-    background: linear-gradient(90deg, #fff, var(--accent));
+    background: linear-gradient(90deg, #fff, var(--primary));
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -83,11 +87,11 @@ header {
 
 .stat-item {
     font-size: 0.9rem;
-    color: var(--text-dim);
+    color: var(--text-secondary);
 }
 
 .stat-item span {
-    color: var(--text-main);
+    color: var(--text-primary);
     font-weight: 600;
 }
 
@@ -109,7 +113,7 @@ main {
 .sidebar h3 {
     font-size: 0.8rem;
     text-transform: uppercase;
-    color: var(--text-dim);
+    color: var(--text-secondary);
     margin-bottom: 1rem;
 }
 
@@ -190,7 +194,7 @@ th {
     text-align: left;
     padding: 0.75rem 1rem;
     background: rgba(255, 255, 255, 0.03);
-    color: var(--text-dim);
+    color: var(--text-secondary);
     position: sticky;
     top: 0;
     z-index: 1;
@@ -212,16 +216,16 @@ td {
 .btn-secondary {
     background: transparent;
     border: 1px solid var(--border);
-    color: var(--text-dim);
+    color: var(--text-secondary);
     padding: 0.4rem 0.8rem;
     border-radius: 4px;
     cursor: pointer;
 }
 
 .btn-info {
-    background: rgba(56, 189, 248, 0.1);
-    color: var(--accent);
-    border: 1px solid var(--accent);
+    background: rgba(59, 130, 246, 0.12);
+    color: var(--primary);
+    border: 1px solid var(--primary);
     padding: 0.2rem 0.5rem;
     border-radius: 4px;
     cursor: pointer;

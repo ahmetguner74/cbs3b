@@ -2148,10 +2148,11 @@ function toggleXRay() {
 	if (typeof EditManager !== 'undefined' && EditManager) {
 		if (EditManager._editLinePrim) applyXRayToPrimitive(EditManager._editLinePrim, _xrayActive);
 		if (EditManager._editPolyPrim) applyXRayToPrimitive(EditManager._editPolyPrim, _xrayActive);
-		if (Array.isArray(EditManager._gripCols) && EditManager._gripCols.length > 0) {
+		if (Array.isArray(EditManager._gripCols)) {
 			EditManager._gripCols.forEach(function (g) {
-				if (!g || !g.col || g.type !== 'pmid') return;
-				applyXRayToPrimitive(g.col, _xrayActive);
+				if (!g || !g.col || typeof g.col.get !== 'function') return;
+				var p = g.pt || (g.col.length > 0 ? g.col.get(0) : null);
+				if (p) p.disableDepthTestDistance = _xrayActive ? Number.POSITIVE_INFINITY : 0;
 			});
 		}
 	}
@@ -2823,38 +2824,66 @@ function showResultErrorMessage(message) {
 	setResultDisplayMessage('<span class="' + colorClass + ' font-bold text-[11px]">⚠️ ' + escapeHtmlText(message) + '</span>');
 }
 
-function showResultConfirmDialog(message, onConfirm) {
-	var existing = document.getElementById('cbsConfirmDialog');
-	if (existing) existing.remove();
-
+function getDialogThemeTokens() {
 	var isLight = document.documentElement.classList.contains('light');
+	return {
+		isLight: isLight,
+		overlayBg: isLight ? 'rgba(15,23,42,0.36)' : 'rgba(2,6,23,0.62)',
+		cardBg: isLight ? '#ffffff' : '#0f172a',
+		cardBorder: isLight ? 'rgba(148,163,184,0.42)' : 'rgba(148,163,184,0.25)',
+		cardShadow: isLight ? '0 18px 44px rgba(15,23,42,0.18)' : '0 24px 64px rgba(2,6,23,0.52)',
+		title: isLight ? '#0f172a' : '#f8fafc',
+		body: isLight ? '#334155' : '#cbd5e1',
+		muted: isLight ? '#64748b' : '#94a3b8',
+		secondaryBg: isLight ? '#f8fafc' : '#1e293b',
+		secondaryBorder: isLight ? 'rgba(148,163,184,0.6)' : 'rgba(148,163,184,0.35)',
+		secondaryText: isLight ? '#334155' : '#e2e8f0',
+		dangerBg: isLight ? '#ef4444' : '#dc2626',
+		accentBg: isLight ? '#0f766e' : '#0d9488'
+	};
+}
+
+function buildDialogShell(dialogId, widthPx, zIndex) {
+	var theme = getDialogThemeTokens();
 	var overlay = document.createElement('div');
-	overlay.id = 'cbsConfirmDialog';
+	overlay.id = dialogId;
 	overlay.style.cssText = [
-		'position:fixed;inset:0;z-index:10020',
+		'position:fixed;inset:0;z-index:' + (zIndex || 10020),
 		'display:flex;align-items:center;justify-content:center',
-		'background:' + (isLight ? 'rgba(15,23,42,0.35)' : 'rgba(2,6,23,0.6)'),
-		'backdrop-filter:blur(2px)'
+		'background:' + theme.overlayBg,
+		'backdrop-filter:blur(4px)'
 	].join(';');
 
 	var card = document.createElement('div');
 	card.style.cssText = [
-		'width:min(92vw,420px)',
-		'border-radius:12px',
+		'width:min(92vw,' + widthPx + 'px)',
+		'border-radius:16px',
 		'padding:16px',
 		'font-family:Inter,system-ui,sans-serif',
-		'background:' + (isLight ? '#ffffff' : '#0f172a'),
-		'border:1px solid ' + (isLight ? 'rgba(148,163,184,0.5)' : 'rgba(148,163,184,0.25)'),
-		'box-shadow:0 18px 36px rgba(0,0,0,0.35)'
+		'background:' + theme.cardBg,
+		'border:1px solid ' + theme.cardBorder,
+		'box-shadow:' + theme.cardShadow
 	].join(';');
+
+	return { theme: theme, overlay: overlay, card: card };
+}
+
+function showResultConfirmDialog(message, onConfirm) {
+	var existing = document.getElementById('cbsConfirmDialog');
+	if (existing) existing.remove();
+
+	var shell = buildDialogShell('cbsConfirmDialog', 420, 10020);
+	var theme = shell.theme;
+	var overlay = shell.overlay;
+	var card = shell.card;
 
 	var title = document.createElement('div');
 	title.textContent = 'Onay Gerekli';
-	title.style.cssText = 'font-size:14px;font-weight:700;margin-bottom:8px;color:' + (isLight ? '#0f172a' : '#e2e8f0') + ';';
+	title.style.cssText = 'font-size:14px;font-weight:700;margin-bottom:8px;color:' + theme.title + ';';
 
 	var body = document.createElement('div');
 	body.textContent = message;
-	body.style.cssText = 'font-size:12px;line-height:1.6;white-space:pre-line;color:' + (isLight ? '#334155' : '#cbd5e1') + ';';
+	body.style.cssText = 'font-size:12px;line-height:1.6;white-space:pre-line;color:' + theme.body + ';';
 
 	var actions = document.createElement('div');
 	actions.style.cssText = 'display:flex;justify-content:flex-end;gap:8px;margin-top:14px;';
@@ -2862,9 +2891,9 @@ function showResultConfirmDialog(message, onConfirm) {
 	var cancelBtn = document.createElement('button');
 	cancelBtn.textContent = 'Vazgeç';
 	cancelBtn.style.cssText = [
-		'border:1px solid ' + (isLight ? 'rgba(148,163,184,0.6)' : 'rgba(148,163,184,0.35)'),
-		'background:' + (isLight ? '#f8fafc' : '#1e293b'),
-		'color:' + (isLight ? '#334155' : '#e2e8f0'),
+		'border:1px solid ' + theme.secondaryBorder,
+		'background:' + theme.secondaryBg,
+		'color:' + theme.secondaryText,
 		'padding:7px 12px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer'
 	].join(';');
 
@@ -2872,7 +2901,7 @@ function showResultConfirmDialog(message, onConfirm) {
 	okBtn.textContent = 'Devam Et';
 	okBtn.style.cssText = [
 		'border:1px solid rgba(248,113,113,0.45)',
-		'background:' + (isLight ? '#ef4444' : '#dc2626'),
+		'background:' + theme.dangerBg,
 		'color:white',
 		'padding:7px 12px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer'
 	].join(';');
@@ -2960,42 +2989,42 @@ function applyInfoPanelTheme(panel) {
 		return;
 	}
 
-	panel.style.background = '';
-	panel.style.border = '';
-	panel.style.boxShadow = '';
+	panel.style.background = 'rgba(11,15,25,0.98)';
+	panel.style.border = '1px solid rgba(71,85,105,0.7)';
+	panel.style.boxShadow = '0 18px 36px rgba(0,0,0,0.5)';
 	if (header) {
-		header.style.background = '';
-		header.style.borderBottom = '';
+		header.style.background = 'rgba(15,23,42,0.9)';
+		header.style.borderBottom = '1px solid rgba(71,85,105,0.7)';
 	}
 	if (summary) {
-		summary.style.background = '';
-		summary.style.border = '';
-		summary.style.color = '';
+		summary.style.background = 'rgba(2,6,23,0.7)';
+		summary.style.border = '1px solid rgba(71,85,105,0.7)';
+		summary.style.color = '#94a3b8';
 	}
-	if (content) content.style.color = '';
-	if (closeBtn) closeBtn.style.color = '';
-	if (divider) divider.style.borderColor = '';
+	if (content) content.style.color = '#cbd5e1';
+	if (closeBtn) closeBtn.style.color = '#64748b';
+	if (divider) divider.style.borderColor = 'rgba(71,85,105,0.7)';
 	if (saveBtn) {
-		saveBtn.style.background = '';
-		saveBtn.style.borderColor = '';
-		saveBtn.style.color = '';
+		saveBtn.style.background = 'rgba(15,23,42,0.92)';
+		saveBtn.style.borderColor = 'rgba(71,85,105,0.65)';
+		saveBtn.style.color = '#f8fafc';
 	}
 	if (readonlyBadge) {
-		readonlyBadge.style.background = '';
-		readonlyBadge.style.borderColor = '';
-		readonlyBadge.style.color = '';
+		readonlyBadge.style.background = 'rgba(251,191,36,0.1)';
+		readonlyBadge.style.borderColor = 'rgba(251,191,36,0.4)';
+		readonlyBadge.style.color = '#fbbf24';
 	}
 
 	labels.forEach(function (label) {
-		label.style.color = '';
+		label.style.color = '#64748b';
 	});
 	sectionTitles.forEach(function (title) {
-		title.style.color = '';
+		title.style.color = '#94a3b8';
 	});
 	fields.forEach(function (field) {
-		field.style.background = '';
-		field.style.borderColor = '';
-		field.style.color = '';
+		field.style.background = 'rgba(15,23,42,1)';
+		field.style.borderColor = 'rgba(71,85,105,0.7)';
+		field.style.color = '#e2e8f0';
 	});
 	setInfoPickButtonState(typeof window !== 'undefined' && !!window.__infoPickModeActive);
 	if (pickStatus) {
@@ -5297,38 +5326,22 @@ function showCreateLayerDialog(onCreate) {
 	var existing = document.getElementById('cbsCreateLayerDialog');
 	if (existing) existing.remove();
 
-	var isLight = document.documentElement.classList.contains('light');
-	var overlay = document.createElement('div');
-	overlay.id = 'cbsCreateLayerDialog';
-	overlay.style.cssText = [
-		'position:fixed;inset:0;z-index:10021',
-		'display:flex;align-items:center;justify-content:center',
-		'background:' + (isLight ? 'rgba(15,23,42,0.35)' : 'rgba(2,6,23,0.6)'),
-		'backdrop-filter:blur(2px)'
-	].join(';');
-
-	var card = document.createElement('div');
-	card.style.cssText = [
-		'width:min(92vw,460px)',
-		'border-radius:12px',
-		'padding:16px',
-		'font-family:Inter,system-ui,sans-serif',
-		'background:' + (isLight ? '#ffffff' : '#0f172a'),
-		'border:1px solid ' + (isLight ? 'rgba(148,163,184,0.5)' : 'rgba(148,163,184,0.25)'),
-		'box-shadow:0 18px 36px rgba(0,0,0,0.35)'
-	].join(';');
+	var shell = buildDialogShell('cbsCreateLayerDialog', 460, 10021);
+	var theme = shell.theme;
+	var overlay = shell.overlay;
+	var card = shell.card;
 
 	var title = document.createElement('div');
 	title.textContent = 'Yeni Katman Oluştur';
-	title.style.cssText = 'font-size:14px;font-weight:700;margin-bottom:8px;color:' + (isLight ? '#0f172a' : '#e2e8f0') + ';';
+	title.style.cssText = 'font-size:14px;font-weight:700;margin-bottom:8px;color:' + theme.title + ';';
 
 	var body = document.createElement('div');
 	body.textContent = 'Bu işlem sadece Ölçümler paneline katman ekler. Bilgisayarınızda klasör oluşturulmaz.';
-	body.style.cssText = 'font-size:12px;line-height:1.6;color:' + (isLight ? '#334155' : '#cbd5e1') + ';margin-bottom:12px;';
+	body.style.cssText = 'font-size:12px;line-height:1.6;color:' + theme.body + ';margin-bottom:12px;';
 
 	var label = document.createElement('label');
 	label.textContent = 'Katman Adı';
-	label.style.cssText = 'display:block;font-size:11px;font-weight:700;letter-spacing:0.2px;color:' + (isLight ? '#334155' : '#94a3b8') + ';margin-bottom:6px;';
+	label.style.cssText = 'display:block;font-size:11px;font-weight:700;letter-spacing:0.2px;color:' + theme.body + ';margin-bottom:6px;';
 
 	var input = document.createElement('input');
 	input.type = 'text';
@@ -5341,14 +5354,14 @@ function showCreateLayerDialog(onCreate) {
 		'outline:none',
 		'font-size:12px',
 		'font-weight:600',
-		'background:' + (isLight ? '#f8fafc' : '#1e293b'),
-		'color:' + (isLight ? '#0f172a' : '#e2e8f0'),
-		'border:1px solid ' + (isLight ? 'rgba(148,163,184,0.55)' : 'rgba(148,163,184,0.35)')
+		'background:' + theme.secondaryBg,
+		'color:' + theme.secondaryText,
+		'border:1px solid ' + theme.secondaryBorder
 	].join(';');
 
 	var helper = document.createElement('div');
 	helper.textContent = 'Katman adı otomatik olarak sistem formatına (BUYUK_HARF) çevrilir.';
-	helper.style.cssText = 'font-size:10px;line-height:1.5;color:' + (isLight ? '#64748b' : '#94a3b8') + ';margin-top:6px;';
+	helper.style.cssText = 'font-size:10px;line-height:1.5;color:' + theme.muted + ';margin-top:6px;';
 
 	var actions = document.createElement('div');
 	actions.style.cssText = 'display:flex;justify-content:flex-end;gap:8px;margin-top:14px;';
@@ -5356,9 +5369,9 @@ function showCreateLayerDialog(onCreate) {
 	var cancelBtn = document.createElement('button');
 	cancelBtn.textContent = 'Vazgeç';
 	cancelBtn.style.cssText = [
-		'border:1px solid ' + (isLight ? 'rgba(148,163,184,0.6)' : 'rgba(148,163,184,0.35)'),
-		'background:' + (isLight ? '#f8fafc' : '#1e293b'),
-		'color:' + (isLight ? '#334155' : '#e2e8f0'),
+		'border:1px solid ' + theme.secondaryBorder,
+		'background:' + theme.secondaryBg,
+		'color:' + theme.secondaryText,
 		'padding:7px 12px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer'
 	].join(';');
 
@@ -5366,7 +5379,7 @@ function showCreateLayerDialog(onCreate) {
 	createBtn.textContent = 'Katman Ekle';
 	createBtn.style.cssText = [
 		'border:1px solid rgba(20,184,166,0.45)',
-		'background:' + (isLight ? '#0f766e' : '#0d9488'),
+		'background:' + theme.accentBg,
 		'color:white',
 		'padding:7px 12px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer'
 	].join(';');
@@ -5393,7 +5406,7 @@ function showCreateLayerDialog(onCreate) {
 	}
 
 	input.addEventListener('input', function () {
-		input.style.borderColor = isLight ? 'rgba(148,163,184,0.55)' : 'rgba(148,163,184,0.35)';
+		input.style.borderColor = theme.secondaryBorder;
 	});
 	cancelBtn.addEventListener('click', closeDialog);
 	createBtn.addEventListener('click', submitDialog);
@@ -7617,7 +7630,38 @@ handler.setInputAction(function (movement) {
 			viewer.scene.requestRender();
 		}
 		snappedCartesian = null;
+		if (_rubberBandLine.show) { _rubberBandLine.show = false; viewer.scene.requestRender(); }
 		return;
+	}
+
+	// ─── RUBBER-BAND: THROTTLE'DAN BAĞIMSIZ — HER MOUSE_MOVE'DA GÜNCELLE ───
+	var _rbActiveEarly = (activeTool === 'btnDistance' ||
+		activeTool === 'btnArea' ||
+		activeTool === 'btnHeight') &&
+		clickPoints.length > 0;
+	if (_rbActiveEarly) {
+		var _rbEarlyCartesian = null;
+		try {
+			var _rbRayE = viewer.camera.getPickRay(movement.endPosition);
+			if (_rbRayE) {
+				var _globePtE = viewer.scene.globe.pick(_rbRayE, viewer.scene);
+				if (Cesium.defined(_globePtE)) {
+					_rbEarlyCartesian = _globePtE;
+				} else {
+					// Globe miss (3D model üzerinde) — pickPosition GPU fallback
+					var _scenePtE = viewer.scene.pickPosition(movement.endPosition);
+					if (Cesium.defined(_scenePtE)) _rbEarlyCartesian = _scenePtE;
+				}
+			}
+		} catch (e) { /* sessiz */ }
+		if (Cesium.defined(_rbEarlyCartesian)) {
+			_rubberEnd = _rbEarlyCartesian;
+			_rubberBandLine.show = true;
+			viewer.scene.requestRender();
+		}
+	} else if (_rubberBandLine.show) {
+		_rubberBandLine.show = false;
+		viewer.scene.requestRender();
 	}
 
 	// [OPT-1] Throttle: saniyede ~30 kez çalışsın (33ms aralık — CAD benzeri tepki)
@@ -7748,8 +7792,8 @@ handler.setInputAction(function (movement) {
 		snapIndicator.color = Cesium.Color.fromCssColorString('#ef4444').withAlpha(VEC_STYLE.snap.vertexAlpha);
 		snapIndicator.pixelSize = VEC_STYLE.snap.vertexSize;
 		snapIndicator.show = true;
-		// [P3] Sadece durum değişince render iste
-		if (_prevSnapState !== 'vertex') { _prevSnapState = 'vertex'; viewer.scene.requestRender(); }
+		_prevSnapState = 'vertex';
+		viewer.scene.requestRender();
 		_finishSnapPass();
 		return;
 	}
@@ -7856,57 +7900,21 @@ handler.setInputAction(function (movement) {
 		snapIndicator.color = Cesium.Color.fromCssColorString('#3b82f6').withAlpha(VEC_STYLE.snap.edgeAlpha);
 		snapIndicator.pixelSize = VEC_STYLE.snap.edgeSize;
 		snapIndicator.show = true;
-		// [P3] Sadece durum değişince render iste
-		if (_prevSnapState !== 'edge') { _prevSnapState = 'edge'; viewer.scene.requestRender(); }
+		_prevSnapState = 'edge';
+		viewer.scene.requestRender();
 	} else {
 		snappedCartesian = null;
 		if (snapIndicator && snapIndicator.show) {
 			snapIndicator.show = false;
-			// [P3] Sadece durum değişince render iste
-			if (_prevSnapState !== null) { _prevSnapState = null; viewer.scene.requestRender(); }
 		}
+		if (_prevSnapState !== null) { _prevSnapState = null; viewer.scene.requestRender(); }
 	}
 
-	// ─── RUBBER-BAND GÜNCELLE ───────────────────────────────────
-	// 33ms throttle içindeyiz.
-	// Not: requestRenderMode=true'da CallbackProperty değeri ancak render'da
-	// okunur. Rubber-band aktifken her MOUSE_MOVE'da requestRender şart.
-	var _rbActive = (activeTool === 'btnDistance' ||
-		activeTool === 'btnArea' ||
-		activeTool === 'btnHeight') &&
-		clickPoints.length > 0;
-	if (_rbActive) {
-		var _rbCartesian = snappedCartesian;
-		if (!Cesium.defined(_rbCartesian) && Cesium.defined(_rubberEnd)) {
-			_rbCartesian = _rubberEnd;
-		}
-		if (!Cesium.defined(_rbCartesian)) {
-			// P0: Tek try/catch zinciri — globe.pick önce (CPU matematik, GPU yok),
-			// başarısızsa pickPosition (GPU), asla ikisi aynı anda çalışmaz.
-			try {
-				var _rbRay = viewer.camera.getPickRay(movement.endPosition);
-				if (_rbRay) {
-					var _globePt = viewer.scene.globe.pick(_rbRay, viewer.scene);
-					if (Cesium.defined(_globePt)) {
-						_rbCartesian = _globePt;
-					} else {
-						// globe.pick miss: terrain kapalı veya model üzerinde — GPU fallback
-						if ((now - _lastRubberPickFallbackAt) >= RUBBER_PICK_FALLBACK_INTERVAL_MS) {
-							var _scenePt = viewer.scene.pickPosition(movement.endPosition);
-							_lastRubberPickFallbackAt = now;
-							if (Cesium.defined(_scenePt)) _rbCartesian = _scenePt;
-						}
-					}
-				}
-			} catch (e) { /* Context kaybı veya frustum hatası — sessizce atla */ }
-		}
-		if (Cesium.defined(_rbCartesian)) {
-			_rubberEnd = _rbCartesian;
-			_rubberBandLine.show = true;
-			viewer.scene.requestRender();
-		}
-	} else if (_rubberBandLine.show) {
-		_rubberBandLine.show = false;
+	// ─── RUBBER-BAND: Snap sonrası snap pozisyonuyla hassaslaştır ────────
+	// Ana rubber-band güncellemesi throttle öncesinde çalışıyor.
+	// Snap bulunduysa rubber-band ucunu snap noktasına kilitle (daha hassas).
+	if (_rbActiveEarly && Cesium.defined(snappedCartesian)) {
+		_rubberEnd = snappedCartesian;
 		viewer.scene.requestRender();
 	}
 

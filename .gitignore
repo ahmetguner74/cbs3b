@@ -1,54 +1,55 @@
-# Logo tasarım dosyaları
-logo/
-
-# Node bağımlılıkları
+# ── Bağımlılıklar ──
 node_modules/
+package-lock.json
 
-# Build çıktıları
+# ── Build çıktıları ──
 dist/
 
-# Lokal çalıştırma scripti
+# ── Büyük Veri (3D Tiles, Pointcloud) ──
+Scene/
+pointcloud/
+import/
+
+# ── CesiumJS (Vercel npm install ile çeker) ──
+app/Cesium/
+
+# ── Logo tasarım dosyaları ──
+logo/
+
+# ── Lokal scriptler ──
 serve.bat
-
-# CesiumJS kütüphanesi (17.4MB, git'e alınıyor — yerel loader için zorunlu)
-# app/Cesium/
-
-# Lokal araçlar
 Chrome_ile_Ac.bat
 
-# Sistem dosyaları
+# ── Sistem dosyaları ──
 Thumbs.db
 .DS_Store
 desktop.ini
 
-# IDE
+# ── IDE ──
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# Skills / AI
+# ── Skills / AI ──
 skills/
 .gemini/
 .agents/
 
-# Data ve alt klasörleri
-Data/
-Scene/Data/
-**/Data/
-**/Scene/Data/
-
-# ── Yedek / Geçici Dosyalar ──
+# ── Yedek / Geçici ──
 *.bak
 *.orig
 *_original.*
 _backup_editions/
-Scene/yedek/
 
-# ── Analiz / Debug ──
+# ── Debug / Diff ──
 app/analyze.js
 app/audit_results.txt
 app/config.js
+recent_changes.diff
+recent_changes_utf8.diff
+recent_main_changes.diff
 
-# ── Büyük Veri (Pointcloud) ──
-pointcloud/
+# ── Vercel / Env ──
+.vercel/
+.env*.local

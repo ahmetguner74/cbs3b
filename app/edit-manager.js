@@ -96,6 +96,7 @@ var EditManager = {
 
         var mType = this.activeMeasure.type;
         var isHeight = (mType === 'height');
+        var isXRayOn = (typeof _xrayActive !== 'undefined' && _xrayActive);
 
         // ── A) ESNEK GEOMETRİ — createStablePolyline + createStablePolygon (ENU Primitive) ──
         // Her editPoints değişiminde _rebuildEditLine() çağrılır (MOUSE_MOVE + drawEditGrips).
@@ -123,7 +124,7 @@ var EditManager = {
                 color: Cesium.Color.WHITE,
                 outlineColor: Cesium.Color.CYAN,
                 outlineWidth: 3,
-                disableDepthTestDistance: Number.POSITIVE_INFINITY
+                disableDepthTestDistance: isXRayOn ? Number.POSITIVE_INFINITY : 0
             });
             // Picking için düz obje id (LEFT_DOWN + RIGHT_CLICK tarafından okunur)
             pt.id = { _editGrip: true, _isVertex: true, _index: index };
@@ -150,7 +151,7 @@ var EditManager = {
                         color: Cesium.Color.CYAN.withAlpha(0.4),
                         outlineColor: Cesium.Color.WHITE.withAlpha(0.5),
                         outlineWidth: 2,
-                        disableDepthTestDistance: Number.POSITIVE_INFINITY
+                        disableDepthTestDistance: isXRayOn ? Number.POSITIVE_INFINITY : 0
                     });
                     pt.id = { _editGrip: true, _isMidpoint: true, _insertAfterIndex: i };
                     viewer.scene.primitives.add(col);
@@ -171,9 +172,7 @@ var EditManager = {
                 outlineColor: Cesium.Color.WHITE.withAlpha(0.4),
                 outlineWidth: 1,
                 // X-Ray açıkken görünür kalsın, kapalıyken derinlik testine dönsün.
-                disableDepthTestDistance: (typeof _xrayActive !== 'undefined' && _xrayActive)
-                    ? Number.POSITIVE_INFINITY
-                    : 0
+                disableDepthTestDistance: isXRayOn ? Number.POSITIVE_INFINITY : 0
             });
             viewer.scene.primitives.add(col);
             self._gripCols.push({ col: col, pt: null, type: 'pmid', index: 1 });
@@ -272,27 +271,27 @@ var EditManager = {
             this._editLinePrim = createStablePolyline(
                 drawPts, 4, Cesium.Color.CYAN.withAlpha(0.8)
             );
-            // X-Ray aktifse edit çizgisine uygula
-            if (this._editLinePrim && typeof _xrayActive !== 'undefined' && _xrayActive && typeof applyXRayToPrimitive === 'function') {
-                applyXRayToPrimitive(this._editLinePrim, true);
+            // Edit çizgisini mevcut X-Ray durumuyla senkronla
+            if (this._editLinePrim && typeof applyXRayToPrimitive === 'function') {
+                applyXRayToPrimitive(this._editLinePrim, (typeof _xrayActive !== 'undefined' && _xrayActive));
             }
             // Polygon dolgu da ENU Primitive (jitter yok)
             if (mType === 'polygon' && pts.length >= 3) {
                 this._editPolyPrim = createStablePolygon(
                     pts, Cesium.Color.CYAN.withAlpha(0.15)
                 );
-                // X-Ray aktifse edit polygon fill'e uygula
-                if (this._editPolyPrim && typeof _xrayActive !== 'undefined' && _xrayActive && typeof applyXRayToPrimitive === 'function') {
-                    applyXRayToPrimitive(this._editPolyPrim, true);
+                // Edit polygon fill'i mevcut X-Ray durumuyla senkronla
+                if (this._editPolyPrim && typeof applyXRayToPrimitive === 'function') {
+                    applyXRayToPrimitive(this._editPolyPrim, (typeof _xrayActive !== 'undefined' && _xrayActive));
                 }
             }
         } else if (mType === 'height' && pts.length >= 3) {
             this._editLinePrim = createStablePolyline(
                 [pts[0], pts[1], pts[2]], 3, Cesium.Color.CYAN.withAlpha(0.8)
             );
-            // X-Ray aktifse edit çizgisine uygula
-            if (this._editLinePrim && typeof _xrayActive !== 'undefined' && _xrayActive && typeof applyXRayToPrimitive === 'function') {
-                applyXRayToPrimitive(this._editLinePrim, true);
+            // Edit çizgisini mevcut X-Ray durumuyla senkronla
+            if (this._editLinePrim && typeof applyXRayToPrimitive === 'function') {
+                applyXRayToPrimitive(this._editLinePrim, (typeof _xrayActive !== 'undefined' && _xrayActive));
             }
         }
     },

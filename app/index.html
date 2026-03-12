@@ -151,7 +151,24 @@
 
 	<style>
 		/* ── THEME CSS VARIABLES ── */
+		:root {
+			--font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+			--font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+			--primary: #3B82F6;
+			--primary-hover: #60A5FA;
+			--accent: #14B8A6;
+			--success: #34d399;
+			--warning: #fbbf24;
+			--error: #f87171;
+			--info: #60a5fa;
+			--radius-sm: 8px;
+			--radius-md: 12px;
+			--radius-lg: 16px;
+		}
+
 		html.dark {
+			--primary: #3B82F6;
+			--primary-hover: #60A5FA;
 			--bg-app: #0b0f19;
 			--bg-surface: #111827;
 			--bg-elevated: #1e293b;
@@ -165,9 +182,20 @@
 			--glass-border: rgba(255, 255, 255, 0.06);
 			--shadow: rgba(0, 0, 0, 0.5);
 			--ref-control-bg: rgba(15, 23, 42, 0.4);
+			--modal-overlay-bg: rgba(2, 6, 23, 0.62);
+			--modal-card-bg: #0f172a;
+			--modal-card-border: rgba(148, 163, 184, 0.24);
+			--modal-card-shadow: 0 24px 64px rgba(2, 6, 23, 0.52);
+			--modal-title: #f8fafc;
+			--modal-text: #cbd5e1;
+			--modal-muted: #94a3b8;
+			--modal-close: #94a3b8;
+			--modal-close-hover-bg: rgba(148, 163, 184, 0.14);
 		}
 
 		html.light {
+			--primary: #3B82F6;
+			--primary-hover: #2563eb;
 			--bg-app: #f8fafc;
 			--bg-surface: #ffffff;
 			--bg-elevated: #f1f5f9;
@@ -181,6 +209,15 @@
 			--glass-border: rgba(0, 0, 0, 0.06);
 			--shadow: rgba(0, 0, 0, 0.08);
 			--ref-control-bg: rgba(226, 232, 240, 0.6);
+			--modal-overlay-bg: rgba(15, 23, 42, 0.36);
+			--modal-card-bg: #ffffff;
+			--modal-card-border: rgba(148, 163, 184, 0.36);
+			--modal-card-shadow: 0 18px 44px rgba(15, 23, 42, 0.18);
+			--modal-title: #0f172a;
+			--modal-text: #334155;
+			--modal-muted: #64748b;
+			--modal-close: #64748b;
+			--modal-close-hover-bg: rgba(148, 163, 184, 0.16);
 		}
 
 		.tabular-nums {
@@ -196,10 +233,90 @@
 			scrollbar-width: none;
 		}
 
+		body {
+			font-family: var(--font-sans);
+			background: var(--bg-app);
+			color: var(--text-primary);
+		}
+
 
 
 		.font-mono {
-			font-family: 'JetBrains Mono', monospace !important;
+			font-family: var(--font-mono) !important;
+		}
+
+		.cbs-modal-overlay {
+			position: fixed;
+			inset: 0;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			background: var(--modal-overlay-bg);
+			backdrop-filter: blur(4px);
+			-webkit-backdrop-filter: blur(4px);
+			transition: opacity 0.25s ease, visibility 0.25s ease;
+		}
+
+		.cbs-modal-overlay.hidden {
+			display: none;
+		}
+
+		.cbs-modal-card {
+			background: var(--modal-card-bg);
+			border: 1px solid var(--modal-card-border);
+			border-radius: var(--radius-lg);
+			box-shadow: var(--modal-card-shadow);
+			color: var(--modal-text);
+		}
+
+		.cbs-modal-card-lg {
+			width: min(92vw, 720px);
+		}
+
+		.cbs-modal-card-md {
+			width: min(90vw, 500px);
+		}
+
+		.cbs-modal-card-sm {
+			width: min(90vw, 420px);
+		}
+
+		.cbs-modal-header {
+			border-bottom: 1px solid var(--modal-card-border);
+			background: var(--bg-elevated);
+		}
+
+		.cbs-modal-title {
+			color: var(--modal-title);
+		}
+
+		.cbs-modal-close {
+			width: 32px;
+			height: 32px;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			border: none;
+			border-radius: 10px;
+			background: transparent;
+			color: var(--modal-close);
+			cursor: pointer;
+			transition: color 0.18s ease, background-color 0.18s ease;
+		}
+
+		.cbs-modal-close:hover {
+			color: var(--modal-title);
+			background: var(--modal-close-hover-bg);
+		}
+
+		.cbs-modal-footer {
+			border-top: 1px solid var(--modal-card-border);
+		}
+
+		html.light #feedbackModalCard {
+			background: var(--modal-card-bg) !important;
+			border-color: var(--modal-card-border) !important;
+			box-shadow: var(--modal-card-shadow) !important;
 		}
 
 		/* Alan Alt Menüsü (Floating Popup) */
@@ -2343,20 +2460,19 @@
 		})();
 	</script>
 	<!-- ═══ YARDIM & KISAYOLLAR MODALI ═══ -->
-	<div id="helpModal" class="fixed inset-0 z-[10000] flex items-center justify-center opacity-0 invisible"
-		style="pointer-events:none;transition:opacity 0.3s ease,visibility 0.3s ease;background:rgba(0,0,0,0.5);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)">
+	<div id="helpModal" class="cbs-modal-overlay fixed inset-0 z-[10000] flex items-center justify-center opacity-0 invisible"
+		style="pointer-events:none;">
 		<div id="helpModalInner"
-			class="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-[720px] max-w-[92vw] max-h-[90vh] overflow-hidden flex flex-col"
+			class="cbs-modal-card cbs-modal-card-lg bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl max-h-[90vh] overflow-hidden flex flex-col"
 			style="pointer-events:auto">
 			<!-- Header -->
-			<div class="flex items-center justify-between px-5 py-4 border-b border-slate-700/50">
+			<div class="cbs-modal-header flex items-center justify-between px-5 py-4 border-b border-slate-700/50">
 				<div class="flex items-center gap-3">
 					<span class="material-symbols-outlined text-[22px] text-primary">help_outline</span>
-					<h2 class="text-sm font-bold text-white uppercase tracking-wider">
+					<h2 class="cbs-modal-title text-sm font-bold text-white uppercase tracking-wider">
 						Yardım & Kısayollar</h2>
 				</div>
-				<button id="helpModalClose"
-					class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-700 transition-colors">
+				<button id="helpModalClose" class="cbs-modal-close">
 					<span class="material-symbols-outlined text-[20px]">close</span>
 				</button>
 			</div>
@@ -2881,7 +2997,7 @@
 				</div>
 			</div>
 			<!-- Footer -->
-			<div class="px-5 py-3 border-t border-slate-700/50 flex items-center justify-between">
+			<div class="cbs-modal-footer px-5 py-3 border-t border-slate-700/50 flex items-center justify-between">
 				<label class="flex items-center gap-2 cursor-pointer select-none group">
 					<input type="checkbox" id="helpDontShow"
 						style="width:16px;height:16px;accent-color:#14B8A6;cursor:pointer;border:2px solid #64748b;border-radius:3px;">
@@ -2978,16 +3094,17 @@
 
 	<!-- ═══ SÜRÜM GEÇMİŞİ MODAL ═══ -->
 	<div id="changelogModal"
-		class="hidden fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm transition-opacity">
+		class="cbs-modal-overlay hidden fixed inset-0 z-[10000] flex items-center justify-center transition-opacity">
 		<div
-			class="bg-slate-900 border border-slate-700 rounded-xl w-[500px] max-w-[90vw] max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+			id="changelogModalInner"
+			class="cbs-modal-card cbs-modal-card-md bg-slate-900 border border-slate-700 rounded-xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
 			<!-- Header -->
-			<div class="flex justify-between items-center px-5 py-4 border-b border-slate-800 bg-slate-800/50">
+			<div class="cbs-modal-header flex justify-between items-center px-5 py-4 border-b border-slate-800 bg-slate-800/50">
 				<div class="flex items-center gap-2">
 					<span class="material-symbols-outlined text-primary text-[20px]">history</span>
-					<h3 class="text-white font-bold text-sm tracking-wide uppercase">Sürüm Geçmişi</h3>
+					<h3 class="cbs-modal-title text-white font-bold text-sm tracking-wide uppercase">Sürüm Geçmişi</h3>
 				</div>
-				<button id="btnCloseChangelog" class="text-slate-400 hover:text-white transition-colors">
+				<button id="btnCloseChangelog" class="cbs-modal-close">
 					<span class="material-symbols-outlined text-[20px]">close</span>
 				</button>
 			</div>
@@ -3198,11 +3315,9 @@
 	</button>
 
 	<!-- Feedback Modal -->
-	<div id="feedbackModal" style="display:none; position:fixed; inset:0; z-index:9999;
-		background:rgba(0,0,0,0.6); backdrop-filter:blur(4px); align-items:center; justify-content:center;">
+	<div id="feedbackModal" class="cbs-modal-overlay" style="display:none;">
 
-		<div style="background:#1e293b; border:1px solid #334155; border-radius:16px; width:420px;
-			max-width:90vw; max-height:90vh; overflow-y:auto; padding:24px; box-shadow:0 25px 60px rgba(0,0,0,0.5);
+		<div id="feedbackModalCard" class="cbs-modal-card cbs-modal-card-sm" style="max-height:90vh; overflow-y:auto; padding:24px;
 			display:flex; flex-direction:column; gap:16px;">
 
 			<!-- Başlık -->

@@ -4,7 +4,7 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "tw:build": "node ./node_modules/tailwindcss/lib/cli.js -c ./tailwind.config.cjs -i ./app/tailwind.input.css -o ./app/tailwind.generated.css --minify",
+        "tw:build": "tailwindcss -c ./tailwind.config.cjs -i ./app/tailwind.input.css -o ./app/tailwind.generated.css --minify",
         "dev": "npm run tw:build && vite",
         "build": "npm run tw:build && vite build",
         "build:deploy": "npm run build && node scripts/build-deploy-package.mjs",
