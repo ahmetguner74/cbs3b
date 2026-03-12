@@ -6,7 +6,14 @@ package-lock.json
 dist/
 
 # ── Büyük Veri (3D Tiles, Pointcloud) ──
-Scene/
+# Scene: sadece seçili tile'lar git'te, geri kalanı ignore
+Scene/Data/*
+!Scene/Data/Tile_1/
+!Scene/Data/Tile_10/
+!Scene/Data/Tile_100/
+!Scene/Data/Tile_101/
+!Scene/Data/Tile_102/
+!Scene/Data/Tile_103/
 pointcloud/
 import/
 
