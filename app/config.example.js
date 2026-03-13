@@ -1,4 +1,6 @@
 window.CBS_CONFIG = {
+    // municipality (varsayılan) | public
+    appMode: 'municipality',
     cesiumIonToken: '',
     supabaseUrl: '',
     supabaseAnonKey: '',

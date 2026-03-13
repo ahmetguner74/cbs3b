@@ -12,13 +12,26 @@ window.__CBS_BOOTED__ = true;
 
 // 1. CESIUM ION TOKEN (app/config.js üzerinden okunur)
 var _appConfig = window.CBS_CONFIG || {};
+function _readAppMode(config) {
+	var safeConfig = config || {};
+	var modeFromConfig = ((safeConfig.appMode || '') + '').trim().toLowerCase();
+	if (!modeFromConfig && typeof safeConfig.isMunicipality === 'boolean') {
+		return safeConfig.isMunicipality ? 'municipality' : 'public';
+	}
+	if (modeFromConfig !== 'municipality' && modeFromConfig !== 'public') {
+		return 'municipality';
+	}
+	return modeFromConfig;
+}
+
+var _appMode = _readAppMode(_appConfig);
 var _ionToken = (_appConfig.cesiumIonToken || '').trim();
 if (_ionToken) {
 	Cesium.Ion.defaultAccessToken = _ionToken;
 } else {
 	console.warn('[CBS] Cesium Ion token tanımlı değil (CBS_CONFIG.cesiumIonToken).');
 }
-var _isMunicipality = true;
+var _isMunicipality = _appMode === 'municipality';
 
 function _readRenderBufferMode() {
 	var modeFromConfig = ((_appConfig.preserveDrawingBufferMode || 'precision') + '').toLowerCase();
@@ -217,7 +230,7 @@ if (typeof proj4 !== 'undefined' && !proj4.defs('EPSG:5254')) {
 	proj4.defs("EPSG:5254", "+proj=tmerc +lat_0=0 +lon_0=30 +k=1 +x_0=500000 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs");
 }
 
-// HTTP modunda Ion World Terrain'i asenkron yükle (belediye sürümünde Ion kullanılmaz)
+// HTTP modunda Ion World Terrain'i asenkron yükle (yalnızca public mod)
 if (!isLocalFile && !_isMunicipality) {
 	Cesium.createWorldTerrainAsync().then(function (terrain) {
 		viewer.terrainProvider = terrain;
@@ -301,8 +314,9 @@ var streetLayer = viewer.imageryLayers.addImageryProvider(new Cesium.OpenStreetM
 streetLayer.show = true; // Başlangıçta sokak katmanı açık
 if (satelliteLayer) satelliteLayer.show = false; // Uydu katmanı başlangıçta kapalı
 
-// ═══ EDITION: Sabit Belediye Sürümü ═══
-// Üstte halledildi. Müşteri her zaman sokak haritası ile başlatmak istiyor.
+// ═══ PROFIL: app/config.js -> CBS_CONFIG.appMode ═══
+// municipality: OSM ile başlar, Ion terrain kapalı.
+// public: token varsa Ion terrain devreye alınabilir.
 
 // YAKLAŞTIRMA HASSASİYETİ KESİN ÇÖZÜMÜ (Mouse Wheel Zoom)
 // zoomFactor her zaman istenen sonucu vermediği için doğrudan fare tekerleği sinyalini zayıflatıyoruz.
@@ -576,8 +590,18 @@ var ClipBoxManager = {
 	_applySliceInteractionLock: function (enabled) {
 		var controller = viewer && viewer.scene && viewer.scene.screenSpaceCameraController;
 		if (!controller) return;
+		var isOrthoCamera = !!(viewer && viewer.camera && viewer.camera.frustum instanceof Cesium.OrthographicFrustum);
 
 		if (enabled) {
+			if (!isOrthoCamera) {
+				if (this._slicePrevControllerState) {
+					controller.enableTilt = this._slicePrevControllerState.enableTilt;
+					controller.enableLook = this._slicePrevControllerState.enableLook;
+					this._slicePrevControllerState = null;
+				}
+				return;
+			}
+
 			if (!this._slicePrevControllerState) {
 				this._slicePrevControllerState = {
 					enableTilt: controller.enableTilt,
@@ -821,7 +845,7 @@ var ClipBoxManager = {
 
 		if (this._sliceMode === 'plane') {
 			var planeOffset = Number(this._planeOffset || 0);
-			var sliceDistance = -planeOffset;
+			var sliceDistance = planeOffset;
 			var edgeWidth = Math.max(1.5, Math.min(20, Number(this._sliceEdgeWidth || 9)));
 			var edgeRatio = (edgeWidth - 1.5) / (20 - 1.5);
 			var edgeAlpha = Math.max(0.35, Math.min(1.0, 0.35 + edgeRatio * 0.65));
@@ -830,23 +854,26 @@ var ClipBoxManager = {
 			try {
 				var existingPlane = tileset.clippingPlanes;
 				if (existingPlane && !existingPlane.isDestroyed() && existingPlane.length === 1) {
-					existingPlane.modelMatrix = Cesium.Matrix4.clone(
-						this._clipModelMatrix,
-						existingPlane.modelMatrix || new Cesium.Matrix4()
-					);
-					existingPlane.get(0).distance = sliceDistance;
-					existingPlane.edgeColor = edgeColor;
-					existingPlane.edgeWidth = edgeWidth;
-					existingPlane.unionClippingRegions = false;
-					existingPlane.enabled = true;
-					return;
+					var existingSingle = existingPlane.get(0);
+					if (existingSingle && existingSingle.normal && existingSingle.normal.z < -0.5) {
+						existingPlane.modelMatrix = Cesium.Matrix4.clone(
+							this._clipModelMatrix,
+							existingPlane.modelMatrix || new Cesium.Matrix4()
+						);
+						existingSingle.distance = sliceDistance;
+						existingPlane.edgeColor = edgeColor;
+						existingPlane.edgeWidth = edgeWidth;
+						existingPlane.unionClippingRegions = false;
+						existingPlane.enabled = true;
+						return;
+					}
 				}
 			} catch (e) { /* collection bozuksa, aşağıda yeniden oluştur */ }
 
 			tileset.clippingPlanes = new Cesium.ClippingPlaneCollection({
 				planes: [
-					// Negatif tarafta kalan (düzlemin altı) geometri kesilir.
-					new Cesium.ClippingPlane(new Cesium.Cartesian3(0, 0, 1), sliceDistance)
+					// Negatif tarafta kalan (düzlemin üstü) geometri kesilir.
+					new Cesium.ClippingPlane(new Cesium.Cartesian3(0, 0, -1), sliceDistance)
 				],
 				unionClippingRegions: false,
 				edgeColor: edgeColor,
@@ -1254,7 +1281,9 @@ var ClipBoxManager = {
 	},
 
 	_updatePlaneOffset: function (offsetMeters) {
-		this._planeOffset = Number(offsetMeters || 0);
+		var nextOffset = Number(offsetMeters);
+		if (!isFinite(nextOffset)) nextOffset = 0;
+		this._planeOffset = Math.max(-120, Math.min(120, Math.round(nextOffset * 10) / 10));
 		updateSliceMiniOffsetUi(this._planeOffset);
 		syncSingleSlicePanelMeta();
 		if (!this.active || !this._worldCenter) return;
@@ -1580,7 +1609,9 @@ var ClipBoxManager = {
 	function stepOffset(dir) {
 		if (!slider || !window.ClipBoxManager) return;
 		var currentVal = parseFloat(slider.value) || 0;
-		var nextVal = Math.max(-120, Math.min(120, currentVal + (dir > 0 ? 1 : -1)));
+		var step = 0.1;
+		var nextVal = Math.max(-120, Math.min(120, currentVal + (dir > 0 ? step : -step)));
+		nextVal = Math.round(nextVal * 10) / 10;
 		updateSliceMiniOffsetUi(nextVal);
 		ClipBoxManager._updatePlaneOffset(nextVal);
 	}
@@ -3537,14 +3568,16 @@ function flushClipMiniPreview(commitEntities) {
 function updateSliceMiniOffsetUi(rawValue) {
 	var slider = document.getElementById('sliceMiniOffset');
 	if (!slider) return;
-	var safeValue = Number(rawValue || 0);
+	var safeValue = Number(rawValue);
+	if (!isFinite(safeValue)) safeValue = 0;
+	safeValue = Math.round(safeValue * 10) / 10;
 	var min = Number(slider.min || -120);
 	var max = Number(slider.max || 120);
 	var progress = max === min ? 0 : ((safeValue - min) / (max - min)) * 100;
 	slider.value = safeValue;
 	slider.style.setProperty('--clip-progress', Math.max(0, Math.min(100, progress)) + '%');
 	var label = document.getElementById('sliceMiniOffsetVal');
-	if (label) label.textContent = safeValue + 'm';
+	if (label) label.textContent = safeValue.toFixed(1) + 'm';
 }
 
 function updateSliceMiniVisibilityUi(rawValue) {

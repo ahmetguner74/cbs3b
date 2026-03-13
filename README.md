@@ -1,67 +1,77 @@
-# 🏙️ CBS 3D Şehir Modeli
+# CBS 3D Sehir Modeli
 
-Belediyeler için geliştirilmiş, **CesiumJS** tabanlı 3D şehir görselleştirme ve coğrafi bilgi sistemi (CBS) uygulaması.
+Bursa Buyuksehir Belediyesi icin gelistirilen, CesiumJS tabanli 3D sehir modeli ve CBS uygulamasi.
 
-![CBS 3D](https://img.shields.io/badge/Platform-Web-blue) ![CesiumJS](https://img.shields.io/badge/Engine-CesiumJS-green) ![Status](https://img.shields.io/badge/Status-Demo-orange)
+## Proje Durumu
 
-## ✨ Özellikler
+- Ana hat: tek belediye surumu
+- Canliya cikis: belediye paketi tek akis
+- Demo/public: opsiyonel, zorunlu release hatti degil
 
-- 🗺️ **3D Şehir Modeli** — 3D Tiles formatında şehir görselleştirme
-- 📏 **Ölçüm Araçları** — Mesafe, alan' yüksekli ve nokta ölçümü
-- 📐 **Snap Özelliği** — Mevcut noktalara ve çizgilere otomatik snap
-- 🎨 **Tema Desteği** — Açık ve koyu tema
-- 📱 **Responsive Tasarım** — Masaüstü ve mobil uyumlu
-- 📊 **Ölçüm Grupları** — Ölçümleri kategorilere ayırma ve yönetme
+Detayli yayin kontrol adimlari icin bkz. [DEPLOY_ONCESI_KONTROL.md](DEPLOY_ONCESI_KONTROL.md).
 
-## 🚀 Başlarken
+## Temel Ozellikler
 
-### Gereksinimler
+- 3D Tiles sehir modeli goruntuleme
+- Mesafe, alan, yukseklik ve koordinat olcum araclari
+- Snap ve cizim yardimlari
+- GeoJSON ve DXF ice aktarma
+- GeoJSON disa aktarma
+- Admin paneli ve telemetry izleme
+- Mobil uyumlu kullanim
 
-- Modern bir web tarayıcı (Chrome, Firefox, Edge)
-- 3D Tiles formatında şehir modeli verisi
-- Web sunucusu (lokal geliştirme için)
+## Gelistirme Ortami Kurulumu
 
-### Kurulum
+Gereksinimler:
 
-1. Bu repo'yu klonlayın:
-   ```bash
-   git clone https://github.com/ahmetguner74/cbs-3d-sehir-modeli.git
-   ```
+- Node.js 18+
+- npm 9+
 
-2. CesiumJS'i `app/Cesium/` dizinine yerleştirin veya CDN kullanın
+Adimlar:
 
-3. 3D Tiles verilerinizi `Scene/` dizinine kopyalayın
+1. Bagimliliklari yukleyin.
 
-4. `Chrome_ile_Ac.bat` ile veya bir web sunucusu üzerinden açın
-
-## 📁 Proje Yapısı
-
-```
-├── app/
-│   ├── index.html          # Ana uygulama sayfası
-│   ├── main.js             # Uygulama mantığı
-│   ├── design-system.html  # Tasarım sistemi referansı
-│   ├── cbs-logo.png        # CBS logosu
-│   └── Cesium/             # CesiumJS kütüphanesi (gitignore)
-├── Scene/                  # 3D Tiles verileri (gitignore)
-├── logo/                   # Logo dosyaları
-└── Chrome_ile_Ac.bat       # Hızlı başlatma scripti
+```bash
+npm install
 ```
 
-## 🛠️ Teknolojiler
+2. [app/config.example.js](app/config.example.js) dosyasini [app/config.js](app/config.js) olarak kopyalayin ve belediye ortami bilgilerini doldurun.
+3. Gelistirme sunucusunu baslatin.
 
-- **CesiumJS** — 3D harita motoru
-- **HTML5 / CSS3 / JavaScript** — Frontend
-- **3D Tiles** — Şehir modeli formatı
+```bash
+npm run dev
+```
 
-## 📄 Lisans
+4. Tarayici acildiginda kok [index.html](index.html) otomatik olarak [app/index.html](app/index.html) sayfasina yonlendirir.
 
-Bu proje şu an geliştirme aşamasındadır.
+## Komutlar
 
-## 👤 Geliştirici
+| Komut | Aciklama |
+|---|---|
+| `npm run dev` | Tailwind derleyip Vite gelistirme sunucusunu acar |
+| `npm run build` | Uretim build'i olusturur |
+| `npm run build:deploy` | Standart belediye deploy paketini uretir |
+| `npm run build:deploy:dry` | Kopyalama yapmadan deploy paketini dogrular |
+| `npm run build:deploy:full` | Buyuk veri dahil deploy paketi uretir |
+| `npm run preview` | Uretim build ciktisini lokalde onizler |
 
-**Ahmet Güner** — 3D Model ve CBS Uzmanı
+## Tek Belediye Deploy Ozeti
 
----
+1. [app/index.html](app/index.html) icindeki versiyonu guncelleyin.
+2. Gerekliyse [package.json](package.json) versiyonunu ayni surume cekin.
+3. `npm run build:deploy` calistirin.
+4. `dist/` altindaki paketi belediye sunucusuna kopyalayin.
+5. Fonksiyon ve telemetry kontrollerini tamamlayin.
 
-> 🏗️ Bu uygulama, belediyelerin CBS altyapısını güçlendirmek amacıyla geliştirilmektedir.
+Tum kontrol listesi: [DEPLOY_ONCESI_KONTROL.md](DEPLOY_ONCESI_KONTROL.md).
+
+## Dizin Notlari
+
+- [dist](dist) build cikti dizinidir, deploy kaynagidir.
+- [scripts/build-deploy-package.mjs](scripts/build-deploy-package.mjs) deploy paketini uretir.
+- [app/Cesium](app/Cesium), [import](import), [pointcloud](pointcloud), [logo](logo) gibi buyuk veya ortama bagli yollar `.gitignore` kapsamindadir.
+- [Scene/Data](Scene/Data) varsayilan deploy modunda pakete dahil edilmez.
+
+## Operasyon Notu
+
+Kapali ag ortami kullaniliyorsa gerekli alan adlari ve allowlist listesi [DEPLOY_ONCESI_KONTROL.md](DEPLOY_ONCESI_KONTROL.md) icinde yer alir.
