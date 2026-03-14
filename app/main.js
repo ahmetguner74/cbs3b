@@ -3490,7 +3490,11 @@ function getGroupItemCount(group) {
 	if (group && group.isClipBoxRoot) {
 		return savedClipBoxes.filter(function (clip) { return clip.groupId === group.id; }).length;
 	}
-	return measurements.filter(function (m) { return m.groupId === group.id; }).length;
+	var groupItems = measurements.filter(function (m) { return m.groupId === group.id; });
+	if (isFloorWorkModeEnabled() && group && !group.isReferans) {
+		groupItems = groupItems.filter(function (m) { return isMeasurementVisibleInFloorWorkMode(m); });
+	}
+	return groupItems.length;
 }
 
 function getClipBoxSummary(clip) {
@@ -5319,6 +5323,7 @@ function renderList(forceNow) {
 		renderGroupItem(container, group);
 	});
 
+	applyFloorWorkVisibility(false);
 	updateActiveGroupLabel();
 	syncClipMiniActionButtons();
 }
@@ -5395,7 +5400,8 @@ function renderGroupItem(container, group) {
 			if (m.groupId === group.id) {
 				m.checked = group.checked;
 				if (!m.isBatched) {
-					m.entities.forEach(function (ent) { ent.show = group.checked; if (ent.label) ent.label.show = group.checked; });
+					var shouldShow = group.checked && isMeasurementVisibleInFloorWorkMode(m);
+					m.entities.forEach(function (ent) { ent.show = shouldShow; if (ent.label) ent.label.show = shouldShow; });
 				}
 			}
 		});
@@ -5686,6 +5692,9 @@ function renderGroupItem(container, group) {
 	content.className = 'folder-content';
 
 	var groupMeasures = measurements.filter(function (m) { return m.groupId === group.id; }).reverse();
+	if (isFloorWorkModeEnabled() && !group.isReferans) {
+		groupMeasures = groupMeasures.filter(function (m) { return isMeasurementVisibleInFloorWorkMode(m); });
+	}
 	if (groupMeasures.length === 0) {
 		var empty = document.createElement('div');
 		empty.className = 'text-[9px] text-slate-600 italic py-1';
@@ -5720,7 +5729,8 @@ function renderGroupItem(container, group) {
 		chk.onclick = function (e) {
 			e.stopPropagation();
 			m.checked = chk.checked;
-			m.entities.forEach(function (ent) { ent.show = chk.checked; if (ent.label) ent.label.show = chk.checked; });
+			var shouldShow = chk.checked && isMeasurementVisibleInFloorWorkMode(m);
+			m.entities.forEach(function (ent) { ent.show = shouldShow; if (ent.label) ent.label.show = shouldShow; });
 			if (chk.checked) highlightMeasurement(m.id);
 			else if (activeHighlightId === m.id) highlightMeasurement(m.id);
 			viewer.scene.requestRender();
@@ -6091,6 +6101,159 @@ var infoPanelState = {
 
 var infoPanelDockSyncTimer = null;
 
+var floorWorkHookRuntime = null;
+
+function ensureFloorWorkHookRuntime() {
+	if (floorWorkHookRuntime) return floorWorkHookRuntime;
+	if (typeof window === 'undefined') return null;
+	if (typeof window.CBSFloorWorkHookFactory !== 'function') return null;
+
+	floorWorkHookRuntime = window.CBSFloorWorkHookFactory({
+		getGroups: function () { return groups; },
+		getMeasurements: function () { return measurements; },
+		getInfoPanelState: function () { return infoPanelState; },
+		getActiveHighlightId: function () { return activeHighlightId; },
+		setActiveHighlightId: function (nextId) { activeHighlightId = nextId; },
+		isRefGroup: isRefGroup,
+		getInfoPanelKadastroProps: getInfoPanelKadastroProps,
+		clearBatchedSelectionOverlay: clearBatchedSelectionOverlay,
+		requestRender: function () {
+			if (viewer && viewer.scene && typeof viewer.scene.requestRender === 'function') {
+				viewer.scene.requestRender();
+			}
+		},
+		renderList: function () { renderList(); },
+		syncInfoPanelNoteToResultBar: function (text, tone) {
+			if (typeof syncInfoPanelNoteToResultBar === 'function') syncInfoPanelNoteToResultBar(text, tone);
+		},
+		deleteMeasurementById: function (id) {
+			if (typeof deleteMeasurement === 'function') deleteMeasurement(id);
+		},
+		startEditById: function (id) {
+			if (typeof EditManager !== 'undefined' && EditManager && typeof EditManager.startEdit === 'function') {
+				EditManager.startEdit(id);
+			}
+		},
+		saveChanges: function () {
+			if (typeof debouncedSave === 'function') debouncedSave();
+		}
+	});
+
+	if (floorWorkHookRuntime && floorWorkHookRuntime.publicApi) {
+		window.CBSFloorWorkHook = floorWorkHookRuntime.publicApi;
+	}
+
+	return floorWorkHookRuntime;
+}
+
+function isFloorWorkFeatureEnabled() {
+	var runtime = ensureFloorWorkHookRuntime();
+	if (!runtime || typeof runtime.isFeatureEnabled !== 'function') return true;
+	return runtime.isFeatureEnabled();
+}
+
+function isFloorWorkModeEnabled() {
+	var runtime = ensureFloorWorkHookRuntime();
+	if (!runtime || typeof runtime.isModeEnabled !== 'function') return false;
+	return runtime.isModeEnabled();
+}
+
+function parseFloorKeyNumber(floorKey) {
+	var runtime = ensureFloorWorkHookRuntime();
+	if (!runtime || typeof runtime.parseFloorKeyNumber !== 'function') return null;
+	return runtime.parseFloorKeyNumber(floorKey);
+}
+
+function getMeasurementFloorKey(measurement) {
+	var runtime = ensureFloorWorkHookRuntime();
+	if (!runtime || typeof runtime.getMeasurementFloorKey !== 'function') return '';
+	return runtime.getMeasurementFloorKey(measurement);
+}
+
+function getMeasurementBuildingKeyForFloorWork(measurement) {
+	var runtime = ensureFloorWorkHookRuntime();
+	if (!runtime || typeof runtime.getMeasurementBuildingKey !== 'function') return '';
+	return runtime.getMeasurementBuildingKey(measurement);
+}
+
+function isMeasurementVisibleInFloorWorkMode(measurement) {
+	var runtime = ensureFloorWorkHookRuntime();
+	if (!runtime || typeof runtime.isMeasurementVisibleInMode !== 'function') return true;
+	return runtime.isMeasurementVisibleInMode(measurement);
+}
+
+function applyFloorWorkVisibility(requestRender) {
+	var runtime = ensureFloorWorkHookRuntime();
+	if (!runtime || typeof runtime.applyVisibility !== 'function') return;
+	runtime.applyVisibility(!!requestRender);
+}
+
+function buildNewPolygonPropertiesForFloorWork() {
+	var runtime = ensureFloorWorkHookRuntime();
+	if (!runtime || typeof runtime.buildNewPolygonProperties !== 'function') return {};
+	return runtime.buildNewPolygonProperties();
+}
+
+function updateFloorWorkSummaryUi() {
+	var runtime = ensureFloorWorkHookRuntime();
+	if (!runtime || typeof runtime.updateSummaryUi !== 'function') return;
+	runtime.updateSummaryUi();
+}
+
+function bindFloorWorkControls() {
+	var runtime = ensureFloorWorkHookRuntime();
+	if (!runtime || typeof runtime.bindControls !== 'function') return;
+	runtime.bindControls();
+}
+
+function getFloorWorkStateSnapshot() {
+	var runtime = ensureFloorWorkHookRuntime();
+	if (!runtime || typeof runtime.getStateSnapshot !== 'function') {
+		return {
+			featureEnabled: true,
+			modeEnabled: false,
+			activeFloorKey: '',
+			baseFloorKey: '0',
+			buildingKey: ''
+		};
+	}
+	return runtime.getStateSnapshot();
+}
+
+function setFloorWorkFeatureEnabled(nextEnabled, silent) {
+	var runtime = ensureFloorWorkHookRuntime();
+	if (!runtime || typeof runtime.setFeatureEnabled !== 'function') return getFloorWorkStateSnapshot();
+	return runtime.setFeatureEnabled(nextEnabled, !!silent);
+}
+
+function notifyFloorWorkPolygonCreated(measurement) {
+	var runtime = ensureFloorWorkHookRuntime();
+	if (!runtime || typeof runtime.onPolygonCreated !== 'function') return;
+	runtime.onPolygonCreated(measurement);
+}
+
+function notifyFloorWorkMeasurementSaved(measurement) {
+	var runtime = ensureFloorWorkHookRuntime();
+	if (!runtime || typeof runtime.onMeasurementSaved !== 'function') return;
+	runtime.onMeasurementSaved(measurement);
+}
+
+async function requestFloorWorkSaveConfirmation(measurement, previousProperties) {
+	var runtime = ensureFloorWorkHookRuntime();
+	if (!runtime || typeof runtime.confirmSaveSummary !== 'function') return true;
+	try {
+		var result = runtime.confirmSaveSummary(measurement, previousProperties || null);
+		if (result && typeof result.then === 'function') {
+			return !!(await result);
+		}
+		return result !== false;
+	} catch (_err) {
+		return true;
+	}
+}
+
+bindFloorWorkControls();
+
 function isInfoPanelVisible() {
 	var panel = document.getElementById('infoPanel');
 	if (!panel) return false;
@@ -6430,14 +6593,31 @@ function openInfoPanel(m) {
 	var durumSelect = document.getElementById('infoDurum');
 	var kullanimSelect = document.getElementById('infoKullanim');
 	var notlarInput = document.getElementById('infoNotlar');
+	var workKatInput = document.getElementById('infoWorkKat');
+	var workBuildingInput = document.getElementById('infoWorkBuilding');
 
-	if (katInput) katInput.value = props.kat != null ? props.kat : '';
+	var katValue = '';
+	if (props.kat_adi != null && String(props.kat_adi).trim() !== '') {
+		katValue = String(props.kat_adi).trim();
+	} else if (props.kat != null) {
+		katValue = String(props.kat);
+	}
+	if (katInput) katInput.value = katValue;
 	if (yilInput) yilInput.value = props.yapim_yili != null ? props.yapim_yili : '';
 	if (cikmaTipInput) cikmaTipInput.value = props.cikma_tipi || '';
 	if (tasiyiciSelect) tasiyiciSelect.value = props.tasiyici_sistem || '';
 	if (durumSelect) durumSelect.value = props.yapi_durumu || '';
 	if (kullanimSelect) kullanimSelect.value = props.kullanim_amaci || '';
 	if (notlarInput) notlarInput.value = props.notlar || '';
+	if (workKatInput && !isFloorWorkModeEnabled()) {
+		var floorKeyFromMeasurement = getMeasurementFloorKey(m);
+		if (floorKeyFromMeasurement) workKatInput.value = floorKeyFromMeasurement;
+	}
+	if (workBuildingInput && !isFloorWorkModeEnabled()) {
+		var buildingKeyFromMeasurement = getMeasurementBuildingKeyForFloorWork(m);
+		if (buildingKeyFromMeasurement) workBuildingInput.value = buildingKeyFromMeasurement;
+	}
+	updateFloorWorkSummaryUi();
 
 	// ── Kaydet butonu: measurement ID'yi data attribute olarak sakla ──
 	var saveBtn = document.getElementById('btnSaveInfo');
@@ -6490,7 +6670,7 @@ function openInfoPanel(m) {
 		saveBtn.setAttribute('data-default-html', saveBtn.innerHTML);
 	}
 
-	saveBtn.addEventListener('click', function () {
+	saveBtn.addEventListener('click', async function () {
 		if (saveBtn.getAttribute('data-readonly') === 'true') {
 			syncInfoPanelNoteToResultBar('Referans veriler salt okunur, kaydetme kapalıdır.', 'warn');
 			return;
@@ -6504,6 +6684,7 @@ function openInfoPanel(m) {
 
 		// Properties nesnesini oku — yoksa oluştur
 		if (!m.properties) m.properties = {};
+		var previousProperties = Object.assign({}, m.properties);
 
 		// Kadastro
 		var adaInput = document.getElementById('infoAda');
@@ -6522,7 +6703,11 @@ function openInfoPanel(m) {
 		var kullanimSelect = document.getElementById('infoKullanim');
 		var notlarInput = document.getElementById('infoNotlar');
 
-		if (katInput) m.properties.kat = katInput.value.trim() === '' ? null : parseInt(katInput.value, 10);
+		if (katInput) {
+			var katRaw = katInput.value.trim();
+			m.properties.kat_adi = katRaw;
+			m.properties.kat = katRaw === '' ? null : parseFloorKeyNumber(katRaw);
+		}
 		if (yilInput) m.properties.yapim_yili = yilInput.value.trim() === '' ? null : parseInt(yilInput.value, 10);
 		if (cikmaTipInput) m.properties.cikma_tipi = cikmaTipInput.value.trim();
 		if (tasiyiciSelect) m.properties.tasiyici_sistem = tasiyiciSelect.value;
@@ -6530,9 +6715,24 @@ function openInfoPanel(m) {
 		if (kullanimSelect) m.properties.kullanim_amaci = kullanimSelect.value;
 		if (notlarInput) m.properties.notlar = notlarInput.value.trim();
 
+		var canSave = await requestFloorWorkSaveConfirmation(m, previousProperties);
+		if (!canSave) {
+			m.properties = previousProperties;
+			notifyFloorWorkMeasurementSaved(m);
+			updateFloorWorkSummaryUi();
+			syncInfoPanelNoteToResultBar('Kaydet islemi iptal edildi. Degisiklikler uygulanmadi.', 'warn');
+			return;
+		}
+
+		notifyFloorWorkMeasurementSaved(m);
+
 		// Kaydet
 		debouncedSave();
 		updateInfoPanelDirtyState(true);
+		if (isFloorWorkModeEnabled()) {
+			renderList();
+			applyFloorWorkVisibility(true);
+		}
 
 		// Görsel geri bildirim
 		var defaultHtml = saveBtn.getAttribute('data-default-html') || saveBtn.innerHTML;
@@ -7108,7 +7308,8 @@ document.getElementById('selectAllToggle').addEventListener('click', function ()
 	groups.forEach(function (g) { g.checked = _allVisible; });
 	measurements.forEach(function (m) {
 		m.checked = _allVisible;
-		m.entities.forEach(function (ent) { ent.show = _allVisible; if (ent.label) ent.label.show = _allVisible; });
+		var shouldShow = _allVisible && isMeasurementVisibleInFloorWorkMode(m);
+		m.entities.forEach(function (ent) { ent.show = shouldShow; if (ent.label) ent.label.show = shouldShow; });
 	});
 	if (!_allVisible) {
 		activeHighlightId = null;
@@ -8909,8 +9110,9 @@ handler.setInputAction(function () {
 			points: clickPoints.slice(),
 			entities: tempEntities.slice(),
 			checked: true,
-			properties: {}
+			properties: buildNewPolygonPropertiesForFloorWork()
 		});
+		notifyFloorWorkPolygonCreated(measurements[measurements.length - 1]);
 		// X-Ray aktifse yeni ölçüme uygula
 		if (_xrayActive) {
 			measurements[measurements.length - 1].entities.forEach(function (ent) {
@@ -10433,7 +10635,7 @@ document.getElementById('btnExportExcel').addEventListener('click', function () 
 			'Parsel No':        p.parsel_no || '',
 			'Tip / Cins':       p.cins      || '',
 			// Kullanıcı verileri
-			'Kat':              p.kat       != null ? p.kat       : '',
+			'Kat':              (p.kat_adi != null && String(p.kat_adi).trim() !== '') ? p.kat_adi : (p.kat != null ? p.kat : ''),
 			'Yapım Yılı':       p.yapim_yili != null ? p.yapim_yili : '',
 			'Çıkma Tipi':       p.cikma_tipi    || '',
 			'Taşıyıcı Sistem':  p.tasiyici_sistem || '',

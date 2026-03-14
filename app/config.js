@@ -9,5 +9,6 @@ window.CBS_CONFIG = {
     monitoringVerboseConsole: false,
     monitoringInteractionDebounceMs: 900,
     monitoringHeartbeatMs: 25000,
-    preserveDrawingBufferMode: 'precision'
+    preserveDrawingBufferMode: 'precision',
+    floorWorkEnabled: true
 };

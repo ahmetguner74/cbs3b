@@ -21,3 +21,20 @@ Public/demo sürüm zorunlu release hattı değil, opsiyonel.
 ## Teknik Borç
 - [ ] **Versiyon Senkronizasyonu** — `index.html` cache-busting parametrelerini `package.json` ile eşitle
 - [ ] **main.js Modülerleştirme** — 10K satırlık monolitik yapıyı modüllere ayır (ölçüm, kamera, UI, import/export)
+
+## Kentsel Donusum — Kat Odakli Cizim Plani (Basladi)
+
+Kural guncellemesi (Madde 5):
+- [x] Hangi kat ciziliyorsa sadece o katin alanlari gosterilecek.
+- [x] Zemin kat referansi islem katina tasinmis hesap mantiginda kullanilacak.
+- [x] Kullanici sadece islem yaptigi kati gorecek.
+
+Uygulama fazlari:
+- [x] Faz 1: Kat odak modu UI (islem kati, zemin kati, kati goster, tum katlar)
+- [x] Faz 1: Aktif kat gorunurluk filtresi (liste + sahne)
+- [x] Faz 1: Kat bazli alan ozeti (zemin + ek = kat toplami)
+- [x] Faz 1: Yeni polygonlari aktif kata otomatik baglama
+- [x] Faz 2: Onizleme popup 2D duzenleme (aktif kat odakli)
+- [x] Faz 2: Katlar arasi gecis akisi ve kat adi yonetimi iyilestirme
+- [x] Faz 3: Bina bazli kesin iliski (ayrik parca havuzu, bina/kat elle baglama)
+- [x] Faz 3: Kaydet oncesi kat ve bina toplam alan ozetinin final UX'i

@@ -52,7 +52,7 @@
 	<script>
 		(function () {
 			// ── CACHE BUSTING: Her yeni deploy'dan önce bu numarayı bir artır ──
-			var VER = '0.9.3.1';
+			var VER = '0.9.3.2';
 
 			// Cesium: yerelde varsa yerel, yoksa CDN'den yükle
 			var cesiumSrc = 'Cesium/Cesium.js';
@@ -78,22 +78,26 @@
 				if (document.readyState === 'loading') {
 					document.addEventListener('DOMContentLoaded', function () {
 						loadScript('cbs-storage.js?v=' + VER, function () {
-							loadScript('main.js?v=' + VER, function () {
-								loadScript('edit-manager.js?v=' + VER, function () {
-									if (window.ENABLE_VOLUME_HOOK !== false) {
-										loadScript('volume-manager.js?v=' + VER);
-									}
+							loadScript('floor-work-hook.js?v=' + VER, function () {
+								loadScript('main.js?v=' + VER, function () {
+									loadScript('edit-manager.js?v=' + VER, function () {
+										if (window.ENABLE_VOLUME_HOOK !== false) {
+											loadScript('volume-manager.js?v=' + VER);
+										}
+									});
 								});
 							});
 						});
 					});
 				} else {
 					loadScript('cbs-storage.js?v=' + VER, function () {
-						loadScript('main.js?v=' + VER, function () {
-							loadScript('edit-manager.js?v=' + VER, function () {
-								if (window.ENABLE_VOLUME_HOOK !== false) {
-									loadScript('volume-manager.js?v=' + VER);
-								}
+						loadScript('floor-work-hook.js?v=' + VER, function () {
+							loadScript('main.js?v=' + VER, function () {
+								loadScript('edit-manager.js?v=' + VER, function () {
+									if (window.ENABLE_VOLUME_HOOK !== false) {
+										loadScript('volume-manager.js?v=' + VER);
+									}
+								});
 							});
 						});
 					});
@@ -107,11 +111,11 @@
 	<script src="vendor/xlsx/xlsx.full.min.js" onerror="this.onerror=null;this.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';"></script>
 	<script src="vendor/jspdf/jspdf.umd.min.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js';"></script>
 	<script src="vendor/jspdf-autotable/jspdf.plugin.autotable.min.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js';"></script>
-	<script src="config.js?v=0.9.3.1"></script>
-	<script src="messages.js?v=0.9.3.1"></script>
+	<script src="config.js?v=0.9.3.2"></script>
+	<script src="messages.js?v=0.9.3.2"></script>
 	<!-- GIS Monitoring & Support -->
 	<script src="vendor/supabase/supabase.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';"></script>
-	<script src="monitoring-service.js?v=0.9.3.1"></script>
+	<script src="monitoring-service.js?v=0.9.3.2"></script>
 	<link rel="stylesheet" href="Cesium/Widgets/widgets.css" onerror="this.onerror=null;this.href='https://cesium.com/downloads/cesiumjs/releases/1.105/Build/Cesium/Widgets/widgets.css';">
 	<style>
 		/* ═══ MOBİL UYGULAMA DAVRANIŞI ═══ */
@@ -160,7 +164,7 @@
 	</style>
 
 	<!-- Tailwind CSS -->
-	<link rel="stylesheet" href="tailwind.generated.css?v=0.9.3.1" />
+	<link rel="stylesheet" href="tailwind.generated.css?v=0.9.3.2" />
 	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
 		rel="stylesheet" />
 	<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap"
@@ -1147,7 +1151,7 @@
 							<span class="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
 						</span>
 						<span
-							class="text-[10px] font-bold tracking-wider text-slate-300 group-hover:text-white uppercase">v0.9.3.1</span>
+							class="text-[10px] font-bold tracking-wider text-slate-300 group-hover:text-white uppercase">v0.9.3.2</span>
 					</button>
 				</div>
 				<p class="text-xs text-slate-300 font-semibold tracking-tight mt-0.5">3D Sayısal Veri Üretim ve Analiz
@@ -2491,7 +2495,7 @@
 			<div class="absolute bottom-6 left-0 w-full flex items-center justify-center gap-3">
 				<span class="text-[11px] text-slate-400 font-mono">© 2026 Coğrafi Bilgi Sistemleri</span>
 				<span class="text-slate-700">·</span>
-				<span class="text-[11px] font-bold uppercase tracking-wider text-amber-500/60">v0.9.3.1</span>
+				<span class="text-[11px] font-bold uppercase tracking-wider text-amber-500/60">v0.9.3.2</span>
 			</div>
 		</div>
 	</div>
@@ -2567,7 +2571,7 @@
 			<div class="text-center mt-8">
 				<span class="text-[9px] text-slate-400 font-mono">© 2026 Coğrafi Bilgi Sistemleri</span>
 				<span class="text-slate-700 mx-1">·</span>
-				<span class="text-[9px] font-bold uppercase tracking-wider text-amber-500/60">v0.9.3.1</span>
+				<span class="text-[9px] font-bold uppercase tracking-wider text-amber-500/60">v0.9.3.2</span>
 			</div>
 		</div>
 	</div>
@@ -3268,13 +3272,13 @@
 			<!-- Timeline -->
 			<div class="p-5 overflow-y-auto flex-1 hide-scrollbar">
 				<div class="relative border-l border-slate-700 ml-3 space-y-6 pb-4">
-					<!-- v0.9.3.1 - YENI -->
+					<!-- v0.9.3.2 - YENI -->
 					<div class="relative pl-6">
 						<div
 							class="absolute -left-[5px] top-1.5 w-[9px] h-[9px] rounded-full bg-primary ring-4 ring-slate-900">
 						</div>
 						<div class="flex items-center gap-2 mb-1">
-							<span class="text-sm font-bold text-white">v0.9.3.1</span>
+							<span class="text-sm font-bold text-white">v0.9.3.2</span>
 							<span
 								class="px-1.5 py-0.5 rounded bg-primary/20 text-primary text-[8px] font-black uppercase tracking-wider">YENİ</span>
 						</div>
@@ -3776,11 +3780,83 @@
 				<div class="grid grid-cols-2 gap-1.5">
 					<div>
 						<label class="block text-[9px] text-slate-500 mb-0.5 uppercase tracking-wide">Kat</label>
-						<input type="number" id="infoKat" inputmode="numeric" min="0" step="1" class="h-7 w-full bg-slate-900 border border-slate-700 rounded-sm px-1.5 py-1 text-slate-200 text-[10px] focus:outline-none focus:border-slate-500">
+						<input type="text" id="infoKat" inputmode="text" class="h-7 w-full bg-slate-900 border border-slate-700 rounded-sm px-1.5 py-1 text-slate-200 text-[10px] focus:outline-none focus:border-slate-500">
 					</div>
 					<div>
 						<label class="block text-[9px] text-slate-500 mb-0.5 uppercase tracking-wide">Yapım Yılı</label>
 						<input type="number" id="infoYil" inputmode="numeric" min="1800" max="2100" step="1" class="h-7 w-full bg-slate-900 border border-slate-700 rounded-sm px-1.5 py-1 text-slate-200 text-[10px] focus:outline-none focus:border-slate-500">
+					</div>
+				</div>
+				<div id="floorWorkPanel" class="mt-1.5 rounded-sm border border-slate-700/70 bg-slate-950/60 px-2 py-1.5 space-y-1.5">
+					<div class="flex items-center justify-between">
+						<span class="text-[9px] text-slate-400 uppercase tracking-[0.14em] font-semibold">Kat Odak Modu</span>
+						<span id="infoFloorModeBadge" class="text-[9px] px-1.5 py-0.5 rounded-sm border border-slate-600/70 text-slate-300 bg-slate-900/80">Pasif</span>
+					</div>
+					<div class="grid grid-cols-2 gap-1.5">
+						<div>
+							<label class="block text-[9px] text-slate-500 mb-0.5 uppercase tracking-wide">İşlem Katı</label>
+							<input type="text" id="infoWorkKat" inputmode="text" placeholder="1" class="h-7 w-full bg-slate-900 border border-slate-700 rounded-sm px-1.5 py-1 text-slate-200 text-[10px] focus:outline-none focus:border-slate-500">
+						</div>
+						<div>
+							<label class="block text-[9px] text-slate-500 mb-0.5 uppercase tracking-wide">Zemin Kat</label>
+							<input type="text" id="infoBaseKat" inputmode="text" value="0" class="h-7 w-full bg-slate-900 border border-slate-700 rounded-sm px-1.5 py-1 text-slate-200 text-[10px] focus:outline-none focus:border-slate-500">
+						</div>
+					</div>
+					<div>
+						<label class="block text-[9px] text-slate-500 mb-0.5 uppercase tracking-wide">Bina Anahtarı (Ada/Parsel)</label>
+						<div class="grid grid-cols-2 gap-1.5">
+							<input type="text" id="infoWorkBuilding" inputmode="text" placeholder="2540/30" class="h-7 w-full bg-slate-900 border border-slate-700 rounded-sm px-1.5 py-1 text-slate-200 text-[10px] focus:outline-none focus:border-slate-500">
+							<button id="btnFloorFillBuildingFromSelection" type="button" class="h-7 rounded-sm border border-slate-600/70 bg-slate-900/80 text-slate-300 text-[10px] font-semibold uppercase tracking-wide hover:bg-slate-800 transition-colors">
+								Seçiliden Doldur
+							</button>
+						</div>
+					</div>
+					<div class="grid grid-cols-2 gap-1.5">
+						<button id="btnApplyFloorWork" type="button" class="h-7 rounded-sm border border-cyan-500/50 bg-cyan-500/12 text-cyan-200 text-[10px] font-semibold uppercase tracking-wide hover:bg-cyan-500/22 transition-colors">
+							Katı Göster
+						</button>
+						<button id="btnClearFloorWork" type="button" class="h-7 rounded-sm border border-slate-600/70 bg-slate-900/80 text-slate-300 text-[10px] font-semibold uppercase tracking-wide hover:bg-slate-800 transition-colors">
+							Tüm Katlar
+						</button>
+					</div>
+					<div class="grid grid-cols-2 gap-1.5">
+						<button id="btnFloorPrev" type="button" class="h-7 rounded-sm border border-slate-600/70 bg-slate-900/80 text-slate-300 text-[10px] font-semibold uppercase tracking-wide hover:bg-slate-800 transition-colors">
+							Önceki Kat
+						</button>
+						<button id="btnFloorNext" type="button" class="h-7 rounded-sm border border-slate-600/70 bg-slate-900/80 text-slate-300 text-[10px] font-semibold uppercase tracking-wide hover:bg-slate-800 transition-colors">
+							Sonraki Kat
+						</button>
+					</div>
+					<div id="infoFloorSummary" class="text-[9px] leading-snug text-slate-400 bg-slate-900/70 border border-slate-700/70 rounded-sm px-1.5 py-1">
+						Kat odak modu kapalı.
+					</div>
+					<div id="infoFloorKnownList" class="text-[9px] leading-snug text-slate-400 bg-slate-900/70 border border-slate-700/70 rounded-sm px-1.5 py-1">
+						Kayıtlı katlar: -
+					</div>
+					<div id="infoFloorKnownBuildings" class="text-[9px] leading-snug text-slate-400 bg-slate-900/70 border border-slate-700/70 rounded-sm px-1.5 py-1">
+						Kayıtlı binalar: -
+					</div>
+					<div id="infoFloorPoolSummary" class="text-[9px] leading-snug text-slate-400 bg-slate-900/70 border border-slate-700/70 rounded-sm px-1.5 py-1">
+						Parça havuzu: 0
+					</div>
+					<div>
+						<label class="block text-[9px] text-slate-500 mb-0.5 uppercase tracking-wide">Parça Havuzu</label>
+						<select id="infoFloorPoolSelect" class="w-full bg-slate-900 border border-slate-700 rounded-sm px-1.5 py-1 text-slate-200 text-[10px] focus:outline-none focus:border-slate-500" size="3" style="height:56px;">
+							<option value="">Havuz boş</option>
+						</select>
+					</div>
+					<div class="grid grid-cols-2 gap-1.5">
+						<button id="btnFloorBindScoped" type="button" class="h-7 rounded-sm border border-cyan-500/50 bg-cyan-500/12 text-cyan-200 text-[10px] font-semibold uppercase tracking-wide hover:bg-cyan-500/22 transition-colors">
+							Seçilini Bağla
+						</button>
+						<button id="btnFloorMoveToPool" type="button" class="h-7 rounded-sm border border-amber-400/40 bg-amber-400/10 text-amber-300 text-[10px] font-semibold uppercase tracking-wide hover:bg-amber-400/20 transition-colors">
+							Havuza Al
+						</button>
+					</div>
+					<div>
+						<button id="btnFloorBindPoolSelected" type="button" class="h-7 w-full rounded-sm border border-emerald-700/50 bg-emerald-900/40 text-emerald-300 text-[10px] font-semibold uppercase tracking-wide hover:bg-emerald-800/50 transition-colors">
+							Havuzdaki Seçilini Aktif Bina/Kata Bağla
+						</button>
 					</div>
 				</div>
 				<div>

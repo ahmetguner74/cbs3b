@@ -16,5 +16,7 @@ window.CBS_CONFIG = {
     // heartbeat gonderim araligi (ms)
     monitoringHeartbeatMs: 25000,
     // precision (resmi ölçüm öncelikli) | performance (daha akıcı, canvas back-buffer kapalı)
-    preserveDrawingBufferMode: 'precision'
+    preserveDrawingBufferMode: 'precision',
+    // false yaparsan kat odak modu tamamen devre disi kalir
+    floorWorkEnabled: true
 };

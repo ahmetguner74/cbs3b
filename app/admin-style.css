@@ -363,12 +363,56 @@ button {
     align-items: center;
     justify-content: flex-end;
     gap: 6px;
+    flex-wrap: wrap;
 }
 
 .critical-tools .btn {
     white-space: nowrap;
     padding: 6px 9px;
     font-size: 0.73rem;
+}
+
+.critical-issue-chip {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: #f8fafc;
+    color: var(--text-secondary);
+    padding: 4px 8px;
+    font-size: 0.69rem;
+    white-space: nowrap;
+}
+
+.critical-issue-chip.tone-warning {
+    border-color: #f9d7a7;
+    color: #9a5800;
+    background: #fff9f1;
+}
+
+.critical-issue-chip.tone-danger {
+    border-color: #f2b4b4;
+    color: #991b1b;
+    background: #fff4f4;
+}
+
+.critical-issue-chip.life-resolved {
+    border-color: #b8e4c4;
+    color: #166534;
+    background: #f3fbf5;
+}
+
+.critical-select {
+    width: auto;
+    min-width: 140px;
+    font-size: 0.7rem;
+    padding: 6px 8px;
+}
+
+.critical-mini-meta {
+    color: var(--text-muted);
+    font-size: 0.66rem;
+    white-space: nowrap;
 }
 
 .kpi-grid {
@@ -555,8 +599,8 @@ button {
 .workspace-grid {
     min-height: 0;
     display: grid;
-    grid-template-columns: 280px minmax(0, 1fr) 340px;
-    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: 220px minmax(0, 0.6fr) 380px;
+    grid-template-rows: 200px minmax(0, 1fr);
     grid-template-areas:
         'sessions map insights'
         'sessions logs insights';
@@ -875,6 +919,76 @@ button {
     line-height: 1.35;
 }
 
+#selected-session-card.session-profile {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.session-profile-head {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 5px;
+}
+
+.profile-chip {
+    border: 1px solid #dce5f0;
+    border-radius: 8px;
+    background: #f8fbff;
+    padding: 6px 7px;
+    min-width: 0;
+}
+
+.profile-chip .label {
+    font-size: 0.59rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.profile-chip .value {
+    margin-top: 3px;
+    font-size: 0.69rem;
+    font-weight: 600;
+    line-height: 1.28;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.session-profile-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 5px;
+}
+
+.profile-cell {
+    border: 1px solid #e4ebf4;
+    border-radius: 8px;
+    background: #fbfcff;
+    padding: 5px 6px;
+    min-width: 0;
+}
+
+.profile-cell .label {
+    font-size: 0.58rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.profile-cell .value {
+    margin-top: 3px;
+    font-size: 0.66rem;
+    line-height: 1.28;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.profile-cell .value.mono,
+.profile-chip .value.mono {
+    font-size: 0.63rem;
+}
+
 #session-last50-list {
     list-style: none;
     padding: 0;
@@ -992,6 +1106,10 @@ button {
         justify-content: flex-start;
     }
 
+    .critical-select {
+        min-width: 126px;
+    }
+
     .control-rack {
         grid-template-columns: repeat(4, minmax(0, 1fr));
     }
@@ -1084,6 +1202,33 @@ button {
     .critical-tools .btn {
         padding: 8px 11px;
         font-size: 0.82rem;
+    }
+
+    .session-profile-head,
+    .session-profile-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .profile-chip .value,
+    .profile-cell .value {
+        font-size: 0.72rem;
+    }
+
+    .profile-cell .value.mono,
+    .profile-chip .value.mono {
+        font-size: 0.68rem;
+    }
+
+    .critical-select {
+        width: 100%;
+        min-width: 0;
+        font-size: 0.82rem;
+        padding: 8px 11px;
+    }
+
+    .critical-issue-chip,
+    .critical-mini-meta {
+        white-space: normal;
     }
 
     .brand p {
@@ -1209,6 +1354,49 @@ button {
     .critical-tools .btn {
         padding: 5px 7px;
         font-size: 0.72rem;
+    }
+
+    .critical-select {
+        min-width: 116px;
+        font-size: 0.68rem;
+        padding: 5px 7px;
+    }
+
+    .critical-issue-chip {
+        font-size: 0.65rem;
+        padding: 3px 7px;
+    }
+
+    .critical-mini-meta {
+        font-size: 0.62rem;
+    }
+
+    .session-profile-head,
+    .session-profile-grid {
+        gap: 4px;
+    }
+
+    .profile-chip,
+    .profile-cell {
+        padding: 4px 5px;
+    }
+
+    .profile-chip .label,
+    .profile-cell .label {
+        font-size: 0.55rem;
+    }
+
+    .profile-chip .value {
+        font-size: 0.66rem;
+    }
+
+    .profile-cell .value {
+        font-size: 0.62rem;
+    }
+
+    .profile-cell .value.mono,
+    .profile-chip .value.mono {
+        font-size: 0.6rem;
     }
 
     .kpi-card {

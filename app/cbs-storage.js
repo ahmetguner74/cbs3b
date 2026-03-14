@@ -123,6 +123,20 @@ var CbsStorage = (function () {
         var cins        = data.cins        || data.ref_cins   || data.tapucinsaciklama || "";
         var tasiyici    = data.tasiyici_sistem || data.tasiyici || "";
         var kullanim    = data.kullanim_amaci  || data.kullanim  || "";
+        var kat_adi_raw = data.kat_adi != null ? String(data.kat_adi).trim() : "";
+        if (!kat_adi_raw && data.kat != null) kat_adi_raw = String(data.kat).trim();
+        var kat_numeric = null;
+        if (/^-?\d+$/.test(kat_adi_raw)) kat_numeric = parseInt(kat_adi_raw, 10);
+        else if (!isNaN(parseInt(data.kat))) kat_numeric = parseInt(data.kat);
+        var fw_pool = data.fw_pool === true || data.fw_pool === 1 || data.fw_pool === '1' || String(data.fw_pool || '').toLowerCase() === 'true';
+        var fw_floor_key = data.fw_floor_key != null ? String(data.fw_floor_key).trim() : '';
+        if (!fw_floor_key && kat_adi_raw) fw_floor_key = kat_adi_raw;
+        var fw_building_key = data.fw_building_key != null ? String(data.fw_building_key).trim() : '';
+        if (!fw_building_key && (ada_no || parsel_no)) {
+            fw_building_key = String(ada_no).trim() + '/' + String(parsel_no).trim();
+        }
+        fw_building_key = fw_building_key.replace(/\\/g, '/').replace(/\s*\/\s*/g, '/').replace(/\/{2,}/g, '/');
+        if (fw_building_key === '/') fw_building_key = '';
         return {
             area_m2:      typeof data.area_m2   === 'number' ? data.area_m2   : null,
             length_m:     typeof data.length_m  === 'number' ? data.length_m  : null,
@@ -133,7 +147,11 @@ var CbsStorage = (function () {
             parsel_no: String(parsel_no).trim(),
             cins:      String(cins).trim(),
             // Kullanıcı verileri
-            kat:              !isNaN(parseInt(data.kat))         ? parseInt(data.kat)         : null,
+            kat:              kat_numeric,
+            kat_adi:          kat_adi_raw,
+            fw_pool:          fw_pool,
+            fw_building_key:  fw_building_key,
+            fw_floor_key:     fw_floor_key,
             yapim_yili:       !isNaN(parseInt(data.yapim_yili))  ? parseInt(data.yapim_yili)  : null,
             cikma_tipi:       data.cikma_tipi      ? String(data.cikma_tipi).trim()      : "",
             tasiyici_sistem:  tasiyici              ? String(tasiyici).trim()             : "",
