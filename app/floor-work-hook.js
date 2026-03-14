@@ -22,6 +22,27 @@
             .replace(/'/g, '&#39;');
     }
 
+    function parseLocaleNumber(value) {
+        var text = byValue(value).trim();
+        if (!text) return NaN;
+        text = text.replace(/\s+/g, '');
+
+        var hasComma = text.indexOf(',') >= 0;
+        var hasDot = text.indexOf('.') >= 0;
+
+        if (hasComma && hasDot) {
+            if (text.lastIndexOf(',') > text.lastIndexOf('.')) {
+                text = text.replace(/\./g, '').replace(',', '.');
+            } else {
+                text = text.replace(/,/g, '');
+            }
+        } else if (hasComma) {
+            text = text.replace(',', '.');
+        }
+
+        return parseFloat(text);
+    }
+
     function createFloorWorkHook(deps) {
         deps = deps || {};
 
@@ -120,13 +141,19 @@
             return normalizeBuildingKey(ada + '/' + parsel);
         }
 
+        function getBuildingKeyFromKadastroProps(props) {
+            var kadastro = getInfoPanelKadastroProps(props || {});
+            return makeBuildingKey(kadastro.ada_no, kadastro.parsel_no);
+        }
+
         function getMeasurementBuildingKey(measurement) {
             if (!measurement || !measurement.properties) return '';
             var props = measurement.properties;
+            var kadastroKey = getBuildingKeyFromKadastroProps(props);
+            if (kadastroKey) return kadastroKey;
             var explicitKey = normalizeBuildingKey(props.fw_building_key);
             if (explicitKey) return explicitKey;
-            var kadastro = getInfoPanelKadastroProps(props);
-            return makeBuildingKey(kadastro.ada_no, kadastro.parsel_no);
+            return '';
         }
 
         function getMeasurementFloorKey(measurement) {
@@ -178,11 +205,15 @@
         function parseMeasurementArea2D(measurement) {
             if (!measurement || measurement.type !== 'polygon') return 0;
             var text = measurement.resultText || '';
-            var match2D = text.match(/2D:\s*([\d.]+)\s*m(?:\u00B2|\^2)/i);
-            if (match2D) return parseFloat(match2D[1]) || 0;
-            var matchAny = text.match(/([\d.]+)\s*m(?:\u00B2|\^2)/i);
+            var match2D = text.match(/2D:\s*([\d.,]+)\s*m(?:\u00B2|\^2)/i);
+            if (match2D) {
+                var parsed2D = parseLocaleNumber(match2D[1]);
+                return isFinite(parsed2D) ? parsed2D : 0;
+            }
+            var matchAny = text.match(/([\d.,]+)\s*m(?:\u00B2|\^2)/i);
             if (!matchAny) return 0;
-            return parseFloat(matchAny[1]) || 0;
+            var parsedAny = parseLocaleNumber(matchAny[1]);
+            return isFinite(parsedAny) ? parsedAny : 0;
         }
 
         function collectKnownFloorKeys() {
@@ -504,7 +535,7 @@
             var props = measurement.properties;
             if (parseBool(props.fw_pool)) return;
 
-            var buildingKey = getMeasurementBuildingKey(measurement);
+            var buildingKey = getBuildingKeyFromKadastroProps(props) || getMeasurementBuildingKey(measurement);
             var floorKey = getMeasurementFloorKey(measurement);
 
             if (buildingKey) props.fw_building_key = buildingKey;
@@ -566,6 +597,11 @@
             var buildingInput = document.getElementById('infoWorkBuilding');
             var inputValue = buildingInput ? normalizeBuildingKey(buildingInput.value) : '';
             if (inputValue) return inputValue;
+
+            var adaInput = document.getElementById('infoAda');
+            var parselInput = document.getElementById('infoParsel');
+            var kadastroValue = makeBuildingKey(adaInput ? adaInput.value : '', parselInput ? parselInput.value : '');
+            if (kadastroValue) return kadastroValue;
 
             var scopedMeasurement = getScopedMeasurement();
             var scopedKey = scopedMeasurement ? getMeasurementBuildingKey(scopedMeasurement) : '';
@@ -875,6 +911,14 @@
             return (num > 0 ? '+' : '') + num.toFixed(2);
         }
 
+        function hasMeaningfulSaveDelta(preview) {
+            if (!preview || !Array.isArray(preview.floorRows)) return false;
+            for (var i = 0; i < preview.floorRows.length; i++) {
+                if (Math.abs(Number(preview.floorRows[i].delta) || 0) >= 0.00001) return true;
+            }
+            return false;
+        }
+
         function renderSaveSummaryPreview(preview) {
             var body = document.getElementById('floorSaveSummaryBody');
             if (!body || !preview) return;
@@ -925,8 +969,13 @@
         function confirmSaveSummary(measurement, previousProperties) {
             if (!isFeatureEnabled()) return Promise.resolve(true);
 
+            if (typeof state.saveSummaryPendingResolve === 'function') {
+                closeSaveSummaryModal(false);
+            }
+
             var preview = buildSaveSummaryPreview(measurement, previousProperties);
             if (!preview) return Promise.resolve(true);
+            if (!hasMeaningfulSaveDelta(preview)) return Promise.resolve(true);
 
             var modal = ensureSaveSummaryModal();
             if (!modal) return Promise.resolve(true);
@@ -1015,8 +1064,8 @@
                 return;
             }
 
-            var floorKey = normalizeFloorKey(state.activeFloorKey || (document.getElementById('infoWorkKat') || {}).value);
-            var buildingKey = normalizeBuildingKey(state.buildingKey || getBuildingKeyFromInputs());
+            var floorKey = normalizeFloorKey((document.getElementById('infoWorkKat') || {}).value || state.activeFloorKey);
+            var buildingKey = normalizeBuildingKey(getBuildingKeyFromInputs() || state.buildingKey);
             if (!floorKey || !buildingKey) {
                 syncNote('Aktif kat ve bina anahtari gerekli.', 'warn');
                 return;
@@ -1066,8 +1115,8 @@
                 return;
             }
 
-            var floorKey = normalizeFloorKey(state.activeFloorKey || (document.getElementById('infoWorkKat') || {}).value);
-            var buildingKey = normalizeBuildingKey(state.buildingKey || getBuildingKeyFromInputs());
+            var floorKey = normalizeFloorKey((document.getElementById('infoWorkKat') || {}).value || state.activeFloorKey);
+            var buildingKey = normalizeBuildingKey(getBuildingKeyFromInputs() || state.buildingKey);
             if (!floorKey || !buildingKey) {
                 syncNote('Aktif kat ve bina anahtari gerekli.', 'warn');
                 return;

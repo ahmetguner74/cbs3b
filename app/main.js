@@ -6675,12 +6675,20 @@ function openInfoPanel(m) {
 			syncInfoPanelNoteToResultBar('Referans veriler salt okunur, kaydetme kapalıdır.', 'warn');
 			return;
 		}
+		if (saveBtn.getAttribute('data-saving') === 'true') return;
 
 		var mid = parseInt(saveBtn.getAttribute('data-measure-id'), 10);
 		if (isNaN(mid)) return;
 
 		var m = measurements.find(function (x) { return x.id === mid; });
 		if (!m) return;
+
+		var defaultHtml = saveBtn.getAttribute('data-default-html') || saveBtn.innerHTML;
+		var handledBySuccessDelay = false;
+		saveBtn.setAttribute('data-saving', 'true');
+		saveBtn.disabled = true;
+
+		try {
 
 		// Properties nesnesini oku — yoksa oluştur
 		if (!m.properties) m.properties = {};
@@ -6735,15 +6743,22 @@ function openInfoPanel(m) {
 		}
 
 		// Görsel geri bildirim
-		var defaultHtml = saveBtn.getAttribute('data-default-html') || saveBtn.innerHTML;
 		saveBtn.innerHTML = '<span class="material-symbols-outlined text-[16px]">check_circle</span><span>Kaydedildi</span>';
-		saveBtn.disabled = true;
+		handledBySuccessDelay = true;
 		setTimeout(function () {
 			saveBtn.innerHTML = defaultHtml;
 			saveBtn.disabled = false;
+			saveBtn.removeAttribute('data-saving');
 			updateInfoPanelDirtyState(true);
 		}, 1500);
 		syncInfoPanelNoteToResultBar('Bilgi kartı güncellendi ve kaydedildi.', 'ok');
+		} finally {
+			if (!handledBySuccessDelay) {
+				saveBtn.innerHTML = defaultHtml;
+				saveBtn.disabled = false;
+				saveBtn.removeAttribute('data-saving');
+			}
+		}
 	});
 
 	document.addEventListener('keydown', function (e) {
