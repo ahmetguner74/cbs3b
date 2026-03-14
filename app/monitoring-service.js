@@ -6,6 +6,7 @@
     const APP_CONFIG = window.CBS_CONFIG || {};
     const SUPABASE_URL = (APP_CONFIG.supabaseUrl || '').trim();
     const SUPABASE_KEY = (APP_CONFIG.supabaseAnonKey || '').trim();
+    const ADMIN_COMMAND_TOKEN = (APP_CONFIG.adminCommandToken || '').trim();
 
     let supabaseClient = null;
     let sessionId = 'session_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
@@ -225,14 +226,38 @@
             const commandChannel = supabaseClient.channel('system-commands');
 
             commandChannel
-                .on('broadcast', { event: 'reload' }, () => {
+                .on('broadcast', { event: 'reload' }, ({ payload }) => {
+                    if (!this.isAuthorizedCommand(payload || {})) {
+                        return;
+                    }
                     console.log('%c[Monitoring] Uzak sunucudan yenileme komutu alındı!', 'color: #ef4444; font-weight: bold;');
                     location.reload();
                 })
                 .on('broadcast', { event: 'message' }, ({ payload }) => {
-                    this.showBroadcastMessage(payload.msg);
+                    const safePayload = payload || {};
+                    if (!this.isAuthorizedCommand(safePayload)) {
+                        return;
+                    }
+                    this.showBroadcastMessage(safePayload.msg);
                 })
                 .subscribe();
+        },
+
+        isAuthorizedCommand: function (payload) {
+            if (!ADMIN_COMMAND_TOKEN) {
+                return true;
+            }
+
+            const token = (payload && typeof payload.commandToken === 'string')
+                ? payload.commandToken.trim()
+                : '';
+
+            if (!token || token !== ADMIN_COMMAND_TOKEN) {
+                console.warn('[Monitoring] Yetkisiz broadcast komutu reddedildi.');
+                return false;
+            }
+
+            return true;
         },
 
         updateFeatureFlags: async function () {
@@ -305,7 +330,8 @@
                 alertBar.insertBefore(messageNode, alertBar.firstChild);
             }
 
-            messageNode.textContent = '📢 ' + (msg || 'Sistem duyurusu');
+            const normalizedMsg = String(msg || 'Sistem duyurusu').trim() || 'Sistem duyurusu';
+            messageNode.textContent = '📢 ' + normalizedMsg.slice(0, 500);
             // 10 saniye sonra kapat (opsiyonel)
             // setTimeout(() => alertBar.remove(), 10000);
         },

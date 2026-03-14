@@ -17,6 +17,19 @@ const runtimeEntries = lightMode
         ...(includeBigData ? [{ name: 'pointcloud' }] : []),
     ];
 
+const requiredRuntimePaths = lightMode
+    ? [
+        { path: 'app/index.html', reason: 'Ana giriş sayfası' },
+        { path: 'app/main.js', reason: 'Ana uygulama çalışma dosyası' },
+    ]
+    : [
+        { path: 'app/index.html', reason: 'Ana giriş sayfası' },
+        { path: 'app/main.js', reason: 'Ana uygulama çalışma dosyası' },
+        { path: 'Scene/merinos1.json', reason: '3D model kök tileset dosyası' },
+        { path: 'app/vendor/proj4/proj4.js', reason: 'GeoJSON/DXF dönüşüm bağımlılığı' },
+        { path: 'app/vendor/supabase/supabase.js', reason: 'Monitoring/admin bağımlılığı' },
+    ];
+
 async function pathExists(targetPath) {
     try {
         await access(targetPath, constants.F_OK);
@@ -72,6 +85,29 @@ async function copyRuntimeEntry(entry) {
     console.log('[build:deploy] Copied:', entryName);
 }
 
+async function assertRequiredRuntimePaths(baseDir, scopeLabel) {
+    const missing = [];
+    for (const req of requiredRuntimePaths) {
+        const abs = path.join(baseDir, req.path);
+        if (!(await pathExists(abs))) {
+            missing.push(req);
+        }
+    }
+
+    if (missing.length === 0) return;
+
+    const message = missing
+        .map(function (m) {
+            return '- ' + m.path + ' (' + m.reason + ')';
+        })
+        .join('\n');
+
+    throw new Error(
+        '[build:deploy] Kritik runtime dosyalari eksik (' + scopeLabel + '):\n' + message +
+        '\nBelediye canli akisi icin paketleme durduruldu.'
+    );
+}
+
 async function main() {
     if (!(await pathExists(distDir))) {
         throw new Error('dist klasörü bulunamadı. Önce vite build çalıştırılmalı.');
@@ -81,6 +117,9 @@ async function main() {
         ? 'light'
         : (includeBigData ? 'full-with-big-data' : 'full-no-big-data');
     console.log('[build:deploy] Mode:', dryRun ? ('dry-run/' + mode) : mode);
+
+    // Dry-run modunda, kopyalama öncesi kaynakların kritik parçaları doğrulanır.
+    await assertRequiredRuntimePaths(rootDir, 'kaynak klasör');
 
     await mkdir(distDir, { recursive: true });
 
@@ -92,6 +131,9 @@ async function main() {
         console.log('[build:deploy] Dry-run tamamlandı.');
         return;
     }
+
+    // Gerçek paket üretiminde dist içeriğinin kritik parçaları doğrulanır.
+    await assertRequiredRuntimePaths(distDir, 'dist paketi');
 
     console.log('[build:deploy] Deploy paketi dist/ altında hazır.');
 }
