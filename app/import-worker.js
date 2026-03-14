@@ -25,8 +25,10 @@ function tryLoadProj4(url) {
     return false;
 }
 
-if (!tryLoadProj4('https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.15.0/proj4.js')) {
-    tryLoadProj4('https://cdn.jsdelivr.net/npm/proj4@2.15.0/dist/proj4.js');
+if (!tryLoadProj4('vendor/proj4/proj4.js')) {
+    if (!tryLoadProj4('https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.15.0/proj4.js')) {
+        tryLoadProj4('https://cdn.jsdelivr.net/npm/proj4@2.15.0/dist/proj4.js');
+    }
 }
 
 self.proj4Available = proj4Available;
@@ -103,7 +105,7 @@ self.onmessage = function (e) {
     var crsInfo = fileCrs ? ' (CRS otomatik algılandı: EPSG:' + fileCrs + ')' : '';
 
     if (effectiveCrs === '5254' && !proj4Available) {
-        self.postMessage({ error: 'EPSG:5254 dönüşümü için proj4 yüklenemedi. Lütfen internet bağlantınızı kontrol edip tekrar deneyin.' });
+        self.postMessage({ error: 'EPSG:5254 dönüşümü için proj4 yüklenemedi. Yerel vendor dosyalarını veya CDN erişimini kontrol edip tekrar deneyin.' });
         return;
     }
 

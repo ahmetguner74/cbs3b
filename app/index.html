@@ -101,20 +101,19 @@
 			});
 		})();
 	</script>
-	<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-	<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.15.0/proj4.js"></script>
-	<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-	<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-	<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-	<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
+	<script src="vendor/emailjs/email.min.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js';"></script>
+	<script src="vendor/proj4/proj4.js" onerror="this.onerror=null;this.src='https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.15.0/proj4.js';"></script>
+	<script src="vendor/jszip/jszip.min.js" onerror="this.onerror=null;this.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';"></script>
+	<script src="vendor/xlsx/xlsx.full.min.js" onerror="this.onerror=null;this.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';"></script>
+	<script src="vendor/jspdf/jspdf.umd.min.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js';"></script>
+	<script src="vendor/jspdf-autotable/jspdf.plugin.autotable.min.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js';"></script>
 	<script src="config.js?v=0.9.3"></script>
 	<script src="messages.js?v=0.9.3"></script>
 	<!-- GIS Monitoring & Support -->
-	<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+	<script src="vendor/supabase/supabase.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';"></script>
 	<script src="monitoring-service.js?v=0.9.3"></script>
+	<link rel="stylesheet" href="Cesium/Widgets/widgets.css" onerror="this.onerror=null;this.href='https://cesium.com/downloads/cesiumjs/releases/1.105/Build/Cesium/Widgets/widgets.css';">
 	<style>
-		@import url('https://cesium.com/downloads/cesiumjs/releases/1.105/Build/Cesium/Widgets/widgets.css');
-
 		/* ═══ MOBİL UYGULAMA DAVRANIŞI ═══ */
 		html,
 		body {

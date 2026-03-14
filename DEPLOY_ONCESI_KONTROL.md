@@ -80,22 +80,22 @@ Kontrol et:
 
 İç ağda gerekli olabilir (Bilgi İşlem ile):
 
-| Alan adı | Amaç | Öncelik |
+| Alan adı | Amaç | Durum |
 |---|---|---|
-| qnobscsbcsrhizqcraif.supabase.co | Telemetry ve yönetim paneli | Kritik |
-| cdn.jsdelivr.net | Supabase SDK, EmailJS, jsPDF eklentileri | Kritik |
-| cdnjs.cloudflare.com | proj4, jszip | Kritik |
-| cdn.sheetjs.com | Excel dışa aktarma | Kritik |
-| cesium.com | Cesium fallback script/css | Kritik |
-| unpkg.com | Leaflet (admin harita) | Kritik |
-| fonts.googleapis.com | Font CSS | Orta |
-| fonts.gstatic.com | Font dosyaları | Orta |
+| cbsuygulamalari.bursa.bel.tr | Statik yayın hostu | Gerekli |
+| qnobscsbcsrhizqcraif.supabase.co | Telemetry ve yönetim paneli | Gerekli (monitoring aktifse) |
+| cdn.jsdelivr.net | Supabase/EmailJS/jsPDF fallback | Opsiyonel (yerel vendor yoksa) |
+| cdnjs.cloudflare.com | proj4/jszip/SheetJS fallback | Opsiyonel (yerel vendor yoksa) |
+| cesium.com | Cesium script/css fallback | Opsiyonel (app/Cesium yoksa) |
+| unpkg.com | Leaflet fallback | Opsiyonel (yerel vendor yoksa) |
+| fonts.googleapis.com | Font CSS | Opsiyonel |
+| fonts.gstatic.com | Font dosyaları | Opsiyonel |
 | tile.openstreetmap.org | OSM katmanı | Orta |
 | services.arcgisonline.com | Uydu katmanı | Orta |
 | ipapi.co | Yaklaşık IP konumu | Opsiyonel |
 | api.emailjs.com | Geri bildirim e-posta gönderimi | Opsiyonel |
 
-> Not: İç ağda bazı alan adları kapalıysa Bilgi İşlem tarafından allowlist açılması gerekir.
+> Not: Local-first yapıda `app/vendor` ve `app/Cesium` eksiksiz taşınırsa CDN alan adları zorunlu değildir; sadece fallback için kullanılır.
 
 ---
 
@@ -142,6 +142,15 @@ Manuel kopyada minimum hedef:
 - dist/Scene/
 - dist/import/ (varsa)
 - dist/logo/ (varsa)
+
+Belediye canlı yolu örneği (`.../model/data/merinos1/app/`) için hedef yapı:
+
+- `.../model/data/merinos1/app/`
+- `.../model/data/merinos1/Scene/`
+- `.../model/data/merinos1/import/` (varsa)
+- `.../model/data/merinos1/logo/` (varsa)
+
+> Not: `app/` klasörü tek başına kopyalanırsa `../Scene/merinos1.json` yolu çözülemez ve model yüklenmez.
 
 ---
 

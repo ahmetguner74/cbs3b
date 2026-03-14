@@ -4,6 +4,9 @@
     "private": true,
     "type": "module",
     "scripts": {
+        "vendor:sync": "node scripts/sync-vendor-libs.mjs",
+        "predev": "npm run vendor:sync",
+        "prebuild": "npm run vendor:sync",
         "tw:build": "tailwindcss -c ./tailwind.config.cjs -i ./app/tailwind.input.css -o ./app/tailwind.generated.css --minify",
         "dev": "npm run tw:build && vite",
         "build": "npm run tw:build && vite build",
@@ -24,7 +27,14 @@
         "vite-plugin-cesium": "^1.2.22"
     },
     "dependencies": {
+        "@emailjs/browser": "^4.4.1",
+        "@supabase/supabase-js": "^2.99.1",
         "cesium": "^1.105.0",
-        "proj4": "^2.9.0"
+        "jspdf": "^2.5.1",
+        "jspdf-autotable": "^3.8.4",
+        "jszip": "^3.10.1",
+        "leaflet": "^1.9.4",
+        "proj4": "^2.9.0",
+        "xlsx": "^0.18.5"
     }
 }

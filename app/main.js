@@ -9822,7 +9822,7 @@ document.getElementById('btnImportGeoJSON').addEventListener('change', function 
 			var effectiveCrs = fileCrs || userCrs;
 			var crsInfo = fileCrs ? ' (CRS otomatik algılandı: EPSG:' + fileCrs + ')' : '';
 			if (effectiveCrs === '5254' && typeof proj4 === 'undefined') {
-				importError('EPSG:5254 dönüşümü için proj4 yüklenemedi. Lütfen internet bağlantınızı kontrol edip tekrar deneyin.');
+				importError('EPSG:5254 dönüşümü için proj4 yüklenemedi. Yerel vendor dosyalarını veya CDN erişimini kontrol edip tekrar deneyin.');
 				return;
 			}
 			var feats = data.features || (data.type === 'Feature' ? [data] : []);
@@ -10286,7 +10286,7 @@ document.getElementById('btnImportKML').addEventListener('change', function (e) 
 		// KMZ = ZIP → JSZip ile aç → .kml dosyasını bul
 		var reader = new FileReader();
 		reader.onload = function (ev) {
-			if (typeof JSZip === 'undefined') { importError('JSZip kütüphanesi yüklenemedi. KMZ desteği için internet bağlantısı gereklidir.'); return; }
+			if (typeof JSZip === 'undefined') { importError('JSZip kütüphanesi yüklenemedi. KMZ için yerel vendor dosyalarını veya CDN erişimini kontrol edin.'); return; }
 			JSZip.loadAsync(ev.target.result).then(function (zip) {
 				var kmlFile = null;
 				zip.forEach(function (path, entry) {
@@ -10398,7 +10398,7 @@ document.getElementById('btnExportExcel').addEventListener('click', function () 
 	if (selected.length === 0) { showResultErrorMessage('Dışa aktarılacak ölçüm bulunamadı.'); return; }
 
 	if (typeof XLSX === 'undefined') {
-		showResultErrorMessage('SheetJS kütüphanesi yüklenemedi. Lütfen internet bağlantısını kontrol edin.');
+		showResultErrorMessage('SheetJS kütüphanesi yüklenemedi. Yerel vendor dosyalarını veya CDN erişimini kontrol edin.');
 		return;
 	}
 

@@ -65,6 +65,25 @@ npm run dev
 
 Tum kontrol listesi: [DEPLOY_ONCESI_KONTROL.md](DEPLOY_ONCESI_KONTROL.md).
 
+## Belediye Canli Yolu Notu
+
+Belediye tarafinda uygulama asagidaki gibi bir adresten aciliyorsa:
+
+`https://cbsuygulamalari.bursa.bel.tr/model/data/merinos1/app/`
+
+sunucudaki klasor yapisi kardes klasor mantigiyla korunmalidir:
+
+- `.../model/data/merinos1/app/`
+- `.../model/data/merinos1/Scene/`
+- `.../model/data/merinos1/import/` (opsiyonel)
+- `.../model/data/merinos1/logo/` (opsiyonel)
+
+Notlar:
+
+- `app/index.html` icindeki kritik kaynak yollari gorelidir; alt dizinden yayin senaryosu ile uyumludur.
+- Sadece `app/` kopyalanir ve `Scene/` kardes klasoru eksik kalirsa 3D model yuklenmez (`../Scene/merinos1.json`).
+- Bu nedenle pratikte en guvenli yontem `npm run build:deploy` ciktisi olan `dist/` paketini bir butun olarak kopyalamaktir.
+
 ## Dizin Notlari
 
 - [dist](dist) build cikti dizinidir, deploy kaynagidir.
