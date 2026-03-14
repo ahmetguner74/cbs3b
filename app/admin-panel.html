@@ -18,13 +18,13 @@
 <body>
     <div id="access-overlay">
         <form id="access-form" class="access-card" autocomplete="off">
-            <h1>Yonetici Erisim Dogrulamasi</h1>
-            <p>Tek panelde tum operasyon yetkileri bu ekranda. Devam etmek icin yonetici anahtarini girin.</p>
+            <h1>Yonetici Girisi</h1>
+            <p>Operasyon paneline erismek icin yonetici anahtarini girin.</p>
             <div class="form-stack">
                 <input id="admin-key" class="input" type="password" placeholder="Erisim anahtari" required>
                 <button type="submit" class="btn btn-primary">Panele Giris Yap</button>
                 <div id="access-error" class="error-text"></div>
-                <div class="helper-text">Oturum dogrulamasi tarayici oturumu boyunca gecerlidir. 30 dakika islemsizlikte yeniden anahtar gerekir.</div>
+                <div class="helper-text">30 dakika islemsizlikte yeniden dogrulama gerekir.</div>
             </div>
         </form>
     </div>
@@ -35,7 +35,7 @@
                 <div class="brand-badge">OPS</div>
                 <div>
                     <h1>CBS Operasyon Kokpiti</h1>
-                    <p>Kullanicilari canli izle, sorunlari aninda yakala, sistemi kesintisiz yonet.</p>
+                    <p>Canli izleme, anlik kontrol ve merkezi yonetim.</p>
                 </div>
             </div>
 
@@ -46,11 +46,50 @@
                 </span>
                 <span class="status-pill" id="last-sync-state">Son senkron: -</span>
                 <span class="status-pill" id="selected-session-chip">Secili oturum: Tumu</span>
+                <span class="status-pill" id="stealth-state">Stealth: Hazirlaniyor</span>
+                <span class="status-pill" id="data-quality-state">Veri: Bekleniyor</span>
             </div>
 
             <div class="header-actions">
-                <button id="btn-refresh" class="btn btn-secondary" type="button">Veriyi Yenile</button>
+                <button id="btn-refresh" class="btn btn-secondary" type="button" title="Kisayol: R">Yenile</button>
                 <button id="btn-logout" class="btn btn-ghost" type="button">Cikis</button>
+            </div>
+
+            <div class="critical-strip" aria-label="Kritik V1 izleme">
+                <article class="critical-box" id="critical-spike-box">
+                    <div class="critical-label">Hata Artisi</div>
+                    <div class="critical-value" id="critical-spike-value">-</div>
+                    <div class="critical-meta" id="critical-spike-meta">Bekleniyor</div>
+                </article>
+
+                <article class="critical-box" id="critical-realtime-box">
+                    <div class="critical-label">Realtime</div>
+                    <div class="critical-value" id="critical-realtime-value">-</div>
+                    <div class="critical-meta" id="critical-realtime-meta">Bekleniyor</div>
+                </article>
+
+                <article class="critical-box" id="critical-js-box">
+                    <div class="critical-label">Uncaught JS</div>
+                    <div class="critical-value" id="critical-js-value">-</div>
+                    <div class="critical-meta" id="critical-js-meta">Bekleniyor</div>
+                </article>
+
+                <article class="critical-box" id="critical-fetch-box">
+                    <div class="critical-label">Failed Fetch</div>
+                    <div class="critical-value" id="critical-fetch-value">-</div>
+                    <div class="critical-meta" id="critical-fetch-meta">Bekleniyor</div>
+                </article>
+
+                <article class="critical-box" id="critical-fps-box">
+                    <div class="critical-label">Dusuk FPS</div>
+                    <div class="critical-value" id="critical-fps-value">-</div>
+                    <div class="critical-meta" id="critical-fps-meta">Bekleniyor</div>
+                </article>
+
+                <div class="critical-tools">
+                    <button id="btn-copy-critical" class="btn btn-secondary" type="button" title="Kisayol: Shift+K">Olayi Kopyala</button>
+                    <button id="btn-copy-template" class="btn btn-ghost" type="button" title="Kisayol: Shift+T">AI Sablonu</button>
+                </div>
             </div>
         </header>
 
@@ -87,65 +126,71 @@
             </article>
         </section>
 
-        <section class="control-rack">
-            <article class="control-card panel">
-                <h3>Ozellik Yonetimi</h3>
-                <p>Uygulamadaki fonksiyonlari tek panelden aktif/pasif yonet.</p>
+        <section class="control-rack" aria-label="Hizli komutlar">
+            <article class="control-card panel quick-card quick-modules">
+                <div class="quick-head">
+                    <span class="quick-icon" aria-hidden="true">MD</span>
+                    <h3>Moduller</h3>
+                </div>
                 <div class="feature-list">
                     <div class="feature-item">
-                        <label for="feature-measure">Olcum araclari</label>
+                        <label for="feature-measure">Olcum</label>
                         <input id="feature-measure" data-feature="measure" type="checkbox" checked>
                     </div>
                     <div class="feature-item">
-                        <label for="feature-analysis">Analiz araclari</label>
+                        <label for="feature-analysis">Analiz</label>
                         <input id="feature-analysis" data-feature="analysis" type="checkbox" checked>
                     </div>
                     <div class="feature-item">
-                        <label for="feature-import">Dosya ice aktarma</label>
+                        <label for="feature-import">Import</label>
                         <input id="feature-import" data-feature="import" type="checkbox" checked>
                     </div>
                 </div>
             </article>
 
-            <article class="control-card panel">
-                <h3>Anlik Duyuru Kanali</h3>
-                <p>Tum aktif istemcilere operatif bilgilendirme gonder.</p>
-                <textarea id="broadcast-msg" class="textarea" maxlength="400" placeholder="En fazla 400 karakter duyuru giriniz..."></textarea>
-                <div class="control-actions">
-                    <button id="btn-send-broadcast" class="btn btn-primary" type="button">Duyuru Gonder</button>
+            <article class="control-card panel quick-card quick-broadcast">
+                <div class="quick-head">
+                    <span class="quick-icon" aria-hidden="true">AN</span>
+                    <h3>Duyuru</h3>
+                </div>
+                <div class="control-actions quick-inline">
+                    <input id="broadcast-msg" class="input quick-input" type="text" maxlength="400" placeholder="Duyuru metni (Enter)">
+                    <button id="btn-send-broadcast" class="btn btn-primary" type="button" title="Kisayol: Enter">Gonder</button>
                 </div>
             </article>
 
-            <article class="control-card panel">
-                <h3>Sessiz Sistem Guncelleme</h3>
-                <p>Kullanicilara popup gostermeden asamali yenileme komutu yay.</p>
-                <div class="filters-grid">
-                    <div>
-                        <label class="helper-text" for="reload-delay">Gecikme (sn)</label>
+            <article class="control-card panel quick-card quick-reload">
+                <div class="quick-head">
+                    <span class="quick-icon" aria-hidden="true">RL</span>
+                    <h3>Yenileme</h3>
+                </div>
+                <div class="control-actions quick-inline">
+                    <label class="mini-field" for="reload-delay">
+                        <span>Sn</span>
                         <input id="reload-delay" class="input" type="number" min="0" max="300" value="20">
-                    </div>
-                    <div>
-                        <label class="helper-text" for="reload-hidden-only">Yalniz gizli sekme</label>
+                    </label>
+                    <label class="mini-field" for="reload-hidden-only">
+                        <span>Gizli</span>
                         <select id="reload-hidden-only" class="select">
                             <option value="true" selected>Evet</option>
                             <option value="false">Hayir</option>
                         </select>
-                    </div>
-                </div>
-                <div class="control-actions">
-                    <button id="btn-silent-reload" class="btn btn-secondary" type="button">Sessiz Yenileme</button>
-                    <button id="btn-force-reload" class="btn btn-danger" type="button">Acil Zorla Yenile</button>
+                    </label>
+                    <button id="btn-silent-reload" class="btn btn-secondary" type="button" title="Kisayol: Shift+S">Sessiz</button>
+                    <button id="btn-force-reload" class="btn btn-danger" type="button" title="Kisayol: Shift+F">Zorla</button>
                 </div>
             </article>
 
-            <article class="control-card panel">
-                <h3>Bakim ve Temizlik</h3>
-                <p>Log bakimi ve panel tamponunu ayni merkezden yonet.</p>
-                <div class="control-actions">
-                    <button id="btn-clear-old-logs" class="btn btn-secondary" type="button">30+ Gun Loglari Sil</button>
-                    <button id="btn-clear-local" class="btn btn-ghost" type="button">Ekran Tamponunu Temizle</button>
+            <article class="control-card panel quick-card quick-maintenance">
+                <div class="quick-head">
+                    <span class="quick-icon" aria-hidden="true">BK</span>
+                    <h3>Bakim</h3>
                 </div>
-                <div class="helper-text">Veritabani silme islemi geri alinamaz. Once ops ekibi onayi alin.</div>
+                <div class="control-actions quick-inline">
+                    <button id="btn-clear-old-logs" class="btn btn-secondary" type="button">Eski Log</button>
+                    <button id="btn-clear-local" class="btn btn-ghost" type="button" title="Kisayol: Shift+C">Temizle</button>
+                </div>
+                <div class="helper-text">Silme geri alinamaz.</div>
             </article>
         </section>
 
@@ -164,6 +209,19 @@
                         <option value="errors">Sadece hatali</option>
                         <option value="slow">Dusuk FPS</option>
                     </select>
+                    <select id="geo-filter" class="select">
+                        <option value="all">Tum konumlar</option>
+                        <option value="bursa">Bursa</option>
+                        <option value="tr">Turkiye</option>
+                        <option value="non-tr">Yurt disi</option>
+                        <option value="unknown">Konum belirsiz</option>
+                    </select>
+                    <select id="behavior-filter" class="select">
+                        <option value="all">Tum davranislar</option>
+                        <option value="normal">Normal</option>
+                        <option value="unstable">Kararsiz</option>
+                        <option value="suspicious">Anomali supheli</option>
+                    </select>
                 </div>
                 <ul id="session-list"></ul>
             </aside>
@@ -180,7 +238,7 @@
             <section class="logs-panel panel">
                 <div class="logs-header">
                     <h2 id="current-stream-title">Canli Akis | Tum Oturumlar</h2>
-                    <button id="btn-clear-table" class="btn btn-ghost" type="button">Tabloyu Sifirla</button>
+                    <button id="btn-clear-table" class="btn btn-ghost" type="button">Temizle</button>
                 </div>
                 <div class="log-table-wrap">
                     <table id="log-table">
@@ -228,6 +286,7 @@
         const SUPABASE_KEY = (APP_CONFIG.supabaseAnonKey || '').trim();
         const ADMIN_PASSWORD_SHA256 = (APP_CONFIG.adminPasswordSha256 || '').trim().toLowerCase();
         const ADMIN_COMMAND_TOKEN = (APP_CONFIG.adminCommandToken || '').trim();
+        const STEALTH_MONITORING = APP_CONFIG.monitoringStealthMode !== false;
         const ADMIN_AUTH_SESSION_KEY = 'cbsAdminAuthedAt';
         const ADMIN_AUTH_TTL_MS = 30 * 60 * 1000;
 
@@ -272,11 +331,18 @@
             sessionSearch: '',
             deviceFilter: 'all',
             issueFilter: 'all',
+            geoFilter: 'all',
+            behaviorFilter: 'all',
             sessionRows: [],
+            visibleSessionIds: new Set(),
             markers: {},
             map: null,
             mapReady: false,
             realtimeChannel: null,
+            realtimeStatus: 'INIT',
+            connectionTone: 'warning',
+            connectionText: 'Baglanti: Hazirlaniyor',
+            lastCriticalSnapshot: null,
             renderQueued: false,
             bootstrapped: false,
             ticker: null
@@ -401,17 +467,161 @@
             return Math.round(fps) + ' FPS';
         }
 
+        function normalizeCountry(countryRaw) {
+            const country = toSafeString(countryRaw, '').toLowerCase();
+            if (!country) return '';
+            if (country === 'tr' || country === 'turkiye' || country === 't\u00fcrkiye' || country === 'turkey') {
+                return 'tr';
+            }
+            return country;
+        }
+
+        function getGeoTag(cityRaw, countryRaw) {
+            const city = toSafeString(cityRaw, '').toLowerCase();
+            const country = normalizeCountry(countryRaw);
+            if (!city && !country) return 'unknown';
+            if (city.indexOf('bursa') >= 0) return 'bursa';
+            if (country === 'tr') return 'tr';
+            return 'non-tr';
+        }
+
+        function maskNetworkAddress(addressRaw) {
+            const address = toSafeString(addressRaw, '');
+            if (!address) return '';
+
+            if (address.indexOf(':') >= 0) {
+                const pieces = address.split(':').filter(Boolean).slice(0, 3);
+                return pieces.length > 0 ? (pieces.join(':') + ':*') : '';
+            }
+
+            const octets = address.split('.').map(function (x) { return x.trim(); });
+            if (octets.length === 4) {
+                return octets[0] + '.' + octets[1] + '.' + octets[2] + '.*';
+            }
+
+            return address.slice(0, 12);
+        }
+
+        function extractNetworkSignature(log) {
+            const details = (log && log.details && typeof log.details === 'object') ? log.details : {};
+            const info = (log && log.system_info && typeof log.system_info === 'object') ? log.system_info : {};
+            const loc = (info.location && typeof info.location === 'object') ? info.location : {};
+
+            const directIp = [
+                details.client_ip,
+                details.clientIp,
+                details.ip,
+                info.ip,
+                info.clientIp,
+                loc.ip,
+                loc.ipPrefix
+            ].find(function (v) {
+                return toSafeString(v, '') !== '';
+            });
+
+            if (directIp) {
+                const masked = maskNetworkAddress(directIp);
+                if (masked) return masked;
+            }
+
+            const provider = toSafeString(loc.org || loc.asn || details.org || details.asn, '');
+            return provider ? ('asn:' + provider.slice(0, 26)) : '';
+        }
+
+        function getBehaviorMeta(row) {
+            if (!row) {
+                return { tag: 'normal', label: 'Normal', reason: 'N/A' };
+            }
+
+            const errorRate = row.totalCount > 0 ? (row.errorCount / row.totalCount) : 0;
+            const burst = row.lastMinuteCount;
+            const networkChanges = row.networkFingerprintCount;
+            const locationChanges = row.locationFingerprintCount;
+
+            if (burst >= 35 || networkChanges >= 3 || locationChanges >= 3) {
+                return {
+                    tag: 'suspicious',
+                    label: 'Anomali supheli',
+                    reason: 'Yogun davranis veya ag/konum degisimi algilandi'
+                };
+            }
+
+            if ((row.totalCount >= 8 && errorRate >= 0.3) || burst >= 18) {
+                return {
+                    tag: 'unstable',
+                    label: 'Kararsiz',
+                    reason: 'Hata orani/frekans yuksek'
+                };
+            }
+
+            return {
+                tag: 'normal',
+                label: 'Normal',
+                reason: 'Tipik kullanim paterni'
+            };
+        }
+
+        function setStealthStateBadge() {
+            const el = document.getElementById('stealth-state');
+            if (!el) return;
+            if (STEALTH_MONITORING) {
+                el.textContent = 'Stealth: Aktif';
+                return;
+            }
+            el.textContent = 'Stealth: Kapali';
+        }
+
         function hasSupabaseConfig() {
             return !!supabaseAdmin;
+        }
+
+        function setCommandAvailability() {
+            const enabled = hasSupabaseConfig();
+            const commandButtons = [
+                'btn-send-broadcast',
+                'btn-silent-reload',
+                'btn-force-reload',
+                'btn-clear-old-logs'
+            ];
+
+            commandButtons.forEach(function (id) {
+                const btn = document.getElementById(id);
+                if (!btn) return;
+
+                if (!btn.dataset.baseTitle) {
+                    btn.dataset.baseTitle = btn.getAttribute('title') || '';
+                }
+
+                btn.disabled = !enabled;
+                if (!enabled) {
+                    btn.setAttribute('title', 'Supabase baglantisi yok, komut pasif');
+                } else if (btn.dataset.baseTitle) {
+                    btn.setAttribute('title', btn.dataset.baseTitle);
+                } else {
+                    btn.removeAttribute('title');
+                }
+            });
+
+            document.querySelectorAll('input[data-feature]').forEach(function (input) {
+                input.disabled = !enabled;
+                if (!enabled) {
+                    input.setAttribute('title', 'Supabase baglantisi yok, ozellik degistirme pasif');
+                } else {
+                    input.removeAttribute('title');
+                }
+            });
         }
 
         function setConnectionState(text, tone) {
             const el = document.getElementById('connection-state');
             if (!el) return;
             const safeText = toSafeString(text, 'Baglanti: Bilinmiyor');
-            const color = tone === 'error'
+            const safeTone = (tone === 'error' || tone === 'warning' || tone === 'success') ? tone : 'warning';
+            state.connectionTone = safeTone;
+            state.connectionText = safeText;
+            const color = safeTone === 'error'
                 ? '#ef4444'
-                : (tone === 'warning' ? '#f59e0b' : '#22c55e');
+                : (safeTone === 'warning' ? '#f59e0b' : '#22c55e');
             el.innerHTML = '<span class="pulse-dot" style="background:' + color + ';box-shadow:0 0 0 0 ' + color + '66"></span>' + escapeHtml(safeText);
         }
 
@@ -419,6 +629,39 @@
             const el = document.getElementById('last-sync-state');
             if (!el) return;
             el.textContent = 'Son senkron: ' + new Date().toLocaleTimeString('tr-TR');
+        }
+
+        function setDataQualityState(snapshot) {
+            const el = document.getElementById('data-quality-state');
+            if (!el) return;
+
+            const safeSnapshot = (snapshot && typeof snapshot === 'object') ? snapshot : null;
+            let text = 'Veri: Bekleniyor';
+            let tone = 'warning';
+
+            if (!hasSupabaseConfig()) {
+                text = 'Veri: Lokal (config yok)';
+                tone = 'warning';
+            } else if (state.realtimeStatus !== 'SUBSCRIBED') {
+                text = 'Veri: Kismi (realtime pasif)';
+                tone = 'warning';
+            } else if (!safeSnapshot || !Number.isFinite(Number(safeSnapshot.recentCount)) || safeSnapshot.recentCount < 8) {
+                text = 'Veri: Sinirli ornek';
+                tone = 'warning';
+            } else {
+                text = 'Veri: Canli + yeterli';
+                tone = 'ok';
+            }
+
+            el.textContent = text;
+            el.classList.remove('pill-ok', 'pill-warning', 'pill-danger');
+            if (tone === 'ok') {
+                el.classList.add('pill-ok');
+            } else if (tone === 'danger') {
+                el.classList.add('pill-danger');
+            } else {
+                el.classList.add('pill-warning');
+            }
         }
 
         function showToast(message, tone) {
@@ -515,6 +758,7 @@
 
         function buildSessionRows() {
             const map = new Map();
+            const now = Date.now();
 
             for (const log of state.logs) {
                 const sid = toSafeString(log.session_id, 'unknown-session');
@@ -541,14 +785,49 @@
                         lat: Number(loc.lat),
                         lng: Number(loc.lng),
                         isApprox: !!loc.isApprox,
+                        networkSample: '',
+                        networkFingerprints: new Set(),
+                        locationFingerprints: new Set(),
+                        networkFingerprintCount: 0,
+                        locationFingerprintCount: 0,
+                        geoTag: getGeoTag(loc.city, loc.country),
+                        lastMinuteCount: 0,
+                        behaviorTag: 'normal',
+                        behaviorLabel: 'Normal',
+                        behaviorReason: 'Tipik kullanim paterni',
                         last50: []
                     };
                     map.set(sid, row);
                 }
 
+                const logMs = toMs(log.created_at);
                 row.totalCount += 1;
                 if (log.is_error) row.errorCount += 1;
                 if (row.last50.length < 50) row.last50.push(log);
+                if ((now - logMs) <= 60000) {
+                    row.lastMinuteCount += 1;
+                }
+
+                const netSig = extractNetworkSignature(log);
+                if (netSig) {
+                    row.networkFingerprints.add(netSig);
+                    if (!row.networkSample) {
+                        row.networkSample = netSig;
+                    }
+                }
+
+                const info = log.system_info && typeof log.system_info === 'object' ? log.system_info : {};
+                const loc = info.location && typeof info.location === 'object' ? info.location : {};
+                const locFingerprint = toSafeString(loc.city, '') + '|' + normalizeCountry(loc.country);
+                if (locFingerprint !== '|') {
+                    row.locationFingerprints.add(locFingerprint);
+                }
+
+                if (logMs > row.lastSeen) {
+                    row.lastSeen = logMs;
+                    row.latestLog = log;
+                    row.geoTag = getGeoTag(loc.city, loc.country);
+                }
 
                 const maybeUser = pickUserIdentity(log);
                 if (row.userId === 'Anonim' && maybeUser !== 'Anonim') {
@@ -557,6 +836,16 @@
             }
 
             const rows = Array.from(map.values());
+            rows.forEach(function (row) {
+                row.networkFingerprintCount = row.networkFingerprints.size;
+                row.locationFingerprintCount = row.locationFingerprints.size;
+
+                const behavior = getBehaviorMeta(row);
+                row.behaviorTag = behavior.tag;
+                row.behaviorLabel = behavior.label;
+                row.behaviorReason = behavior.reason;
+            });
+
             rows.sort(function (a, b) {
                 return b.lastSeen - a.lastSeen;
             });
@@ -590,13 +879,22 @@
                     if (fps >= 25) return false;
                 }
 
+                if (state.geoFilter !== 'all' && row.geoTag !== state.geoFilter) {
+                    return false;
+                }
+
+                if (state.behaviorFilter !== 'all' && row.behaviorTag !== state.behaviorFilter) {
+                    return false;
+                }
+
                 if (!q) return true;
                 const haystack = [
                     row.sessionId,
                     row.userId,
                     row.city,
                     row.country,
-                    row.platform
+                    row.platform,
+                    row.networkSample
                 ].join(' ').toLowerCase();
                 return haystack.indexOf(q) >= 0;
             });
@@ -605,6 +903,14 @@
         function getFilteredLogs() {
             const filtered = state.logs.filter(function (log) {
                 if (state.selectedSession && log.session_id !== state.selectedSession) {
+                    return false;
+                }
+
+                if (!state.selectedSession && state.visibleSessionIds.size > 0 && !state.visibleSessionIds.has(log.session_id)) {
+                    return false;
+                }
+
+                if (!state.selectedSession && state.sessionRows.length > 0 && state.visibleSessionIds.size === 0) {
                     return false;
                 }
 
@@ -650,13 +956,323 @@
                 return (Date.now() - toMs(log.created_at)) <= 60000;
             }).length;
 
+            const suspiciousCount = rows.filter(function (row) {
+                return row.behaviorTag === 'suspicious';
+            }).length;
+
             document.getElementById('kpi-active-sessions').textContent = String(active);
             document.getElementById('kpi-total-sessions').textContent = String(rows.length);
             document.getElementById('kpi-log-count').textContent = String(state.logs.length);
             document.getElementById('kpi-error-rate').textContent = errorRate.toFixed(1) + '%';
             document.getElementById('kpi-mobile-ratio').textContent = active > 0 ? ((mobileActive / active) * 100).toFixed(0) + '%' : '0%';
             document.getElementById('kpi-avg-fps').textContent = avgFps === '-' ? '-' : (avgFps + ' FPS');
-            document.getElementById('kpi-last-minute').textContent = 'Son 1 dk olay: ' + String(minuteCount);
+            document.getElementById('kpi-last-minute').textContent = 'Son 1 dk olay: ' + String(minuteCount) + ' | riskli: ' + String(suspiciousCount);
+        }
+
+        function extractLogMessage(log) {
+            const details = (log && log.details && typeof log.details === 'object') ? log.details : {};
+            const raw = details.message || details.error || details.reason || details.event || '';
+            return toSafeString(raw, '').toLowerCase();
+        }
+
+        function classifyCriticalTone(level) {
+            if (level >= 2) return 'danger';
+            if (level === 1) return 'warning';
+            return 'ok';
+        }
+
+        function computeCriticalSnapshot() {
+            const now = Date.now();
+            const recentLogs = state.logs.filter(function (log) {
+                return (now - toMs(log.created_at)) <= (5 * 60 * 1000);
+            });
+            const previousLogs = state.logs.filter(function (log) {
+                const age = now - toMs(log.created_at);
+                return age > (5 * 60 * 1000) && age <= (10 * 60 * 1000);
+            });
+
+            const recentCount = recentLogs.length;
+            const recentErrorCount = recentLogs.filter(function (log) { return !!log.is_error; }).length;
+            const previousErrorCount = previousLogs.filter(function (log) { return !!log.is_error; }).length;
+            const recentErrorRate = recentCount > 0 ? (recentErrorCount / recentCount) : 0;
+            const previousErrorRate = previousLogs.length > 0 ? (previousErrorCount / previousLogs.length) : 0;
+            const errorDelta = recentErrorRate - previousErrorRate;
+
+            let spikeLevel = 0;
+            let spikeValue = 'Stabil';
+            let spikeMeta = (recentErrorRate * 100).toFixed(1) + '%';
+
+            if (recentCount < 8) {
+                spikeLevel = 1;
+                spikeValue = 'Veri az';
+                spikeMeta = 'Son 5 dk: ' + recentCount + ' olay';
+            } else if (recentErrorRate >= 0.22 && (previousLogs.length < 8
+                ? recentErrorRate >= 0.22
+                : (recentErrorRate >= previousErrorRate * 1.5 && errorDelta >= 0.05))) {
+                spikeLevel = 2;
+                spikeValue = 'Yukselis';
+                spikeMeta = '+' + (errorDelta * 100).toFixed(1) + ' puan';
+            } else if (recentErrorRate >= 0.12) {
+                spikeLevel = 1;
+                spikeValue = 'Izlenmeli';
+                spikeMeta = (recentErrorRate * 100).toFixed(1) + '%';
+            }
+
+            const realtimeStatus = toSafeString(state.realtimeStatus, 'INIT');
+            let realtimeLevel = 1;
+            let realtimeValue = 'Beklemede';
+            let realtimeMeta = realtimeStatus;
+
+            if (!hasSupabaseConfig()) {
+                realtimeLevel = 1;
+                realtimeValue = 'Config yok';
+                realtimeMeta = 'Lokal mod';
+            } else if (realtimeStatus === 'SUBSCRIBED') {
+                realtimeLevel = 0;
+                realtimeValue = 'Canli';
+                realtimeMeta = 'Akis aktif';
+            } else if (realtimeStatus === 'CHANNEL_ERROR' || realtimeStatus === 'TIMED_OUT' || realtimeStatus === 'CLOSED') {
+                realtimeLevel = 2;
+                realtimeValue = 'Kesik';
+                realtimeMeta = realtimeStatus;
+            }
+
+            const uncaughtCount = recentLogs.filter(function (log) {
+                if (!log.is_error) return false;
+                const msg = extractLogMessage(log);
+                return msg.indexOf('uncaught') >= 0 || msg.indexOf('referenceerror') >= 0 || msg.indexOf('typeerror') >= 0;
+            }).length;
+            let jsLevel = uncaughtCount >= 5 ? 2 : (uncaughtCount > 0 ? 1 : 0);
+            let jsValue = String(uncaughtCount);
+            let jsMeta = 'Son 5 dk';
+            if (recentCount === 0) {
+                jsLevel = 1;
+                jsValue = '-';
+                jsMeta = 'Veri yok';
+            }
+
+            const fetchErrorCount = recentLogs.filter(function (log) {
+                const msg = extractLogMessage(log);
+                const action = toSafeString(log.action, '').toLowerCase();
+                return msg.indexOf('failed to fetch') >= 0 || msg.indexOf('networkerror') >= 0 || (log.is_error && action.indexOf('fetch') >= 0);
+            }).length;
+            const fetchRate = recentCount > 0 ? (fetchErrorCount / recentCount) : 0;
+            let fetchLevel = 0;
+            let fetchValue = String(fetchErrorCount);
+            let fetchMeta = (fetchRate * 100).toFixed(1) + '%';
+            if (recentCount === 0) {
+                fetchLevel = 1;
+                fetchValue = '-';
+                fetchMeta = 'Veri yok';
+            } else if (fetchRate >= 0.12) {
+                fetchLevel = 2;
+            } else if (fetchRate >= 0.04) {
+                fetchLevel = 1;
+            }
+
+            const fpsLogs = recentLogs.filter(function (log) {
+                return toNumber(log.fps, -1) >= 0;
+            });
+            const lowFpsCount = fpsLogs.filter(function (log) {
+                return toNumber(log.fps, 999) < 20;
+            }).length;
+            const lowFpsRate = fpsLogs.length > 0 ? (lowFpsCount / fpsLogs.length) : 0;
+            let fpsLevel = 0;
+            let fpsValue = fpsLogs.length > 0 ? ((lowFpsRate * 100).toFixed(0) + '%') : '-';
+            let fpsMeta = fpsLogs.length > 0 ? (lowFpsCount + '/' + fpsLogs.length) : 'FPS verisi yok';
+            if (fpsLogs.length < 6) {
+                fpsLevel = 1;
+            } else if (lowFpsRate >= 0.4) {
+                fpsLevel = 2;
+            } else if (lowFpsRate >= 0.2) {
+                fpsLevel = 1;
+            }
+
+            const items = {
+                spike: {
+                    key: 'spike',
+                    title: 'Hata artisi',
+                    level: spikeLevel,
+                    tone: classifyCriticalTone(spikeLevel),
+                    value: spikeValue,
+                    meta: spikeMeta
+                },
+                realtime: {
+                    key: 'realtime',
+                    title: 'Realtime kanal',
+                    level: realtimeLevel,
+                    tone: classifyCriticalTone(realtimeLevel),
+                    value: realtimeValue,
+                    meta: realtimeMeta
+                },
+                js: {
+                    key: 'js',
+                    title: 'Uncaught JS',
+                    level: jsLevel,
+                    tone: classifyCriticalTone(jsLevel),
+                    value: jsValue,
+                    meta: jsMeta
+                },
+                fetch: {
+                    key: 'fetch',
+                    title: 'Failed fetch',
+                    level: fetchLevel,
+                    tone: classifyCriticalTone(fetchLevel),
+                    value: fetchValue,
+                    meta: fetchMeta
+                },
+                fps: {
+                    key: 'fps',
+                    title: 'Dusuk FPS',
+                    level: fpsLevel,
+                    tone: classifyCriticalTone(fpsLevel),
+                    value: fpsValue,
+                    meta: fpsMeta
+                }
+            };
+
+            const issueOrder = [items.spike, items.realtime, items.js, items.fetch, items.fps];
+            const topIssue = issueOrder
+                .slice()
+                .sort(function (a, b) { return b.level - a.level; })[0] || items.spike;
+
+            return {
+                items: items,
+                topIssue: topIssue,
+                recentCount: recentCount
+            };
+        }
+
+        function applyCriticalBox(baseId, data) {
+            const box = document.getElementById(baseId + '-box');
+            const valueEl = document.getElementById(baseId + '-value');
+            const metaEl = document.getElementById(baseId + '-meta');
+            if (!box || !valueEl || !metaEl || !data) return;
+
+            box.classList.remove('tone-ok', 'tone-warning', 'tone-danger');
+            box.classList.add('tone-' + data.tone);
+            valueEl.textContent = data.value;
+            metaEl.textContent = data.meta;
+        }
+
+        function renderCriticalV1() {
+            const snapshot = computeCriticalSnapshot();
+            state.lastCriticalSnapshot = snapshot;
+
+            applyCriticalBox('critical-spike', snapshot.items.spike);
+            applyCriticalBox('critical-realtime', snapshot.items.realtime);
+            applyCriticalBox('critical-js', snapshot.items.js);
+            applyCriticalBox('critical-fetch', snapshot.items.fetch);
+            applyCriticalBox('critical-fps', snapshot.items.fps);
+        }
+
+        async function copyTextToClipboard(text) {
+            const payload = toSafeString(text, '');
+            if (!payload) return false;
+
+            try {
+                if (navigator.clipboard && window.isSecureContext) {
+                    await navigator.clipboard.writeText(payload);
+                    return true;
+                }
+            } catch (error) {
+                console.warn('Clipboard API kullanilamadi:', error);
+            }
+
+            try {
+                const temp = document.createElement('textarea');
+                temp.value = payload;
+                temp.setAttribute('readonly', 'readonly');
+                temp.style.position = 'fixed';
+                temp.style.left = '-9999px';
+                document.body.appendChild(temp);
+                temp.select();
+                const copied = document.execCommand('copy');
+                document.body.removeChild(temp);
+                return copied;
+            } catch (_error) {
+                return false;
+            }
+        }
+
+        function buildCriticalContextLines() {
+            const logsSorted = state.logs
+                .slice()
+                .sort(function (a, b) { return toMs(b.created_at) - toMs(a.created_at); });
+
+            let logs = logsSorted;
+            if (state.selectedSession) {
+                const scoped = logsSorted.filter(function (log) {
+                    return log.session_id === state.selectedSession;
+                });
+                if (scoped.length > 0) {
+                    logs = scoped;
+                }
+            }
+
+            logs = logs.slice(0, 4);
+            if (!logs.length) return ['- Son kayit bulunamadi'];
+            return logs.map(function (log) {
+                const msg = toSafeString(log.details && log.details.message, toSafeString(log.action, 'N/A')).slice(0, 120);
+                return '- ' + formatClock(log.created_at) + ' | ' + shortSessionId(log.session_id) + ' | ' + toSafeString(log.action, 'N/A') + ' | ' + msg;
+            });
+        }
+
+        function buildCriticalReportText(snapshot) {
+            const safeSnapshot = snapshot && snapshot.items ? snapshot : computeCriticalSnapshot();
+            const top = safeSnapshot.topIssue || safeSnapshot.items.spike;
+            const selectedLog = state.selectedLogId ? findLogById(state.selectedLogId) : null;
+            const selectedLogInfo = selectedLog
+                ? (toSafeString(selectedLog.action, 'N/A') + ' | ' + shortSessionId(selectedLog.session_id) + ' | ' + formatDateTime(selectedLog.created_at))
+                : 'Yok';
+            const qualityText = toSafeString((document.getElementById('data-quality-state') || {}).textContent, 'Veri: Bilinmiyor');
+
+            return [
+                '[CBS KRITIK V1 RAPORU]',
+                'Zaman: ' + new Date().toLocaleString('tr-TR'),
+                'En kritik sinyal: ' + top.title + ' -> ' + top.value + ' (' + top.meta + ')',
+                'Veri guvenilirligi: ' + qualityText,
+                'Rapor kaynagi: Ham log ornekleri (filtre disi)',
+                'Secili oturum: ' + (state.selectedSession ? shortSessionId(state.selectedSession) : 'Tumu'),
+                'Secili log: ' + selectedLogInfo,
+                'Kritik kutular:',
+                '- Hata artisi: ' + safeSnapshot.items.spike.value + ' (' + safeSnapshot.items.spike.meta + ')',
+                '- Realtime: ' + safeSnapshot.items.realtime.value + ' (' + safeSnapshot.items.realtime.meta + ')',
+                '- Uncaught JS: ' + safeSnapshot.items.js.value + ' (' + safeSnapshot.items.js.meta + ')',
+                '- Failed fetch: ' + safeSnapshot.items.fetch.value + ' (' + safeSnapshot.items.fetch.meta + ')',
+                '- Dusuk FPS: ' + safeSnapshot.items.fps.value + ' (' + safeSnapshot.items.fps.meta + ')',
+                'Son log ornekleri:',
+                buildCriticalContextLines().join('\n'),
+                'Beklenti: Koku neden + kod duzeltme + test adimlari'
+            ].join('\n');
+        }
+
+        function buildAiTemplateText(snapshot) {
+            const report = buildCriticalReportText(snapshot);
+            return [
+                'Lutfen asagidaki kritik olayi analiz et ve duzelt:',
+                '',
+                report,
+                '',
+                '[ISTENEN CIKTI]',
+                '1) Olasi kok neden',
+                '2) Kesin duzeltme (dosya + kod)',
+                '3) Yan etki/risk kontrolu',
+                '4) Dogrulama adimlari (kisa)',
+                '5) Tekrari onleme onerisi'
+            ].join('\n');
+        }
+
+        async function copyCriticalReport() {
+            const snapshot = state.lastCriticalSnapshot || computeCriticalSnapshot();
+            const ok = await copyTextToClipboard(buildCriticalReportText(snapshot));
+            showToast(ok ? 'Kritik olay raporu panoya kopyalandi.' : 'Kopyalama basarisiz.', ok ? 'success' : 'error');
+        }
+
+        async function copyAiTemplate() {
+            const snapshot = state.lastCriticalSnapshot || computeCriticalSnapshot();
+            const ok = await copyTextToClipboard(buildAiTemplateText(snapshot));
+            showToast(ok ? 'AI gonderim sablonu panoya kopyalandi.' : 'Kopyalama basarisiz.', ok ? 'success' : 'error');
         }
 
         function renderSessionList(rows) {
@@ -689,6 +1305,11 @@
                 const errorPill = row.errorCount > 0
                     ? '<span class="session-pill danger">' + row.errorCount + ' hata</span>'
                     : '<span class="session-pill">normal</span>';
+                const behaviorPillClass = row.behaviorTag === 'suspicious'
+                    ? 'danger'
+                    : (row.behaviorTag === 'unstable' ? 'warning' : '');
+                const behaviorPill = '<span class="session-pill ' + behaviorPillClass + '">' + escapeHtml(row.behaviorLabel) + '</span>';
+                const networkText = row.networkSample ? row.networkSample : 'ip/asn yok';
 
                 const button = document.createElement('button');
                 button.type = 'button';
@@ -701,6 +1322,10 @@
                     '<div class="session-meta">' +
                     '<span>' + escapeHtml(row.deviceType) + ' | ' + escapeHtml(row.userId) + '</span>' +
                     '<span>' + escapeHtml(cityText) + '</span>' +
+                    '</div>' +
+                    '<div class="session-meta">' +
+                    behaviorPill +
+                    '<span class="mono">' + escapeHtml(networkText) + '</span>' +
                     '</div>';
 
                 item.appendChild(button);
@@ -774,6 +1399,8 @@
                 '<div class="info-cell"><div class="label">Durum</div><div class="value">' + escapeHtml(status.text) + ' (' + escapeHtml(formatAgo(latest.created_at)) + ')</div></div>' +
                 '<div class="info-cell"><div class="label">Session</div><div class="value mono">' + escapeHtml(selected.sessionId) + '</div></div>' +
                 '<div class="info-cell"><div class="label">Kayit Sayisi</div><div class="value">' + selected.totalCount + ' / hata: ' + selected.errorCount + '</div></div>' +
+                '<div class="info-cell"><div class="label">Davranis Etiketi</div><div class="value">' + escapeHtml(selected.behaviorLabel) + '</div></div>' +
+                '<div class="info-cell"><div class="label">Davranis Notu</div><div class="value">' + escapeHtml(selected.behaviorReason) + '</div></div>' +
                 '<div class="info-cell"><div class="label">Konum</div><div class="value">' + escapeHtml(locationText) + '</div></div>' +
                 '<div class="info-cell"><div class="label">Cihaz</div><div class="value">' + escapeHtml(selected.deviceType) + ' | ' + escapeHtml(selected.platform) + '</div></div>' +
                 '<div class="info-cell"><div class="label">Ekran</div><div class="value">' + escapeHtml(selected.screen) + '</div></div>' +
@@ -782,6 +1409,8 @@
                 '<div class="info-cell"><div class="label">GPU</div><div class="value">' + escapeHtml(selected.gpu) + '</div></div>' +
                 '<div class="info-cell"><div class="label">Ag Tipi</div><div class="value">' + escapeHtml(toSafeString(conn.type, 'N/A')) + '</div></div>' +
                 '<div class="info-cell"><div class="label">Ping/Downlink</div><div class="value">' + escapeHtml(toSafeString(conn.rtt, 'N/A')) + ' ms / ' + escapeHtml(toSafeString(conn.downlink, 'N/A')) + '</div></div>' +
+                '<div class="info-cell"><div class="label">Ag Imzasi</div><div class="value mono">' + escapeHtml(selected.networkSample || 'N/A') + '</div></div>' +
+                '<div class="info-cell"><div class="label">Ag/Konum Degisimi</div><div class="value">' + selected.networkFingerprintCount + ' / ' + selected.locationFingerprintCount + '</div></div>' +
                 '</div>';
         }
 
@@ -969,7 +1598,10 @@
             }
 
             const visibleRows = getFilteredSessionRows(allRows);
+            state.visibleSessionIds = new Set(visibleRows.map(function (row) { return row.sessionId; }));
             renderKpis(allRows);
+            renderCriticalV1();
+            setDataQualityState(state.lastCriticalSnapshot);
             renderSessionList(visibleRows);
             renderLogTable();
             renderSelectedSession(allRows);
@@ -1199,6 +1831,7 @@
             state.logs = [];
             state.selectedSession = null;
             state.selectedLogId = null;
+            state.visibleSessionIds = new Set();
             Object.keys(state.markers).forEach(removeMarker);
             queueRender();
             showToast('Panel tamponu temizlendi.', 'info');
@@ -1241,7 +1874,10 @@
                     queueRender();
                 });
 
+            state.realtimeStatus = 'CONNECTING';
+
             channel.subscribe(function (status) {
+                state.realtimeStatus = toSafeString(status, 'UNKNOWN');
                 if (status === 'SUBSCRIBED') {
                     setConnectionState('Baglanti: Realtime acik', 'success');
                 } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
@@ -1249,6 +1885,7 @@
                 } else {
                     setConnectionState('Baglanti: ' + status, 'warning');
                 }
+                queueRender();
             });
 
             state.realtimeChannel = channel;
@@ -1260,6 +1897,75 @@
             showToast('Veri yenilendi.', 'info');
         }
 
+        function isEditableElement(el) {
+            if (!el) return false;
+            const tag = toSafeString(el.tagName, '').toLowerCase();
+            return tag === 'input' || tag === 'textarea' || tag === 'select' || !!el.isContentEditable;
+        }
+
+        function handleGlobalShortcuts(event) {
+            const content = document.getElementById('admin-content');
+            if (!content || content.classList.contains('hidden')) return;
+
+            const key = toSafeString(event.key, '');
+            const active = document.activeElement;
+            const activeId = active && active.id ? active.id : '';
+
+            if ((event.ctrlKey || event.metaKey) && key === 'Enter' && activeId === 'broadcast-msg') {
+                event.preventDefault();
+                sendBroadcast();
+                return;
+            }
+
+            if (isEditableElement(active)) {
+                return;
+            }
+
+            if (key === 'r' || key === 'R') {
+                event.preventDefault();
+                refreshNow();
+                return;
+            }
+
+            if (key === 'b' || key === 'B') {
+                event.preventDefault();
+                const msgInput = document.getElementById('broadcast-msg');
+                if (msgInput) msgInput.focus();
+                return;
+            }
+
+            if (event.shiftKey && (key === 'S' || key === 's')) {
+                event.preventDefault();
+                sendSilentReload();
+                return;
+            }
+
+            if (event.shiftKey && (key === 'K' || key === 'k')) {
+                event.preventDefault();
+                copyCriticalReport();
+                return;
+            }
+
+            if (event.shiftKey && (key === 'T' || key === 't')) {
+                event.preventDefault();
+                copyAiTemplate();
+                return;
+            }
+
+            if (event.shiftKey && (key === 'F' || key === 'f')) {
+                event.preventDefault();
+                forceReloadAll();
+                return;
+            }
+
+            if (event.shiftKey && (key === 'C' || key === 'c')) {
+                event.preventDefault();
+                if (window.confirm('Panel tamponu temizlensin mi?')) {
+                    clearLocalBuffer();
+                }
+            }
+        }
+
         function bindUiEvents() {
             document.getElementById('btn-logout').addEventListener('click', logoutAdmin);
             document.getElementById('btn-refresh').addEventListener('click', refreshNow);
@@ -1269,6 +1975,15 @@
             document.getElementById('btn-clear-old-logs').addEventListener('click', clearOldLogs);
             document.getElementById('btn-clear-local').addEventListener('click', clearLocalBuffer);
             document.getElementById('btn-clear-table').addEventListener('click', clearLocalBuffer);
+            document.getElementById('btn-copy-critical').addEventListener('click', copyCriticalReport);
+            document.getElementById('btn-copy-template').addEventListener('click', copyAiTemplate);
+
+            document.getElementById('broadcast-msg').addEventListener('keydown', function (event) {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    sendBroadcast();
+                }
+            });
 
             document.getElementById('session-search').addEventListener('input', function (event) {
                 state.sessionSearch = toSafeString(event.target.value, '');
@@ -1282,6 +1997,16 @@
 
             document.getElementById('issue-filter').addEventListener('change', function (event) {
                 state.issueFilter = toSafeString(event.target.value, 'all');
+                queueRender();
+            });
+
+            document.getElementById('geo-filter').addEventListener('change', function (event) {
+                state.geoFilter = toSafeString(event.target.value, 'all');
+                queueRender();
+            });
+
+            document.getElementById('behavior-filter').addEventListener('change', function (event) {
+                state.behaviorFilter = toSafeString(event.target.value, 'all');
                 queueRender();
             });
 
@@ -1322,12 +2047,16 @@
                     }, 80);
                 }
             });
+
+            document.addEventListener('keydown', handleGlobalShortcuts);
         }
 
         async function bootstrapAdminPanel() {
             if (state.bootstrapped) return;
 
             initMap();
+            setStealthStateBadge();
+            setCommandAvailability();
 
             if (!hasSupabaseConfig()) {
                 showToast('Supabase config eksik. Panel sadece lokal gorunumde calisir.', 'warning');

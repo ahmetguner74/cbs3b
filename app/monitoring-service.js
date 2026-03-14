@@ -7,6 +7,15 @@
     const SUPABASE_URL = (APP_CONFIG.supabaseUrl || '').trim();
     const SUPABASE_KEY = (APP_CONFIG.supabaseAnonKey || '').trim();
     const ADMIN_COMMAND_TOKEN = (APP_CONFIG.adminCommandToken || '').trim();
+    const MONITORING_STEALTH_MODE = APP_CONFIG.monitoringStealthMode !== false;
+    const MONITORING_VERBOSE_CONSOLE = APP_CONFIG.monitoringVerboseConsole === true;
+    const INTERACTION_DEBOUNCE = Math.max(300, Number(APP_CONFIG.monitoringInteractionDebounceMs) || 900);
+    const HEARTBEAT_INTERVAL_MS = Math.max(10000, Number(APP_CONFIG.monitoringHeartbeatMs) || 25000);
+
+    function debugMonitoringLog() {
+        if (!MONITORING_VERBOSE_CONSOLE) return;
+        console.log.apply(console, arguments);
+    }
 
     let supabaseClient = null;
     let sessionId = 'session_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
@@ -25,7 +34,6 @@
     let localStorageSizeCache = '0.00KB';
     let localStorageSizeCacheAt = 0;
     let lastInteractionTime = 0;
-    const INTERACTION_DEBOUNCE = 500; // ms
     const LOG_BUFFER_MAX = 200;
     const LOG_BATCH_SIZE = 25;
     const LOG_FLUSH_INTERVAL = 1500; // ms
@@ -50,8 +58,7 @@
             }
 
             supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-            console.log('🚀 Monitoring Service ID:', sessionId);
-            console.log("%c[Monitoring] Oturum Başladı: " + sessionId, "color: #38bdf8; font-weight: bold;");
+            debugMonitoringLog('Monitoring Service ID:', sessionId);
 
             this.bindGlobalErrorFallbacks();
 
@@ -75,9 +82,14 @@
                                 lng: data.longitude,
                                 city: data.city,
                                 country: data.country_name,
+                                countryCode: data.country_code,
+                                ipPrefix: (data.ip && typeof data.ip === 'string')
+                                    ? data.ip.split('.').slice(0, 3).join('.') + '.*'
+                                    : '',
+                                org: data.org || '',
                                 isApprox: true
                             };
-                            console.log('[Monitoring] Yaklaşık konum (IP):', ipLocation.city);
+                            debugMonitoringLog('[Monitoring] Yaklasik konum (IP):', ipLocation.city);
                         }
                     })
                     .catch(() => { });
@@ -231,7 +243,7 @@
                     if (!this.isAuthorizedCommand(safePayload)) {
                         return;
                     }
-                    console.log('%c[Monitoring] Uzak sunucudan yenileme komutu alındı!', 'color: #ef4444; font-weight: bold;');
+                    debugMonitoringLog('[Monitoring] Uzak yenileme komutu alindi');
                     this.handleReloadCommand(safePayload);
                 })
                 .on('broadcast', { event: 'message' }, ({ payload }) => {
@@ -239,7 +251,7 @@
                     if (!this.isAuthorizedCommand(safePayload)) {
                         return;
                     }
-                    this.showBroadcastMessage(safePayload.msg);
+                    this.showBroadcastMessage(safePayload.msg, safePayload);
                 })
                 .subscribe();
         },
@@ -327,7 +339,7 @@
                 console.warn('[Monitoring] Geçersiz feature_flags alındı:', flags);
                 return;
             }
-            console.log('[Monitoring] Uygulanan Özellikler:', flags);
+            debugMonitoringLog('[Monitoring] Uygulanan Ozellikler:', flags);
             // feature-toggle CSS class'ına sahip elemanları yönet
             // Örn: <div class="feature-toggle" data-feature="measure">...</div>
             document.querySelectorAll('[data-feature]').forEach(el => {
@@ -340,7 +352,12 @@
             });
         },
 
-        showBroadcastMessage: function (msg) {
+        showBroadcastMessage: function (msg, payload) {
+            const safePayload = (payload && typeof payload === 'object') ? payload : {};
+            if (MONITORING_STEALTH_MODE || safePayload.mode === 'silent' || safePayload.mode === 'silent-maintenance') {
+                return;
+            }
+
             // Basit bir duyuru barı oluştur veya var olanı güncelle
             let alertBar = document.getElementById('system-alert-bar');
             let messageNode = null;
@@ -384,7 +401,7 @@
                 if (_hbInterval) return;
                 _hbInterval = setInterval(function () {
                     self.log('HEARTBEAT');
-                }, 20000);
+                }, HEARTBEAT_INTERVAL_MS);
             }
             function _stopHb() {
                 clearInterval(_hbInterval);
