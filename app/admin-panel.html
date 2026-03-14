@@ -196,7 +196,10 @@
 
         <section class="workspace-grid">
             <aside class="sessions-panel panel">
-                <h2 class="panel-title">Kullanici Oturumlari</h2>
+                <div class="session-toolbar">
+                    <h2 class="panel-title">Kullanici Oturumlari</h2>
+                    <button id="btn-reset-filters" class="btn btn-ghost btn-xs" type="button">Filtre Sifirla</button>
+                </div>
                 <input id="session-search" class="input" type="text" placeholder="Session, kullanici veya sehir ara...">
                 <div class="filters-grid">
                     <select id="device-filter" class="select">
@@ -223,6 +226,7 @@
                         <option value="suspicious">Anomali supheli</option>
                     </select>
                 </div>
+                <div id="session-filter-summary" class="helper-text session-filter-summary">Gorunen: 0 / 0</div>
                 <ul id="session-list"></ul>
             </aside>
 
@@ -295,6 +299,7 @@
         const TABLE_ROW_LIMIT = 220;
         const ACTIVE_MS = 5 * 60 * 1000;
         const VERY_ACTIVE_MS = 60 * 1000;
+        const FILTER_PREFS_KEY = 'cbsAdminPanelFilterPrefsV1';
 
         const ERROR_DICTIONARY = {
             'Uncaught ReferenceError': {
@@ -370,6 +375,81 @@
 
         function clamp(value, min, max) {
             return Math.min(max, Math.max(min, value));
+        }
+
+        function pickAllowed(value, allowed, fallback) {
+            const candidate = toSafeString(value, fallback);
+            return allowed.indexOf(candidate) >= 0 ? candidate : fallback;
+        }
+
+        function getNormalizedFilterState(rawPrefs) {
+            const prefs = (rawPrefs && typeof rawPrefs === 'object') ? rawPrefs : {};
+            return {
+                sessionSearch: toSafeString(prefs.sessionSearch, '').slice(0, 120),
+                deviceFilter: pickAllowed(prefs.deviceFilter, ['all', 'Desktop', 'Mobile'], 'all'),
+                issueFilter: pickAllowed(prefs.issueFilter, ['all', 'errors', 'slow'], 'all'),
+                geoFilter: pickAllowed(prefs.geoFilter, ['all', 'bursa', 'tr', 'non-tr', 'unknown'], 'all'),
+                behaviorFilter: pickAllowed(prefs.behaviorFilter, ['all', 'normal', 'unstable', 'suspicious'], 'all')
+            };
+        }
+
+        function syncFilterInputsFromState() {
+            const searchInput = document.getElementById('session-search');
+            const deviceFilter = document.getElementById('device-filter');
+            const issueFilter = document.getElementById('issue-filter');
+            const geoFilter = document.getElementById('geo-filter');
+            const behaviorFilter = document.getElementById('behavior-filter');
+
+            if (searchInput) searchInput.value = state.sessionSearch;
+            if (deviceFilter) deviceFilter.value = state.deviceFilter;
+            if (issueFilter) issueFilter.value = state.issueFilter;
+            if (geoFilter) geoFilter.value = state.geoFilter;
+            if (behaviorFilter) behaviorFilter.value = state.behaviorFilter;
+        }
+
+        function persistFilterPrefs() {
+            try {
+                localStorage.setItem(FILTER_PREFS_KEY, JSON.stringify({
+                    sessionSearch: state.sessionSearch,
+                    deviceFilter: state.deviceFilter,
+                    issueFilter: state.issueFilter,
+                    geoFilter: state.geoFilter,
+                    behaviorFilter: state.behaviorFilter
+                }));
+            } catch (_error) {
+                // storage unavailable is non-blocking for panel usage
+            }
+        }
+
+        function restoreFilterPrefs() {
+            let parsed = null;
+            try {
+                parsed = JSON.parse(localStorage.getItem(FILTER_PREFS_KEY) || 'null');
+            } catch (_error) {
+                parsed = null;
+            }
+
+            const safePrefs = getNormalizedFilterState(parsed);
+            state.sessionSearch = safePrefs.sessionSearch;
+            state.deviceFilter = safePrefs.deviceFilter;
+            state.issueFilter = safePrefs.issueFilter;
+            state.geoFilter = safePrefs.geoFilter;
+            state.behaviorFilter = safePrefs.behaviorFilter;
+            syncFilterInputsFromState();
+        }
+
+        function resetSessionFilters() {
+            state.sessionSearch = '';
+            state.deviceFilter = 'all';
+            state.issueFilter = 'all';
+            state.geoFilter = 'all';
+            state.behaviorFilter = 'all';
+            state.selectedSession = null;
+            state.selectedLogId = null;
+            syncFilterInputsFromState();
+            persistFilterPrefs();
+            queueRender();
+            showToast('Filtreler sifirlandi.', 'info');
         }
 
         function toMs(isoTime) {
@@ -927,6 +1007,21 @@
             });
 
             return filtered.slice(0, TABLE_ROW_LIMIT);
+        }
+
+        function renderSessionFilterSummary(visibleCount, totalCount) {
+            const el = document.getElementById('session-filter-summary');
+            if (!el) return;
+
+            const hasFilter =
+                state.sessionSearch !== '' ||
+                state.deviceFilter !== 'all' ||
+                state.issueFilter !== 'all' ||
+                state.geoFilter !== 'all' ||
+                state.behaviorFilter !== 'all';
+
+            const suffix = hasFilter ? ' (filtreli)' : '';
+            el.textContent = 'Gorunen: ' + visibleCount + ' / ' + totalCount + suffix;
         }
 
         function renderKpis(rows) {
@@ -1602,6 +1697,7 @@
             renderKpis(allRows);
             renderCriticalV1();
             setDataQualityState(state.lastCriticalSnapshot);
+            renderSessionFilterSummary(visibleRows.length, allRows.length);
             renderSessionList(visibleRows);
             renderLogTable();
             renderSelectedSession(allRows);
@@ -1977,6 +2073,7 @@
             document.getElementById('btn-clear-table').addEventListener('click', clearLocalBuffer);
             document.getElementById('btn-copy-critical').addEventListener('click', copyCriticalReport);
             document.getElementById('btn-copy-template').addEventListener('click', copyAiTemplate);
+            document.getElementById('btn-reset-filters').addEventListener('click', resetSessionFilters);
 
             document.getElementById('broadcast-msg').addEventListener('keydown', function (event) {
                 if (event.key === 'Enter' && !event.shiftKey) {
@@ -1987,26 +2084,31 @@
 
             document.getElementById('session-search').addEventListener('input', function (event) {
                 state.sessionSearch = toSafeString(event.target.value, '');
+                persistFilterPrefs();
                 queueRender();
             });
 
             document.getElementById('device-filter').addEventListener('change', function (event) {
                 state.deviceFilter = toSafeString(event.target.value, 'all');
+                persistFilterPrefs();
                 queueRender();
             });
 
             document.getElementById('issue-filter').addEventListener('change', function (event) {
                 state.issueFilter = toSafeString(event.target.value, 'all');
+                persistFilterPrefs();
                 queueRender();
             });
 
             document.getElementById('geo-filter').addEventListener('change', function (event) {
                 state.geoFilter = toSafeString(event.target.value, 'all');
+                persistFilterPrefs();
                 queueRender();
             });
 
             document.getElementById('behavior-filter').addEventListener('change', function (event) {
                 state.behaviorFilter = toSafeString(event.target.value, 'all');
+                persistFilterPrefs();
                 queueRender();
             });
 
@@ -2101,6 +2203,7 @@
 
         document.addEventListener('DOMContentLoaded', async function () {
             bindUiEvents();
+            restoreFilterPrefs();
             document.getElementById('access-form').addEventListener('submit', handleAccessSubmit);
 
             if (hasValidAdminSession()) {
