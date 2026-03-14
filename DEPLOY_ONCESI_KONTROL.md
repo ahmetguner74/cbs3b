@@ -48,13 +48,19 @@ npm run build:deploy:full
 npm run build:deploy:dry
 ```
 
-**Faz 5 kabul gate (onerilen):**
+**Faz 5 kabul gate (minimum):**
+
+```bash
+npm run release:verify
+```
+
+**Temel smoke gate (opsiyonel):**
 
 ```bash
 npm run release:smoke
 ```
 
-**Strict gate (opsiyonel, warning dahil fail):**
+**Strict gate (esdeger, release:verify ile ayni):**
 
 ```bash
 npm run release:smoke:strict

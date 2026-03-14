@@ -55,6 +55,7 @@ npm run dev
 | `npm run build:deploy:dry` | Kopyalama yapmadan deploy paketini dogrular |
 | `npm run release:smoke` | Faz 5 kabul smoke gate (dry build + temel release kontrolleri) |
 | `npm run release:smoke:strict` | Faz 5 smoke gate strict (warning dahil hata + admin token zorunlu) |
+| `npm run release:verify` | Standart release gate (strict smoke + admin token zorunlu) |
 | `npm run build:deploy:full` | Buyuk veri dahil deploy paketi uretir |
 | `npm run preview` | Uretim build ciktisini lokalde onizler |
 
@@ -62,7 +63,7 @@ npm run dev
 
 1. [app/index.html](app/index.html) icindeki versiyonu guncelleyin.
 2. Gerekliyse [package.json](package.json) versiyonunu ayni surume cekin.
-3. `npm run release:smoke` calistirip release kapilarini dogrulayin.
+3. `npm run release:verify` calistirip release kapilarini dogrulayin.
 4. `npm run build:deploy` calistirin.
 5. `dist/` altindaki paketi belediye sunucusuna kopyalayin.
 6. Fonksiyon ve telemetry kontrollerini tamamlayin.

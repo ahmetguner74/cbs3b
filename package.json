@@ -15,6 +15,7 @@
         "build:deploy:dry": "npm run build && node scripts/build-deploy-package.mjs --dry-run",
         "release:smoke": "npm run build:deploy:dry && node scripts/release-smoke-check.mjs",
         "release:smoke:strict": "npm run build:deploy:dry && node scripts/release-smoke-check.mjs --strict --require-admin-token",
+        "release:verify": "npm run release:smoke:strict",
         "build:deploy:full": "npm run build && node scripts/build-deploy-package.mjs --with-big-data",
         "build:deploy:dry:full": "npm run build && node scripts/build-deploy-package.mjs --dry-run --with-big-data",
         "preview": "vite preview"
