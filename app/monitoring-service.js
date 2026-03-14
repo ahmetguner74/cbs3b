@@ -227,11 +227,12 @@
 
             commandChannel
                 .on('broadcast', { event: 'reload' }, ({ payload }) => {
-                    if (!this.isAuthorizedCommand(payload || {})) {
+                    const safePayload = payload || {};
+                    if (!this.isAuthorizedCommand(safePayload)) {
                         return;
                     }
                     console.log('%c[Monitoring] Uzak sunucudan yenileme komutu alındı!', 'color: #ef4444; font-weight: bold;');
-                    location.reload();
+                    this.handleReloadCommand(safePayload);
                 })
                 .on('broadcast', { event: 'message' }, ({ payload }) => {
                     const safePayload = payload || {};
@@ -258,6 +259,45 @@
             }
 
             return true;
+        },
+
+        handleReloadCommand: function (payload) {
+            const safePayload = (payload && typeof payload === 'object') ? payload : {};
+            const mode = String(safePayload.mode || 'force-reload');
+
+            let delaySeconds = Number(safePayload.delaySeconds);
+            if (!Number.isFinite(delaySeconds) || delaySeconds < 0) {
+                delaySeconds = 0;
+            }
+            delaySeconds = Math.min(delaySeconds, 300);
+
+            const hiddenOnly = !!safePayload.hiddenOnly;
+            const maxHiddenWaitMs = 5 * 60 * 1000;
+            const startAt = Date.now();
+
+            const doReload = function () {
+                location.reload();
+            };
+
+            const waitForHiddenThenReload = function () {
+                if (!hiddenOnly || document.hidden || (Date.now() - startAt) >= maxHiddenWaitMs) {
+                    doReload();
+                    return;
+                }
+                setTimeout(waitForHiddenThenReload, 3000);
+            };
+
+            if (mode === 'silent-maintenance') {
+                setTimeout(waitForHiddenThenReload, delaySeconds * 1000);
+                return;
+            }
+
+            if (delaySeconds > 0) {
+                setTimeout(doReload, delaySeconds * 1000);
+                return;
+            }
+
+            doReload();
         },
 
         updateFeatureFlags: async function () {
