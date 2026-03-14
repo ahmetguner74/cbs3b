@@ -169,6 +169,7 @@
         const SUPABASE_URL = (APP_CONFIG.supabaseUrl || '').trim();
         const SUPABASE_KEY = (APP_CONFIG.supabaseAnonKey || '').trim();
         const ADMIN_PASSWORD_SHA256 = (APP_CONFIG.adminPasswordSha256 || '').trim().toLowerCase();
+        const ADMIN_COMMAND_TOKEN = (APP_CONFIG.adminCommandToken || '').trim();
         const ADMIN_AUTH_SESSION_KEY = 'cbsAdminAuthedAt';
         const ADMIN_AUTH_TTL_MS = 30 * 60 * 1000;
 
@@ -183,6 +184,93 @@
         let deviceFilter = 'all';
         let adminBootstrapped = false;
         let adminAuthenticated = false;
+
+        function escapeHtml(value) {
+            return String(value == null ? '' : value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function toSafeString(value, fallback) {
+            const str = String(value == null ? '' : value).trim();
+            if (str) return str;
+            return fallback == null ? '' : String(fallback);
+        }
+
+        function getSessionShortId(sessionId) {
+            const sid = toSafeString(sessionId, 'N/A');
+            if (sid === 'N/A') return sid;
+            const start = sid.indexOf('session_') === 0 ? 8 : 0;
+            const shortPart = sid.substring(start, Math.min(start + 8, sid.length));
+            const suffix = sid.length > (start + 8) ? '...' : '';
+            return shortPart + suffix;
+        }
+
+        function getSafeFpsValue(value) {
+            const num = Number(value);
+            return Number.isFinite(num) ? Math.round(num) : -1;
+        }
+
+        function getSafeGpuLabel(systemInfo) {
+            const gpu = toSafeString(systemInfo && systemInfo.gpu, 'N/A');
+            return gpu.split('(')[0].trim() || 'N/A';
+        }
+
+        function buildCommandPayload(payload) {
+            const data = (payload && typeof payload === 'object') ? { ...payload } : {};
+            if (ADMIN_COMMAND_TOKEN) {
+                data.commandToken = ADMIN_COMMAND_TOKEN;
+            }
+            return data;
+        }
+
+        function createLogRow(log) {
+            const tr = document.createElement('tr');
+            if (log && log.is_error) tr.classList.add('error-row');
+
+            const createdAt = (log && log.created_at) ? new Date(log.created_at) : new Date();
+            const time = isNaN(createdAt.getTime()) ? '-' : createdAt.toLocaleTimeString();
+
+            const sourceRaw = toSafeString(log && log.system_info && log.system_info.source, 'N/A');
+            const sourceClass = sourceRaw === 'Local' ? 'badge-local' : 'badge-live';
+            const sourceText = escapeHtml(sourceRaw);
+
+            const sidRaw = toSafeString(log && log.session_id, 'N/A');
+            const sidShort = escapeHtml(getSessionShortId(sidRaw));
+            const sidTitle = escapeHtml(sidRaw);
+
+            const deviceType = log && log.system_info ? log.system_info.deviceType : '';
+            const deviceIcon = deviceType === 'Mobile' ? '📱' : '💻';
+
+            const actionText = escapeHtml(toSafeString(log && log.action, 'N/A'));
+
+            const fps = getSafeFpsValue(log && log.fps);
+            const fpsText = fps < 0 ? 'N/A' : (fps + ' FPS');
+            const fpsColor = fps < 0 ? '#94a3b8' : (fps < 30 ? '#ff4d4d' : (fps < 50 ? '#ffcc00' : '#00ff88'));
+
+            const gpuText = escapeHtml(getSafeGpuLabel(log && log.system_info));
+
+            tr.innerHTML = `
+                <td>${escapeHtml(time)}</td>
+                <td><span class="badge ${sourceClass}">${sourceText}</span></td>
+                <td class="session-cell" title="${sidTitle}">${deviceIcon} ${sidShort}</td>
+                <td><strong>${actionText}</strong></td>
+                <td><span style="color:${fpsColor}">${escapeHtml(fpsText)}</span> | ${gpuText}</td>
+                <td><button type="button" class="btn-info">🔍 İncele</button></td>
+            `;
+
+            const detailsBtn = tr.querySelector('.btn-info');
+            if (detailsBtn) {
+                detailsBtn.addEventListener('click', function () {
+                    window.showDetails(log || {});
+                });
+            }
+
+            return tr;
+        }
 
         function setDeviceFilter(filter) {
             deviceFilter = filter;
@@ -358,8 +446,12 @@
             }
 
             const msgInput = document.getElementById('broadcast-msg');
-            const msg = msgInput.value;
+            const msg = (msgInput.value || '').trim();
             if (!msg) return;
+            if (msg.length > 400) {
+                alert('Duyuru metni en fazla 400 karakter olabilir.');
+                return;
+            }
 
             const channel = supabaseAdmin.channel('system-commands');
             await channel.subscribe(async (status) => {
@@ -367,11 +459,12 @@
                     await channel.send({
                         type: 'broadcast',
                         event: 'message',
-                        payload: { msg: msg }
+                        payload: buildCommandPayload({ msg: msg })
                     });
                     console.log(`Broadcasting: ${msg}`);
                     msgInput.value = '';
                     alert('Duyuru tüm istemcilere gönderildi!');
+                    supabaseAdmin.removeChannel(channel);
                 }
             });
         }
@@ -389,9 +482,10 @@
                         await channel.send({
                             type: 'broadcast',
                             event: 'reload',
-                            payload: {}
+                            payload: buildCommandPayload({})
                         });
                         alert('Yenileme komutu gönderildi!');
+                        supabaseAdmin.removeChannel(channel);
                     }
                 });
             }
@@ -491,22 +585,7 @@
             if (selectedSession && log.session_id !== selectedSession) return;
 
             const tbody = document.getElementById('log-body');
-            const tr = document.createElement('tr');
-            if (log.is_error) tr.classList.add('error-row');
-
-            const time = new Date(log.created_at).toLocaleTimeString();
-            const fpsColor = log.fps < 30 ? '#ff4d4d' : (log.fps < 50 ? '#ffcc00' : '#00ff88');
-            const sourceClass = log.system_info?.source === 'Local' ? 'badge-local' : 'badge-live';
-
-            const deviceIcon = log.system_info?.deviceType === 'Mobile' ? '📱' : '💻';
-            tr.innerHTML = `
-                <td>${time}</td>
-                <td><span class="badge ${sourceClass}">${log.system_info?.source || 'N/A'}</span></td>
-                <td class="session-cell" title="${log.session_id}">${deviceIcon} ${log.session_id.substring(8, 16)}...</td>
-                <td><strong>${log.action}</strong></td>
-                <td><span style="color:${fpsColor}">${log.fps} FPS</span> | ${log.system_info?.gpu?.split('(')[0] || 'N/A'}</td>
-                <td><button class="btn-info" onclick='showDetails(${JSON.stringify(log)})'>🔍 İncele</button></td>
-            `;
+            const tr = createLogRow(log);
 
             tbody.insertBefore(tr, tbody.firstChild);
 
@@ -522,8 +601,11 @@
             if (!map || !log.system_info?.location) return;
 
             const loc = log.system_info.location;
-            const sid = log.session_id;
+            const sid = toSafeString(log.session_id, '');
+            if (!sid) return;
             const cam = log.system_info.camera;
+            const safeAction = escapeHtml(toSafeString(log.action, 'N/A'));
+            const safeSidShort = escapeHtml(getSessionShortId(sid));
 
             // Son aktiflik zamanını kontrol et (1 dakika pasifse gri yap)
             const logTime = new Date(log.created_at);
@@ -553,8 +635,9 @@
                         dashArray: loc.isApprox ? '3, 3' : null
                     });
 
-                    const locInfo = loc.isApprox ? `<br><b>Konum:</b> ${loc.city || ''} (Yaklaşık)` : '';
-                    markers[sid].setPopupContent(`<b>Oturum:</b> ${sid.substring(8, 16)}...${locInfo}<br><b>Eylem:</b> ${log.action}`);
+                    const safeCity = escapeHtml(toSafeString(loc.city, 'N/A'));
+                    const locInfo = loc.isApprox ? `<br><b>Konum:</b> ${safeCity} (Yaklaşık)` : '';
+                    markers[sid].setPopupContent(`<b>Oturum:</b> ${safeSidShort}${locInfo}<br><b>Eylem:</b> ${safeAction}`);
 
                     if (cam && markers[sid].headingLine) {
                         updateHeadingLine(markers[sid], loc, cam.heading);
@@ -576,7 +659,7 @@
                     updateHeadingLine(markers[sid], loc, cam.heading);
                 }
 
-                markers[sid].bindPopup(`<b>Oturum:</b> ${sid.substring(8, 16)}...<br><b>Eylem:</b> ${log.action}`);
+                markers[sid].bindPopup(`<b>Oturum:</b> ${safeSidShort}<br><b>Eylem:</b> ${safeAction}`);
                 markers[sid].on('click', () => filterSession(sid));
             }
         }
@@ -604,22 +687,7 @@
 
         function addLogToTable(l) {
             const tbody = document.getElementById('log-body');
-            const tr = document.createElement('tr');
-            if (l.is_error) tr.classList.add('error-row');
-
-            const time = new Date(l.created_at).toLocaleTimeString();
-            const fpsColor = l.fps < 30 ? '#ff4d4d' : (l.fps < 50 ? '#ffcc00' : '#00ff88');
-            const sourceClass = l.system_info?.source === 'Local' ? 'badge-local' : 'badge-live';
-
-            const deviceIcon = l.system_info?.deviceType === 'Mobile' ? '📱' : '💻';
-            tr.innerHTML = `
-                <td>${time}</td>
-                <td><span class="badge ${sourceClass}">${l.system_info?.source || 'N/A'}</span></td>
-                <td class="session-cell" title="${l.session_id}">${deviceIcon} ${l.session_id.substring(8, 16)}...</td>
-                <td><strong>${l.action}</strong></td>
-                <td><span style="color:${fpsColor}">${l.fps} FPS</span> | ${l.system_info?.gpu?.split('(')[0] || 'N/A'}</td>
-                <td><button class="btn-info" onclick='showDetails(${JSON.stringify(l)})'>🔍 İncele</button></td>
-            `;
+            const tr = createLogRow(l);
             tbody.appendChild(tr);
         }
 
@@ -664,9 +732,10 @@
                     const statusColor = isActive ? '#22c55e' : (isPassive ? '#94a3b8' : '#4b5563');
                     const statusDot = `<span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${statusColor}; margin-right:8px;"></span>`;
 
+                    const safeSidShort = escapeHtml(getSessionShortId(sid));
                     li.innerHTML = `
                         <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
-                            <span>${statusDot} ${deviceIcon} ${sid.substring(8, 14)}...</span>
+                            <span>${statusDot} ${deviceIcon} ${safeSidShort}</span>
                             ${sessionMap[sid].hasError ? '<span title="Hata Var">⚠️</span>' : ''}
                         </div>
                     `;
@@ -710,78 +779,121 @@
         }
 
         window.showDetails = function (log) {
+            const safeLog = (log && typeof log === 'object') ? log : {};
             const panel = document.getElementById('system-details-content');
-            const errorInfo = log.is_error ? getTurkishError(log.details.message || '') : null;
-            const info = log.system_info;
+            const details = (safeLog.details && typeof safeLog.details === 'object') ? safeLog.details : {};
+            const info = (safeLog.system_info && typeof safeLog.system_info === 'object') ? safeLog.system_info : {};
+
+            const errorMessageRaw = toSafeString(details.message, '');
+            const errorInfo = safeLog.is_error ? getTurkishError(errorMessageRaw) : null;
+
+            const sourceClass = info.source === 'Local' ? 'badge-local' : 'badge-live';
+            const safeSource = escapeHtml(toSafeString(info.source, 'N/A'));
+            const safeHost = escapeHtml(toSafeString(info.host, 'N/A'));
+
+            const safeErrorType = escapeHtml(toSafeString(errorInfo && errorInfo.tr, 'Bilinmeyen Hata'));
+            const safeErrorMessage = escapeHtml(toSafeString(errorMessageRaw, 'N/A'));
+            const safeErrorSolution = escapeHtml(toSafeString(errorInfo && errorInfo.solution, 'N/A'));
+
+            const safeDetailsJson = escapeHtml(JSON.stringify(details, null, 2));
+
+            const safePlatform = escapeHtml(toSafeString(info.platform, 'Bilinmiyor'));
+            const safeCores = escapeHtml(toSafeString(info.cores, 'N/A'));
+            const safeMemory = escapeHtml(toSafeString(info.memory, 'N/A'));
+            const safeScreen = escapeHtml(toSafeString(info.screen, 'N/A'));
+            const safeGpu = escapeHtml(toSafeString(info.gpu, 'N/A'));
+            const safeGpuShort = escapeHtml(getSafeGpuLabel(info));
+
+            const connStatus = (info.connection && info.connection.status === 'Online') ? 'Bağlı' : 'Çevrimdışı';
+            const safeConnType = escapeHtml(toSafeString(info.connection && info.connection.type, 'Bilinmiyor'));
+            const safeConnDownlink = escapeHtml(toSafeString(info.connection && info.connection.downlink, 'N/A'));
+            const safeConnRtt = escapeHtml(toSafeString(info.connection && info.connection.rtt, 'N/A'));
+
+            const safeLocCity = escapeHtml(toSafeString(info.location && info.location.city, (info.location && info.location.isApprox) ? 'Yaklaşık' : 'N/A'));
+            const safeLocCountry = (info.location && info.location.country)
+                ? `(${escapeHtml(String(info.location.country))})`
+                : '';
+
+            const safeStorageLocal = escapeHtml(toSafeString(info.storage && info.storage.localStorage, 'N/A'));
+            const indexedDbText = (info.storage && info.storage.indexedDB) ? 'Çalışıyor' : 'Durduruldu';
+            const pageVisibleText = (info.page && info.page.visible) ? 'Ön Planda (Aktif)' : 'Sekme Arkasında';
+            const safePageDuration = escapeHtml(toSafeString(info.page && info.page.duration, 'N/A'));
+
+            const deviceLabel = info.deviceType === 'Mobile' ? '📱 Mobil' : '💻 Masaüstü';
+
+            const safePrimitives = escapeHtml(toSafeString(info.scene && info.scene.primitives, 'N/A'));
+            const safeGroundPrimitives = escapeHtml(toSafeString(info.scene && info.scene.groundPrimitives, 'N/A'));
+            const safeObjects = escapeHtml(toSafeString(info.scene && info.scene.objects, 'N/A'));
+            const safeVram = escapeHtml(toSafeString(info.scene && info.scene.vram, 'N/A'));
 
             panel.innerHTML = `
                 <div class="detail-group">
                     <div class="source-header">
-                        <span class="badge ${info?.source === 'Local' ? 'badge-local' : 'badge-live'}">${info?.source}</span>
-                        <span>${info?.host}</span>
+                        <span class="badge ${sourceClass}">${safeSource}</span>
+                        <span>${safeHost}</span>
                     </div>
                 </div>
 
-                ${log.is_error ? `
+                ${safeLog.is_error ? `
                 <div class="error-analysis active">
                     <h4>⚠️ Hata Analizi (Türkçe)</h4>
-                    <p><strong>Hata Türü:</strong> ${errorInfo.tr}</p>
-                    <p><strong>Açıklama:</strong> ${log.details.message}</p>
+                    <p><strong>Hata Türü:</strong> ${safeErrorType}</p>
+                    <p><strong>Açıklama:</strong> ${safeErrorMessage}</p>
                     <div class="solution-box">
-                        <strong>💡 Çözüm Önerisi:</strong><br>${errorInfo.solution}
+                        <strong>💡 Çözüm Önerisi:</strong><br>${safeErrorSolution}
                     </div>
                 </div>
                 ` : ''}
 
                 <div class="detail-group">
                     <h4>Eylem Detayı</h4>
-                    <pre>${JSON.stringify(log.details, null, 2)}</pre>
+                    <pre>${safeDetailsJson}</pre>
                 </div>
 
                 <div class="detail-group">
                     <h4>💻 Sistem & Cihaz Gücü</h4>
                     <div class="info-grid">
-                        <div class="info-item"><span>İşletim Sistemi</span><strong>${info?.platform || 'Bilinmiyor'}</strong></div>
-                        <div class="info-item"><span>İşlemci Gücü</span><strong>${info?.cores} Çekirdek</strong></div>
-                        <div class="info-item"><span>Bellek Kapasitesi</span><strong>${info?.memory} GB</strong></div>
-                        <div class="info-item"><span>Ekran Çözünürlüğü</span><strong>${info?.screen}</strong></div>
-                        <div class="info-item" style="grid-column: span 2;"><span>Ekran Kartı (GPU)</span><strong>${info?.gpu?.split('(')[0] || 'N/A'}</strong></div>
+                        <div class="info-item"><span>İşletim Sistemi</span><strong>${safePlatform}</strong></div>
+                        <div class="info-item"><span>İşlemci Gücü</span><strong>${safeCores} Çekirdek</strong></div>
+                        <div class="info-item"><span>Bellek Kapasitesi</span><strong>${safeMemory} GB</strong></div>
+                        <div class="info-item"><span>Ekran Çözünürlüğü</span><strong>${safeScreen}</strong></div>
+                        <div class="info-item" style="grid-column: span 2;"><span>Ekran Kartı (GPU)</span><strong>${safeGpuShort}</strong></div>
                     </div>
                 </div>
                 
                 <div class="detail-group">
                     <h4>🌐 İnternet & Bağlantı</h4>
                     <div class="info-grid">
-                        <div class="info-item"><span>Durum</span><strong>${info?.connection?.status === 'Online' ? 'Bağlı' : 'Çevrimdışı'}</strong></div>
-                        <div class="info-item"><span>Bağlantı Tipi</span><strong>${info?.connection?.type || 'Bilinmiyor'}</strong></div>
-                        <div class="info-item"><span>Tahmini Hız</span><strong>${info?.connection?.downlink} Mbps</strong></div>
-                        <div class="info-item"><span>Gecikme (Ping)</span><strong>${info?.connection?.rtt} ms</strong></div>
-                        <div class="info-item" style="grid-column: span 2;"><span>Konum</span><strong>${info?.location?.city || (info?.location?.isApprox ? 'Yaklaşık' : 'N/A')} ${info?.location?.country ? `(${info.location.country})` : ''}</strong></div>
+                        <div class="info-item"><span>Durum</span><strong>${connStatus}</strong></div>
+                        <div class="info-item"><span>Bağlantı Tipi</span><strong>${safeConnType}</strong></div>
+                        <div class="info-item"><span>Tahmini Hız</span><strong>${safeConnDownlink}</strong></div>
+                        <div class="info-item"><span>Gecikme (Ping)</span><strong>${safeConnRtt}</strong></div>
+                        <div class="info-item" style="grid-column: span 2;"><span>Konum</span><strong>${safeLocCity} ${safeLocCountry}</strong></div>
                     </div>
                 </div>
                 <div class="card">
                     <div class="card-label">Cihaz / GPU</div>
-                    <div class="card-value">${info.deviceType === 'Mobile' ? '📱 Mobil' : '💻 Masaüstü'}</div>
-                    <div class="card-sub">${info.gpu || 'N/A'}</div>
+                    <div class="card-value">${deviceLabel}</div>
+                    <div class="card-sub">${safeGpu}</div>
                 </div>
                 <div class="detail-group">
                     <h4>📦 Hafıza & Uygulama Durumu</h4>
                     <div class="info-grid">
-                        <div class="info-item"><span>Tarayıcı Depolama</span><strong>${info?.storage?.localStorage}</strong></div>
-                        <div class="info-item"><span>Veritabanı (IDB)</span><strong>${info?.storage?.indexedDB ? 'Çalışıyor' : 'Durduruldu'}</strong></div>
-                        <div class="info-item"><span>Sayfa Konumu</span><strong>${info?.page?.visible ? 'Ön Planda (Aktif)' : 'Sekme Arkasında'}</strong></div>
-                        <div class="info-item"><span>Oturum Süresi</span><strong>${info?.page?.duration}</strong></div>
+                        <div class="info-item"><span>Tarayıcı Depolama</span><strong>${safeStorageLocal}</strong></div>
+                        <div class="info-item"><span>Veritabanı (IDB)</span><strong>${indexedDbText}</strong></div>
+                        <div class="info-item"><span>Sayfa Konumu</span><strong>${pageVisibleText}</strong></div>
+                        <div class="info-item"><span>Oturum Süresi</span><strong>${safePageDuration}</strong></div>
                     </div>
                 </div>
 
-                ${info?.scene ? `
+                ${info && info.scene ? `
                 <div class="detail-group">
                     <h4>🎮 3D Harita Detayları</h4>
                     <div class="info-grid">
-                        <div class="info-item"><span>Temel Çizimler</span><strong>${info.scene.primitives} Adet</strong></div>
-                        <div class="info-item"><span>Zemin Kaplamaları</span><strong>${info.scene.groundPrimitives}</strong></div>
-                        <div class="info-item"><span>Toplam Nesne</span><strong>${info.scene.objects}</strong></div>
-                        <div class="info-item"><span>Video Bellek (Tex)</span><strong>${info.scene.vram}</strong></div>
+                        <div class="info-item"><span>Temel Çizimler</span><strong>${safePrimitives} Adet</strong></div>
+                        <div class="info-item"><span>Zemin Kaplamaları</span><strong>${safeGroundPrimitives}</strong></div>
+                        <div class="info-item"><span>Toplam Nesne</span><strong>${safeObjects}</strong></div>
+                        <div class="info-item"><span>Video Bellek (Tex)</span><strong>${safeVram}</strong></div>
                     </div>
                 </div>
                 ` : ''}

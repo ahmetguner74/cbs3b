@@ -36,6 +36,7 @@ npm install
 ```
 
 2. [app/config.example.js](app/config.example.js) dosyasini [app/config.js](app/config.js) olarak kopyalayin ve belediye ortami bilgilerini doldurun.
+	- Guvenlik notu: Yonetim panelinden uzaktan duyuru/yenileme komutlari kullaniliyorsa `adminCommandToken` alanini da doldurun.
 3. Gelistirme sunucusunu baslatin.
 
 ```bash

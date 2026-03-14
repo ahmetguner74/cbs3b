@@ -75,6 +75,7 @@ Kontrol et:
 
 - [ ] app/config.js mevcut ve güncel
 - [ ] app/config.example.js ile anahtar seti uyumlu
+- [ ] Yönetim komutları kullanılacaksa `adminCommandToken` panel ve istemci tarafında aynı olacak şekilde ayarlı
 - [ ] Supabase tarafında RLS ve tablolar doğru
 - [ ] Hassas bilgi içeren debug log satırı bırakılmadı
 
