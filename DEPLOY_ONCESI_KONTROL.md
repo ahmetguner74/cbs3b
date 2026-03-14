@@ -48,6 +48,18 @@ npm run build:deploy:full
 npm run build:deploy:dry
 ```
 
+**Faz 5 kabul gate (onerilen):**
+
+```bash
+npm run release:smoke
+```
+
+**Strict gate (opsiyonel, warning dahil fail):**
+
+```bash
+npm run release:smoke:strict
+```
+
 Kontrol et:
 
 - [ ] dist/app var
