@@ -67,6 +67,7 @@
             activeFloorKey: '',
             baseFloorKey: '0',
             buildingKey: '',
+            uiView: 'simple',
             controlsBound: false,
             previewMeasureId: null,
             saveSummaryPendingResolve: null,
@@ -81,6 +82,25 @@
             if (window.CBS_CONFIG && window.CBS_CONFIG.floorWorkEnabled === false) return false;
             if (window.__FLOOR_WORK_ENABLED__ === false) return false;
             return true;
+        }
+
+        function readUIViewPreference() {
+            if (typeof window === 'undefined') return 'simple';
+            try {
+                var raw = String(window.localStorage.getItem('cbsFloorWorkUIViewV1') || '').toLowerCase();
+                return raw === 'advanced' ? 'advanced' : 'simple';
+            } catch (_err) {
+                return 'simple';
+            }
+        }
+
+        function persistUIViewPreference() {
+            if (typeof window === 'undefined') return;
+            try {
+                window.localStorage.setItem('cbsFloorWorkUIViewV1', state.uiView === 'advanced' ? 'advanced' : 'simple');
+            } catch (_err) {
+                // ignore storage errors
+            }
         }
 
         function isFeatureEnabled() {
@@ -407,6 +427,75 @@
             panelEl.style.display = isFeatureEnabled() ? '' : 'none';
         }
 
+        function syncUIView() {
+            var advancedSection = document.getElementById('floorWorkAdvancedSection');
+            var simpleBtn = document.getElementById('btnFloorViewSimple');
+            var advancedBtn = document.getElementById('btnFloorViewAdvanced');
+
+            if (advancedSection) {
+                if (state.uiView === 'advanced') advancedSection.classList.remove('hidden');
+                else advancedSection.classList.add('hidden');
+            }
+
+            if (simpleBtn) {
+                var simpleActive = state.uiView !== 'advanced';
+                simpleBtn.style.borderColor = simpleActive ? 'rgba(6,182,212,0.55)' : 'rgba(71,85,105,0.7)';
+                simpleBtn.style.background = simpleActive ? 'rgba(6,182,212,0.16)' : 'rgba(15,23,42,0.8)';
+                simpleBtn.style.color = simpleActive ? '#a5f3fc' : '#cbd5e1';
+            }
+
+            if (advancedBtn) {
+                var advancedActive = state.uiView === 'advanced';
+                advancedBtn.style.borderColor = advancedActive ? 'rgba(6,182,212,0.55)' : 'rgba(71,85,105,0.7)';
+                advancedBtn.style.background = advancedActive ? 'rgba(6,182,212,0.16)' : 'rgba(15,23,42,0.8)';
+                advancedBtn.style.color = advancedActive ? '#a5f3fc' : '#cbd5e1';
+            }
+        }
+
+        function setUIView(nextView, silent) {
+            state.uiView = nextView === 'advanced' ? 'advanced' : 'simple';
+            persistUIViewPreference();
+            syncUIView();
+            updateSummaryUi();
+            if (!silent) {
+                syncNote(state.uiView === 'advanced'
+                    ? 'Gelismis gorunum acildi. Havuz ve iliski yonetimi gorunur.'
+                    : 'Basit akis acildi. Sadece temel adimlar gorunur.', 'info');
+            }
+        }
+
+        function updateGuideUi() {
+            var guideEl = document.getElementById('infoFloorGuide');
+            if (!guideEl) return;
+
+            if (!isFeatureEnabled()) {
+                guideEl.textContent = 'Kat odak ozelligi kapali.';
+                return;
+            }
+
+            var hasBuilding = !!normalizeBuildingKey(getBuildingKeyFromInputs());
+            var activeFloor = normalizeFloorKey((document.getElementById('infoWorkKat') || {}).value || state.activeFloorKey);
+            var scoped = getScopedMeasurement();
+
+            if (!hasBuilding) {
+                guideEl.textContent = '1) Ada/Parsel girin veya Bina Anahtari alanini doldurun.';
+                return;
+            }
+            if (!activeFloor) {
+                guideEl.textContent = '2) Islem Katini yazin (ornek: 0 veya 1) ve Kati Goster deyin.';
+                return;
+            }
+            if (!state.enabled) {
+                guideEl.textContent = '2) Kati Goster ile bu bina/kat icin sade cizim modunu aktif edin.';
+                return;
+            }
+            if (!scoped) {
+                guideEl.textContent = '3) Poligon cizin veya listeden bir olcum secin. Sonra Seçilini Aktif Kata Bagla kullanin.';
+                return;
+            }
+            guideEl.textContent = '4) Kaydet ile kat/bina ozetini kontrol ederek devam edin. Gerekirse Gelismis sekmesinde havuz yonetimi yapin.';
+        }
+
         function updatePoolUi() {
             var poolSummaryEl = document.getElementById('infoFloorPoolSummary');
             var poolSelectEl = document.getElementById('infoFloorPoolSelect');
@@ -442,8 +531,10 @@
 
         function updateSummaryUi() {
             syncFeatureUiState();
+            syncUIView();
             syncAllDatalists();
             updatePoolUi();
+            updateGuideUi();
 
             var summaryEl = document.getElementById('infoFloorSummary');
             var badgeEl = document.getElementById('infoFloorModeBadge');
@@ -1148,6 +1239,7 @@
 
         function bindControls() {
             syncFeatureUiState();
+            syncUIView();
             syncAllDatalists();
 
             if (!isFeatureEnabled()) {
@@ -1172,6 +1264,8 @@
             var moveToPoolBtn = document.getElementById('btnFloorMoveToPool');
             var bindPoolBtn = document.getElementById('btnFloorBindPoolSelected');
             var fillBuildingBtn = document.getElementById('btnFloorFillBuildingFromSelection');
+            var viewSimpleBtn = document.getElementById('btnFloorViewSimple');
+            var viewAdvancedBtn = document.getElementById('btnFloorViewAdvanced');
             if (!workKatInput || !baseKatInput || !applyBtn || !clearBtn) return;
 
             function normalizeInputValue(inputEl, normalizer) {
@@ -1188,6 +1282,8 @@
             if (moveToPoolBtn) moveToPoolBtn.addEventListener('click', moveScopedMeasurementToPool);
             if (bindPoolBtn) bindPoolBtn.addEventListener('click', bindSelectedPoolToActive);
             if (fillBuildingBtn) fillBuildingBtn.addEventListener('click', fillBuildingFromScopedMeasurement);
+            if (viewSimpleBtn) viewSimpleBtn.addEventListener('click', function () { setUIView('simple', false); });
+            if (viewAdvancedBtn) viewAdvancedBtn.addEventListener('click', function () { setUIView('advanced', false); });
 
             [workKatInput, baseKatInput].forEach(function (inputEl) {
                 inputEl.addEventListener('keydown', function (e) {
@@ -1288,6 +1384,7 @@
         }
 
         state.featureEnabled = readFeatureFlag();
+        state.uiView = readUIViewPreference();
 
         var publicApi = {
             getState: getStateSnapshot,

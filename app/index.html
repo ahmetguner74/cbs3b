@@ -3789,8 +3789,19 @@
 				</div>
 				<div id="floorWorkPanel" class="mt-1.5 rounded-sm border border-slate-700/70 bg-slate-950/60 px-2 py-1.5 space-y-1.5">
 					<div class="flex items-center justify-between">
-						<span class="text-[9px] text-slate-400 uppercase tracking-[0.14em] font-semibold">Kat Odak Modu</span>
+						<span class="text-[9px] text-slate-400 uppercase tracking-[0.14em] font-semibold">Kat Odak Çizim</span>
 						<span id="infoFloorModeBadge" class="text-[9px] px-1.5 py-0.5 rounded-sm border border-slate-600/70 text-slate-300 bg-slate-900/80">Pasif</span>
+					</div>
+					<div class="grid grid-cols-2 gap-1.5">
+						<button id="btnFloorViewSimple" type="button" class="h-7 rounded-sm border border-cyan-500/55 bg-cyan-500/16 text-cyan-200 text-[10px] font-semibold uppercase tracking-wide hover:bg-cyan-500/24 transition-colors">
+							Basit Akış
+						</button>
+						<button id="btnFloorViewAdvanced" type="button" class="h-7 rounded-sm border border-slate-600/70 bg-slate-900/80 text-slate-300 text-[10px] font-semibold uppercase tracking-wide hover:bg-slate-800 transition-colors">
+							Gelişmiş
+						</button>
+					</div>
+					<div id="infoFloorGuide" class="text-[9px] leading-snug text-cyan-200 bg-cyan-500/10 border border-cyan-500/30 rounded-sm px-1.5 py-1">
+						1) Ada/Parsel veya Bina Anahtarı girin  2) İşlem Katını seçip Katı Göster deyin  3) Poligonları çizin.
 					</div>
 					<div class="grid grid-cols-2 gap-1.5">
 						<div>
@@ -3804,12 +3815,7 @@
 					</div>
 					<div>
 						<label class="block text-[9px] text-slate-500 mb-0.5 uppercase tracking-wide">Bina Anahtarı (Ada/Parsel)</label>
-						<div class="grid grid-cols-2 gap-1.5">
-							<input type="text" id="infoWorkBuilding" inputmode="text" placeholder="2540/30" class="h-7 w-full bg-slate-900 border border-slate-700 rounded-sm px-1.5 py-1 text-slate-200 text-[10px] focus:outline-none focus:border-slate-500">
-							<button id="btnFloorFillBuildingFromSelection" type="button" class="h-7 rounded-sm border border-slate-600/70 bg-slate-900/80 text-slate-300 text-[10px] font-semibold uppercase tracking-wide hover:bg-slate-800 transition-colors">
-								Seçiliden Doldur
-							</button>
-						</div>
+						<input type="text" id="infoWorkBuilding" inputmode="text" placeholder="2540/30" class="h-7 w-full bg-slate-900 border border-slate-700 rounded-sm px-1.5 py-1 text-slate-200 text-[10px] focus:outline-none focus:border-slate-500">
 					</div>
 					<div class="grid grid-cols-2 gap-1.5">
 						<button id="btnApplyFloorWork" type="button" class="h-7 rounded-sm border border-cyan-500/50 bg-cyan-500/12 text-cyan-200 text-[10px] font-semibold uppercase tracking-wide hover:bg-cyan-500/22 transition-colors">
@@ -3830,33 +3836,38 @@
 					<div id="infoFloorSummary" class="text-[9px] leading-snug text-slate-400 bg-slate-900/70 border border-slate-700/70 rounded-sm px-1.5 py-1">
 						Kat odak modu kapalı.
 					</div>
-					<div id="infoFloorKnownList" class="text-[9px] leading-snug text-slate-400 bg-slate-900/70 border border-slate-700/70 rounded-sm px-1.5 py-1">
-						Kayıtlı katlar: -
-					</div>
-					<div id="infoFloorKnownBuildings" class="text-[9px] leading-snug text-slate-400 bg-slate-900/70 border border-slate-700/70 rounded-sm px-1.5 py-1">
-						Kayıtlı binalar: -
-					</div>
-					<div id="infoFloorPoolSummary" class="text-[9px] leading-snug text-slate-400 bg-slate-900/70 border border-slate-700/70 rounded-sm px-1.5 py-1">
-						Parça havuzu: 0
-					</div>
-					<div>
-						<label class="block text-[9px] text-slate-500 mb-0.5 uppercase tracking-wide">Parça Havuzu</label>
-						<select id="infoFloorPoolSelect" class="w-full bg-slate-900 border border-slate-700 rounded-sm px-1.5 py-1 text-slate-200 text-[10px] focus:outline-none focus:border-slate-500" size="3" style="height:56px;">
-							<option value="">Havuz boş</option>
-						</select>
-					</div>
 					<div class="grid grid-cols-2 gap-1.5">
 						<button id="btnFloorBindScoped" type="button" class="h-7 rounded-sm border border-cyan-500/50 bg-cyan-500/12 text-cyan-200 text-[10px] font-semibold uppercase tracking-wide hover:bg-cyan-500/22 transition-colors">
-							Seçilini Bağla
+							Seçilini Aktif Kata Bağla
 						</button>
-						<button id="btnFloorMoveToPool" type="button" class="h-7 rounded-sm border border-amber-400/40 bg-amber-400/10 text-amber-300 text-[10px] font-semibold uppercase tracking-wide hover:bg-amber-400/20 transition-colors">
-							Havuza Al
+						<button id="btnFloorFillBuildingFromSelection" type="button" class="h-7 rounded-sm border border-slate-600/70 bg-slate-900/80 text-slate-300 text-[10px] font-semibold uppercase tracking-wide hover:bg-slate-800 transition-colors">
+							Seçiliden Bina Doldur
 						</button>
 					</div>
-					<div>
-						<button id="btnFloorBindPoolSelected" type="button" class="h-7 w-full rounded-sm border border-emerald-700/50 bg-emerald-900/40 text-emerald-300 text-[10px] font-semibold uppercase tracking-wide hover:bg-emerald-800/50 transition-colors">
-							Havuzdaki Seçilini Aktif Bina/Kata Bağla
-						</button>
+					<div id="floorWorkAdvancedSection" class="space-y-1.5 hidden">
+						<div id="infoFloorKnownList" class="text-[9px] leading-snug text-slate-400 bg-slate-900/70 border border-slate-700/70 rounded-sm px-1.5 py-1">
+							Kayıtlı katlar: -
+						</div>
+						<div id="infoFloorKnownBuildings" class="text-[9px] leading-snug text-slate-400 bg-slate-900/70 border border-slate-700/70 rounded-sm px-1.5 py-1">
+							Kayıtlı binalar: -
+						</div>
+						<div id="infoFloorPoolSummary" class="text-[9px] leading-snug text-slate-400 bg-slate-900/70 border border-slate-700/70 rounded-sm px-1.5 py-1">
+							Parça havuzu: 0
+						</div>
+						<div>
+							<label class="block text-[9px] text-slate-500 mb-0.5 uppercase tracking-wide">Parça Havuzu</label>
+							<select id="infoFloorPoolSelect" class="w-full bg-slate-900 border border-slate-700 rounded-sm px-1.5 py-1 text-slate-200 text-[10px] focus:outline-none focus:border-slate-500" size="3" style="height:56px;">
+								<option value="">Havuz boş</option>
+							</select>
+						</div>
+						<div class="grid grid-cols-2 gap-1.5">
+							<button id="btnFloorMoveToPool" type="button" class="h-7 rounded-sm border border-amber-400/40 bg-amber-400/10 text-amber-300 text-[10px] font-semibold uppercase tracking-wide hover:bg-amber-400/20 transition-colors">
+								Seçilini Havuza Al
+							</button>
+							<button id="btnFloorBindPoolSelected" type="button" class="h-7 rounded-sm border border-emerald-700/50 bg-emerald-900/40 text-emerald-300 text-[10px] font-semibold uppercase tracking-wide hover:bg-emerald-800/50 transition-colors">
+								Havuzdan Aktif Kata Bağla
+							</button>
+						</div>
 					</div>
 				</div>
 				<div>
