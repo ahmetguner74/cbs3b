@@ -1987,13 +1987,62 @@ if (btnInfoMode) {
 }
 
 // ─── KDÇO MODE BUTONU (Araçlar Panelinde) ──────────────────────
-var btnKdcoMode = document.getElementById('btnKdcoMode');
-if (btnKdcoMode) {
-	btnKdcoMode.addEventListener('click', function () {
-		toggleKdcoMode();
+(function () {
+	var btn = document.getElementById('btnKdcoMode');
+	var panel = document.getElementById('kdcoPanelFloat');
+	if (!btn || !panel) return;
+
+	function positionPanel() {
+		var rect = btn.getBoundingClientRect();
+		panel.style.top  = rect.top + 'px';
+		panel.style.left = (rect.right + 8) + 'px';
+	}
+
+	btn.addEventListener('click', function () {
+		var isOpen = panel.style.display !== 'none';
+		if (!isOpen) {
+			positionPanel();
+			panel.style.display = 'flex';
+			btn.classList.add('active');
+			btn.style.backgroundColor = 'rgba(16, 185, 129, 0.2)';
+			btn.style.color = '#10b981';
+		} else {
+			panel.style.display = 'none';
+			btn.classList.remove('active');
+			btn.style.backgroundColor = '';
+			btn.style.color = '';
+		}
 	});
-}
-syncKdcoModeButtonState();
+
+	var btnCiz = document.getElementById('kdcoBtnCiz');
+	if (btnCiz) {
+		btnCiz.addEventListener('click', function () {
+			var ada    = (document.getElementById('kdcoAda')    || {}).value || '';
+			var parsel = (document.getElementById('kdcoParsel') || {}).value || '';
+			var kat    = (document.getElementById('kdcoKat')    || {}).value || '';
+			var cikma  = (document.getElementById('kdcoCikma') || {}).value || '';
+
+			if (!ada || !parsel || !kat) {
+				syncInfoPanelNoteToResultBar('KDÇO: Ada, Parsel ve Kat alanları zorunludur.', 'warn');
+				return;
+			}
+
+			// Bilgi panelini doldur — kaydetme sırasında bu alanlar okunur
+			var adaEl    = document.getElementById('infoAda');
+			var parselEl = document.getElementById('infoParsel');
+			var katEl    = document.getElementById('infoKat');
+			var cikmaEl  = document.getElementById('infoCikma');
+			if (adaEl)    adaEl.value    = ada;
+			if (parselEl) parselEl.value = parsel;
+			if (katEl)    katEl.value    = kat;
+			if (cikmaEl)  cikmaEl.value  = cikma;
+
+			// Alan çizim aracını aktifleştir
+			setActiveTool('btnArea');
+			syncInfoPanelNoteToResultBar('KDÇO: Çıkma poligonunu çizin — sağ tık ile tamamlayın.', 'info');
+		});
+	}
+}());
 
 // ═══ ARKA PLAN FPS İZLEME + AKILLI BİLDİRİM ═══
 (function () {
@@ -7351,8 +7400,6 @@ window.__cbsMainReady = true;
 window.dispatchEvent(new CustomEvent('cbs-main-ready'));
 var activeTool = null;
 var isInfoModeActive = false; // "i" tuşu ile aktifleşen salt-okunur inceleme modu
-var isKdcoModeActive = false; // Kentsel Donusum Cizim Ozelligi modu
-if (typeof window !== 'undefined') window.__KDCO_MODE_ACTIVE = false;
 var clickPoints = [];
 var tempEntities = [];
 var activeShape = null;
@@ -7367,64 +7414,6 @@ var snapIndicator = snapCollection.add({
 	disableDepthTestDistance: Number.POSITIVE_INFINITY,
 	show: false
 });
-
-function syncKdcoModeButtonState() {
-	var btnKdcoMode = document.getElementById('btnKdcoMode');
-	if (btnKdcoMode) {
-		if (isKdcoModeActive) {
-			btnKdcoMode.classList.add('active');
-			btnKdcoMode.style.backgroundColor = 'rgba(16, 185, 129, 0.2)';
-			btnKdcoMode.style.color = '#10b981';
-		} else {
-			btnKdcoMode.classList.remove('active');
-			btnKdcoMode.style.backgroundColor = '';
-			btnKdcoMode.style.color = '';
-		}
-	}
-	if (typeof window !== 'undefined') window.__KDCO_MODE_ACTIVE = isKdcoModeActive;
-	if (typeof updateFloorWorkSummaryUi === 'function') updateFloorWorkSummaryUi();
-}
-
-function setKdcoModeActive(nextActive, options) {
-	options = options || {};
-	var preserveTool = !!options.preserveTool;
-	var silent = !!options.silent;
-	var next = !!nextActive;
-	if (next === isKdcoModeActive) {
-		syncKdcoModeButtonState();
-		return;
-	}
-
-	if (next) {
-		isKdcoModeActive = true;
-		syncKdcoModeButtonState();
-		if (activeTool !== 'btnArea') setActiveTool('btnArea');
-
-		if (!silent) {
-			document.querySelector('#resultDisplay > div').innerHTML = 'KDÇO aktif: Bina/Çıkma çizimi için Alan aracını kullanın. <i>(Sağ tık = kaydet)</i>';
-			syncInfoPanelNoteToResultBar('KDÇO modu aktif. Bilgi panelinde kat/bina alanları bu modda görünür.', 'info');
-		}
-		return;
-	}
-
-	isKdcoModeActive = false;
-	syncKdcoModeButtonState();
-	if (!preserveTool && activeTool === 'btnArea') {
-		setActiveTool(null);
-	}
-	if (!silent) {
-		document.querySelector('#resultDisplay > div').innerHTML = window.AppMessages.DEFAULT_IDLE;
-		syncInfoPanelNoteToResultBar('KDÇO modu kapatıldı. Standart moda dönüldü.', 'info');
-	}
-}
-
-function toggleKdcoMode(nextState, options) {
-	if (typeof nextState === 'boolean') {
-		setKdcoModeActive(nextState, options || {});
-		return;
-	}
-	setKdcoModeActive(!isKdcoModeActive, options || {});
-}
 
 // ─── RUBBER-BAND (Kauçuk İp) ÖNİZLEME ────────────────────────
 // Startup'ta bir kez oluşturulur, ASLA yeniden yaratılmaz (sıfır allocation).
@@ -7724,10 +7713,6 @@ function setActiveTool(toolId) {
 	// Standart CAD/GIS: yeni araç açılınca mevcut edit kayıt edilir.
 	if (typeof EditManager !== 'undefined' && EditManager.activeMeasure) {
 		EditManager.stopEdit();
-	}
-
-	if (isKdcoModeActive && toolId && toolId !== 'btnArea') {
-		setKdcoModeActive(false, { preserveTool: true, silent: true });
 	}
 
 	// Önceki aracın tamamlanmamış çizimlerini temizle
