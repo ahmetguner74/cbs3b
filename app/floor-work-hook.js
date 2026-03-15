@@ -61,6 +61,16 @@
         var startEditById = asFn(deps.startEditById, function () { });
         var saveChanges = asFn(deps.saveChanges, function () { });
 
+        function getGroupsSafe() {
+            var list = getGroups();
+            return Array.isArray(list) ? list : [];
+        }
+
+        function getMeasurementsSafe() {
+            var list = getMeasurements();
+            return Array.isArray(list) ? list : [];
+        }
+
         var state = {
             featureEnabled: true,
             enabled: false,
@@ -82,6 +92,11 @@
             if (window.CBS_CONFIG && window.CBS_CONFIG.floorWorkEnabled === false) return false;
             if (window.__FLOOR_WORK_ENABLED__ === false) return false;
             return true;
+        }
+
+        function isKdcoModeActive() {
+            if (typeof window === 'undefined') return false;
+            return window.__KDCO_MODE_ACTIVE === true;
         }
 
         function readUIViewPreference() {
@@ -198,7 +213,7 @@
         function isFloorWorkManagedMeasurement(measurement) {
             if (!measurement || measurement.type !== 'polygon') return false;
             if (measurement.isImported) return false;
-            var groups = getGroups();
+            var groups = getGroupsSafe();
             var grp = groups.find(function (g) { return g.id === measurement.groupId; });
             if (!grp || isRefGroup(grp)) return false;
             return true;
@@ -240,7 +255,7 @@
             var set = Object.create(null);
             var list = [];
 
-            getMeasurements().forEach(function (m) {
+            getMeasurementsSafe().forEach(function (m) {
                 if (!isFloorWorkManagedMeasurement(m)) return;
                 var key = getMeasurementFloorKey(m);
                 if (!key || set[key]) return;
@@ -264,7 +279,7 @@
         function collectKnownBuildingKeys() {
             var set = Object.create(null);
             var list = [];
-            getMeasurements().forEach(function (m) {
+            getMeasurementsSafe().forEach(function (m) {
                 if (!isFloorWorkManagedMeasurement(m)) return;
                 var key = getMeasurementBuildingKey(m);
                 if (!key || set[key]) return;
@@ -282,7 +297,7 @@
             var max = Number(limit);
             if (!isFinite(max) || max <= 0) max = 9999;
             var pool = [];
-            getMeasurements().forEach(function (m) {
+            getMeasurementsSafe().forEach(function (m) {
                 if (pool.length >= max) return;
                 if (!isFloorWorkManagedMeasurement(m)) return;
                 if (!isMeasurementInPool(m)) return;
@@ -371,7 +386,7 @@
             var byFloor = Object.create(null);
             var totalArea = 0;
 
-            getMeasurements().forEach(function (m) {
+            getMeasurementsSafe().forEach(function (m) {
                 if (!isFloorWorkManagedMeasurement(m)) return;
                 if (isMeasurementInPool(m)) return;
                 if (getMeasurementBuildingKey(m) !== buildingKey) return;
@@ -424,7 +439,7 @@
         function syncFeatureUiState() {
             var panelEl = document.getElementById('floorWorkPanel');
             if (!panelEl) return;
-            panelEl.style.display = isFeatureEnabled() ? '' : 'none';
+            panelEl.style.display = (isFeatureEnabled() && isKdcoModeActive()) ? '' : 'none';
         }
 
         function syncUIView() {
@@ -587,8 +602,8 @@
         }
 
         function applyVisibility(requestRenderFlag) {
-            var measurements = getMeasurements();
-            var groups = getGroups();
+            var measurements = getMeasurementsSafe();
+            var groups = getGroupsSafe();
 
             if (state.enabled && getActiveHighlightId() !== null) {
                 var activeId = getActiveHighlightId();
@@ -673,12 +688,12 @@
             var measureId = infoPanelState && infoPanelState.measureId != null ? infoPanelState.measureId : null;
 
             if (measureId != null) {
-                scoped = getMeasurements().find(function (m) { return m.id === measureId; }) || null;
+                scoped = getMeasurementsSafe().find(function (m) { return m.id === measureId; }) || null;
             }
 
             if (!scoped && getActiveHighlightId() !== null) {
                 var activeId = getActiveHighlightId();
-                scoped = getMeasurements().find(function (m) { return m.id === activeId; }) || null;
+                scoped = getMeasurementsSafe().find(function (m) { return m.id === activeId; }) || null;
             }
 
             return scoped;
@@ -903,7 +918,7 @@
         function buildAggregateMapByBuilding(overridesById) {
             var map = Object.create(null);
 
-            getMeasurements().forEach(function (measurement) {
+            getMeasurementsSafe().forEach(function (measurement) {
                 if (!isFloorWorkManagedMeasurement(measurement)) return;
 
                 var props = measurement.properties || {};
@@ -1200,7 +1215,7 @@
                 return;
             }
 
-            var measurement = getMeasurements().find(function (m) { return m.id === selectedId; }) || null;
+            var measurement = getMeasurementsSafe().find(function (m) { return m.id === selectedId; }) || null;
             if (!measurement) {
                 syncNote('Secilen havuz parcasi bulunamadi.', 'warn');
                 return;
@@ -1398,7 +1413,7 @@
                 return getStateSnapshot();
             },
             openPreviewByMeasurementId: function (id) {
-                var m = getMeasurements().find(function (x) { return x.id === id; }) || null;
+                var m = getMeasurementsSafe().find(function (x) { return x.id === id; }) || null;
                 if (m) openPolygonPreview(m);
             }
         };
