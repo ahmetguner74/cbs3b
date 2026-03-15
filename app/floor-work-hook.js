@@ -94,11 +94,6 @@
             return true;
         }
 
-        function isKdcoModeActive() {
-            if (typeof window === 'undefined') return false;
-            return window.__KDCO_MODE_ACTIVE === true;
-        }
-
         function readUIViewPreference() {
             if (typeof window === 'undefined') return 'simple';
             try {
@@ -439,7 +434,7 @@
         function syncFeatureUiState() {
             var panelEl = document.getElementById('floorWorkPanel');
             if (!panelEl) return;
-            panelEl.style.display = (isFeatureEnabled() && isKdcoModeActive()) ? '' : 'none';
+            panelEl.style.display = isFeatureEnabled() ? '' : 'none';
         }
 
         function syncUIView() {
